@@ -99,27 +99,12 @@ public static class GrenadeTrajectory
     public static TrajectoryResult Simulate(VoxelGrid grid, ThrowSpec spec, ThrowConstants? constants = null)
     {
         var k = constants ?? ThrowConstants.Default;
-        // The engine biases throws upward by up to 10 degrees at horizontal aim.
-        var effectivePitch = spec.PitchDeg - (90f - MathF.Abs(spec.PitchDeg)) / 90f * 10f;
-        var pitch = effectivePitch * MathF.PI / 180f;
-        var yaw = spec.YawDeg * MathF.PI / 180f;
-        var forward = new Vector3(
-            MathF.Cos(pitch) * MathF.Cos(yaw),
-            MathF.Cos(pitch) * MathF.Sin(yaw),
-            -MathF.Sin(pitch));
-
-        var velocity = forward * (k.ThrowSpeed * k.SpeedScale(spec.Strength));
-        if (spec.Type is ThrowType.JumpThrow or ThrowType.CrouchJumpThrow or ThrowType.RunJumpThrow)
-        {
-            velocity.Z += k.JumpVelocity;
-        }
-        if (spec.Type is ThrowType.RunJumpThrow)
-        {
-            velocity += new Vector3(MathF.Cos(yaw), MathF.Sin(yaw), 0) * k.RunSpeed;
-        }
+        // Launch state comes from the same derivation the exact simulator
+        // uses: these constants are calibrated against live telemetry, and a
+        // second inline copy silently desynchronized the two paths once.
+        var (position, velocity) = DeriveInitial(spec, constants);
 
         var gravity = 800f * k.GravityScale;
-        var position = spec.EyePosition + forward * 16f;
         var bounces = 0;
         var time = 0f;
         Vector3? firstTouch = null;

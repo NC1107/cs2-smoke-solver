@@ -54,19 +54,31 @@ public class CalibrationThrowerPlugin : BasePlugin
     Thread? _writerThread;
     const long RotateBytes = 50L * 1024 * 1024;
 
+    const string SmokeProjectileDesigner = "smokegrenade_projectile";
+    const string SmokeWeaponDesigner = "weapon_smokegrenade";
+
     static bool AnyHumanConnected() =>
         Utilities.GetPlayers().Any(p => p.IsValid && !p.IsBot);
 
     static bool HasSmoke(CCSPlayerController player) =>
         player.PlayerPawn.Value?.WeaponServices?.MyWeapons
-            .Any(w => w.Value?.DesignerName == "weapon_smokegrenade") ?? false;
+            .Any(w => w.Value?.DesignerName == SmokeWeaponDesigner) ?? false;
 
     static void GiveSmokeIfMissing(CCSPlayerController player)
     {
         if (player.IsValid && !HasSmoke(player))
         {
-            player.GiveNamedItem("weapon_smokegrenade");
+            player.GiveNamedItem(SmokeWeaponDesigner);
         }
+    }
+
+    static string Calib(string msg) => $" {ChatColors.Green}[calib]{ChatColors.Default} {msg}";
+
+    static string CalibError(string msg) => $" {ChatColors.DarkRed}[calib]{ChatColors.Default} {msg}";
+
+    static void Reply(CCSPlayerController? player, CommandInfo command, string message)
+    {
+        if (player != null) { player.PrintToChat(message); } else { command.ReplyToCommand(message); }
     }
 
     // CSmokeGrenadeProjectile::Create(pos, pos2, vel, vel2, owner, itemDef, team)
@@ -390,7 +402,7 @@ public class CalibrationThrowerPlugin : BasePlugin
         Server.PrintToConsole($"[CalibrationThrower] SIGNATURE SELF-TEST FAILED ({reason}) - synthetic throws disabled. The CSmokeGrenadeProjectile::Create signature likely broke with a game update.");
         if (AnyHumanConnected())
         {
-            Server.PrintToChatAll(" \u0002[calib] signature self-test failed - synthetic throws disabled until the plugin is updated\u0001");
+            Server.PrintToChatAll($" {ChatColors.DarkRed}[calib] signature self-test failed - synthetic throws disabled until the plugin is updated{ChatColors.Default}");
         }
     }
 
@@ -413,7 +425,7 @@ public class CalibrationThrowerPlugin : BasePlugin
             ? pEl.EnumerateArray().Select(e => e.GetSingle()).ToArray() : null;
         if (note != null && AnyHumanConnected())
         {
-            Server.PrintToChatAll($" \u0004[calib]\u0001 {note}");
+            Server.PrintToChatAll(Calib(note));
         }
         // Register metadata only after the native call succeeds so a failed
         // create can never leave an orphan entry for a later spawn to steal.
@@ -427,8 +439,11 @@ public class CalibrationThrowerPlugin : BasePlugin
     // spawn-point entities at all, so bot_add has nothing to spawn onto and
     // Utilities.GetPlayers() stays empty forever. The grenade's physics don't
     // need an owner, only its team-color rendering and kill-credit do, so we
-    // fall back to team CT (2) and a zero owner handle when nobody's connected.
-    const int FallbackTeamNum = 2;
+    // fall back to team T (2) and a zero owner handle when nobody's connected.
+    const int FallbackTeamNum = (int)CsTeam.Terrorist;
+
+    // Items-schema definition index for the smoke grenade (weapon_smokegrenade).
+    const int SmokeGrenadeItemDef = 45;
 
     bool ThrowSynthetic(Vector pos, Vector vel)
     {
@@ -436,7 +451,7 @@ public class CalibrationThrowerPlugin : BasePlugin
         var ownerPawn = owner?.PlayerPawn.Value;
         var teamNum = ownerPawn?.TeamNum ?? FallbackTeamNum;
 
-        var smoke = SmokeCreate.Invoke(pos.Handle, pos.Handle, vel.Handle, vel.Handle, ownerPawn?.Handle ?? IntPtr.Zero, 45, teamNum);
+        var smoke = SmokeCreate.Invoke(pos.Handle, pos.Handle, vel.Handle, vel.Handle, ownerPawn?.Handle ?? IntPtr.Zero, SmokeGrenadeItemDef, teamNum);
         if (smoke == null || !smoke.IsValid)
         {
             Server.PrintToConsole("[CalibrationThrower] native smoke Create() returned null");
@@ -455,7 +470,7 @@ public class CalibrationThrowerPlugin : BasePlugin
 
     void OnEntitySpawned(CEntityInstance entity)
     {
-        if (entity.DesignerName != "smokegrenade_projectile")
+        if (entity.DesignerName != SmokeProjectileDesigner)
         {
             return;
         }
@@ -543,7 +558,7 @@ public class CalibrationThrowerPlugin : BasePlugin
         }
         var alive = _aliveScratch;
         alive.Clear();
-        foreach (var projectile in Utilities.FindAllEntitiesByDesignerName<CSmokeGrenadeProjectile>("smokegrenade_projectile"))
+        foreach (var projectile in Utilities.FindAllEntitiesByDesignerName<CSmokeGrenadeProjectile>(SmokeProjectileDesigner))
         {
             if (!projectile.IsValid || !_tracked.TryGetValue(projectile.Index, out var track))
             {
@@ -623,10 +638,10 @@ public class CalibrationThrowerPlugin : BasePlugin
                 var dy = track.Predict[1] - track.LastPosition[1];
                 var dz = track.Predict[2] - track.LastPosition[2];
                 var dist = MathF.Sqrt(dx * dx + dy * dy + dz * dz);
-                var col = dist <= 8 ? "\u0004" : dist <= 32 ? "\u0010" : "\u0002";
-                err = $" {col}err {dist:F1}u\u0001";
+                var col = dist <= 8 ? ChatColors.Green : dist <= 32 ? ChatColors.Gold : ChatColors.DarkRed;
+                err = $" {col}err {dist:F1}u{ChatColors.Default}";
             }
-            Server.PrintToChatAll($" \u0004[calib]\u0001 {track.Note} \u0010landed\u0001 ({track.LastPosition?[0]:F0},{track.LastPosition?[1]:F0},{track.LastPosition?[2]:F0}){err}{(track.Detonated ? "" : " \u0002NO DETONATION\u0001")}");
+            Server.PrintToChatAll(Calib($"{track.Note} {ChatColors.Gold}landed{ChatColors.Default} ({track.LastPosition?[0]:F0},{track.LastPosition?[1]:F0},{track.LastPosition?[2]:F0}){err}{(track.Detonated ? "" : $" {ChatColors.DarkRed}NO DETONATION{ChatColors.Default}")}"));
         }
     }
 
@@ -701,7 +716,7 @@ public class CalibrationThrowerPlugin : BasePlugin
         // Full redraw: re-marking an existing name must not leave the old
         // pillar standing at the previous location.
         RedrawMarkerBeams();
-        player!.PrintToChat($" \u0004[calib]\u0001 marked \u0010{name}\u0001 at ({pawn.AbsOrigin.X:F0},{pawn.AbsOrigin.Y:F0},{pawn.AbsOrigin.Z:F0}) - {markers.Count} total");
+        player!.PrintToChat(Calib($"marked {ChatColors.Gold}{name}{ChatColors.Default} at ({pawn.AbsOrigin.X:F0},{pawn.AbsOrigin.Y:F0},{pawn.AbsOrigin.Z:F0}) - {markers.Count} total"));
     }
 
     [ConsoleCommand("css_marks", "List saved test markers and redraw their beams")]
@@ -710,19 +725,15 @@ public class CalibrationThrowerPlugin : BasePlugin
     {
         var markers = LoadMarkers();
         RedrawMarkerBeams();
-        void Reply(string s)
-        {
-            if (player != null) { player.PrintToChat(s); } else { command.ReplyToCommand(s); }
-        }
         if (markers.Count == 0)
         {
-            Reply(" \u0004[calib]\u0001 no markers yet - stand somewhere and use !mark <name>");
+            Reply(player, command, Calib("no markers yet - stand somewhere and use !mark <name>"));
             return;
         }
-        Reply($" \u0004[calib]\u0001 {markers.Count} marker(s):");
+        Reply(player, command, Calib($"{markers.Count} marker(s):"));
         foreach (var (name, pos) in markers)
         {
-            Reply($" \u0010{name}\u0001 ({pos[0]:F0},{pos[1]:F0},{pos[2]:F0})");
+            Reply(player, command, $" {ChatColors.Gold}{name}{ChatColors.Default} ({pos[0]:F0},{pos[1]:F0},{pos[2]:F0})");
         }
     }
 
@@ -736,11 +747,11 @@ public class CalibrationThrowerPlugin : BasePlugin
         {
             SaveMarkers(markers);
             RedrawMarkerBeams();
-            player?.PrintToChat($" \u0004[calib]\u0001 removed \u0010{name}\u0001");
+            player?.PrintToChat(Calib($"removed {ChatColors.Gold}{name}{ChatColors.Default}"));
         }
         else
         {
-            player?.PrintToChat($" \u0002[calib]\u0001 no marker named '{name}'");
+            player?.PrintToChat(CalibError($"no marker named '{name}'"));
         }
     }
 
@@ -750,10 +761,6 @@ public class CalibrationThrowerPlugin : BasePlugin
     [CommandHelper(usage: "[marker] [passRadius=1] [tolerance=80] [limit=0]", whoCanExecute: CommandUsage.CLIENT_AND_SERVER)]
     public void OnTestCommand(CCSPlayerController? player, CommandInfo command)
     {
-        void Reply(string s)
-        {
-            if (player != null) { player.PrintToChat(s); } else { command.ReplyToCommand(s); }
-        }
         var markers = LoadMarkers();
         string name;
         float[] pos;
@@ -768,7 +775,7 @@ public class CalibrationThrowerPlugin : BasePlugin
         }
         else if (command.ArgCount > 1 && !float.TryParse(command.GetArg(1), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out _))
         {
-            Reply($" \u0002[calib]\u0001 no marker named '{command.GetArg(1)}' - use !marks to list");
+            Reply(player, command, CalibError($"no marker named '{command.GetArg(1)}' - use !marks to list"));
             return;
         }
         else
@@ -776,7 +783,7 @@ public class CalibrationThrowerPlugin : BasePlugin
             var pawn = player?.PlayerPawn.Value;
             if (pawn?.AbsOrigin == null)
             {
-                Reply(" \u0002[calib]\u0001 no marker given and no player position available");
+                Reply(player, command, CalibError("no marker given and no player position available"));
                 return;
             }
             name = "here";
@@ -789,7 +796,7 @@ public class CalibrationThrowerPlugin : BasePlugin
         var tolerance = NumArg(1, 80f);
         var limit = (int)NumArg(2, 0f);
         File.WriteAllText(TestRequestPath, JsonSerializer.Serialize(new { name, pos, pass, tolerance, limit, map = Server.MapName }));
-        Reply($" \u0004[calib]\u0001 test queued for \u0010{name}\u0001 ({pos[0]:F0},{pos[1]:F0},{pos[2]:F0}) - pass \u0010{pass:F0}u\u0001, tolerance \u0010{tolerance:F0}u\u0001{(limit > 0 ? $", limit \u0010{limit}\u0001" : "")}");
+        Reply(player, command, Calib($"test queued for {ChatColors.Gold}{name}{ChatColors.Default} ({pos[0]:F0},{pos[1]:F0},{pos[2]:F0}) - pass {ChatColors.Gold}{pass:F0}u{ChatColors.Default}, tolerance {ChatColors.Gold}{tolerance:F0}u{ChatColors.Default}{(limit > 0 ? $", limit {ChatColors.Gold}{limit}{ChatColors.Default}" : "")}"));
     }
 
     [ConsoleCommand("css_stop", "Stop the running test and clear remaining smokes")]
@@ -798,8 +805,7 @@ public class CalibrationThrowerPlugin : BasePlugin
     {
         File.WriteAllText(Path.Combine(CalibDir, "stop-request"), "");
         OnClearSmokesCommand(player, command);
-        var msg = " \u0004[calib]\u0001 stopping test - remaining throws cancelled";
-        if (player != null) { player.PrintToChat(msg); } else { command.ReplyToCommand(msg); }
+        Reply(player, command, Calib("stopping test - remaining throws cancelled"));
     }
 
     string LineupRequestPath => Path.Combine(CalibDir, "lineup-request.json");
@@ -855,7 +861,7 @@ public class CalibrationThrowerPlugin : BasePlugin
         var markers = LoadMarkers();
         if (!markers.TryGetValue(name, out var pos))
         {
-            player!.PrintToChat($" \u0002[calib]\u0001 no marker named '{name}' - use !marks to list");
+            player!.PrintToChat(CalibError($"no marker named '{name}' - use !marks to list"));
             return;
         }
         var mode = command.ArgCount > 2 && command.GetArg(2).ToLowerInvariant() == "deep" ? "deep" : "quick";
@@ -869,8 +875,8 @@ public class CalibrationThrowerPlugin : BasePlugin
             player = new[] { pawn.AbsOrigin.X, pawn.AbsOrigin.Y, pawn.AbsOrigin.Z },
         }));
         player!.PrintToChat(mode == "deep"
-            ? $" \u0004[calib]\u0001 deep solve onto \u0010{name}\u0001 - full 360 sweep, ~30s..."
-            : $" \u0004[calib]\u0001 solving a throw from your exact spot onto \u0010{name}\u0001 (~10s)...");
+            ? Calib($"deep solve onto {ChatColors.Gold}{name}{ChatColors.Default} - full 360 sweep, ~30s...")
+            : Calib($"solving a throw from your exact spot onto {ChatColors.Gold}{name}{ChatColors.Default} (~10s)..."));
     }
 
     [ConsoleCommand("css_goto", "Teleport to the last !lineup spot with exact angles")]
@@ -883,7 +889,7 @@ public class CalibrationThrowerPlugin : BasePlugin
         // keep working even if a store payload lacked the slot field.
         if (!_lastLineup.TryGetValue(player!.Slot, out var stored) && !_lastLineup.TryGetValue(-1, out stored))
         {
-            player.PrintToChat(" \u0002[calib]\u0001 no lineup stored - use !lineup <marker> first");
+            player.PrintToChat(CalibError("no lineup stored - use !lineup <marker> first"));
             return;
         }
         var (pos, pitch, yaw, hint, aim) = stored;
@@ -898,7 +904,7 @@ public class CalibrationThrowerPlugin : BasePlugin
             $"setpos {pos[0]:F2} {pos[1]:F2} {pos[2] + 1:F2}"));
         player.ExecuteClientCommandFromServer(FormattableString.Invariant(
             $"setang {pitch:F2} {yaw:F2} 0"));
-        player.PrintToChat($" \u0004[calib]\u0001 in position - {hint}");
+        player.PrintToChat(Calib($"in position - {hint}"));
     }
 
     [ConsoleCommand("css_lineup", "Find the best throw spot for a marker near your current position")]
@@ -911,7 +917,7 @@ public class CalibrationThrowerPlugin : BasePlugin
         var markers = LoadMarkers();
         if (!markers.TryGetValue(name, out var pos))
         {
-            player!.PrintToChat($" \u0002[calib]\u0001 no marker named '{name}' - use !marks to list");
+            player!.PrintToChat(CalibError($"no marker named '{name}' - use !marks to list"));
             return;
         }
         File.WriteAllText(LineupRequestPath, JsonSerializer.Serialize(new
@@ -922,7 +928,7 @@ public class CalibrationThrowerPlugin : BasePlugin
             slot = player!.Slot,
             player = new[] { pawn.AbsOrigin.X, pawn.AbsOrigin.Y, pawn.AbsOrigin.Z },
         }));
-        player!.PrintToChat($" \u0004[calib]\u0001 finding best lineup for \u0010{name}\u0001 near you...");
+        player!.PrintToChat(Calib($"finding best lineup for {ChatColors.Gold}{name}{ChatColors.Default} near you..."));
     }
 
     [ConsoleCommand("css_smokes", "Toggle whether test smokes stay visible or clear instantly")]
@@ -943,10 +949,9 @@ public class CalibrationThrowerPlugin : BasePlugin
                 JsonSerializer.Serialize(new { showTestSmokes = _showTestSmokes }));
         }
         catch (IOException) { }
-        var msg = _showTestSmokes
-            ? " \u0004[calib]\u0001 test smokes: \u0010visible\u0001 (bloom and linger like real throws)"
-            : " \u0004[calib]\u0001 test smokes: \u0010hidden\u0001 (recorded and cleared at bloom)";
-        if (player != null) { player.PrintToChat(msg); } else { command.ReplyToCommand(msg); }
+        Reply(player, command, _showTestSmokes
+            ? Calib($"test smokes: {ChatColors.Gold}visible{ChatColors.Default} (bloom and linger like real throws)")
+            : Calib($"test smokes: {ChatColors.Gold}hidden{ChatColors.Default} (recorded and cleared at bloom)"));
     }
 
     [ConsoleCommand("css_clearsmokes", "Delete all live smoke projectiles/volumes now")]
@@ -954,7 +959,7 @@ public class CalibrationThrowerPlugin : BasePlugin
     public void OnClearSmokesCommand(CCSPlayerController? player, CommandInfo command)
     {
         var cleared = 0;
-        foreach (var projectile in Utilities.FindAllEntitiesByDesignerName<CSmokeGrenadeProjectile>("smokegrenade_projectile"))
+        foreach (var projectile in Utilities.FindAllEntitiesByDesignerName<CSmokeGrenadeProjectile>(SmokeProjectileDesigner))
         {
             if (!projectile.IsValid) { continue; }
             if (_tracked.TryGetValue(projectile.Index, out var track))
@@ -965,32 +970,28 @@ public class CalibrationThrowerPlugin : BasePlugin
             projectile.Remove();
             cleared++;
         }
-        player?.PrintToChat($" \u0004[calib]\u0001 cleared {cleared} smoke(s)");
+        player?.PrintToChat(Calib($"cleared {cleared} smoke(s)"));
     }
 
     [ConsoleCommand("css_help", "List calibration rig commands")]
     [CommandHelper(whoCanExecute: CommandUsage.CLIENT_AND_SERVER)]
     public void OnHelpCommand(CCSPlayerController? player, CommandInfo command)
     {
-        void Reply(string s)
-        {
-            if (player != null) { player.PrintToChat(s); } else { command.ReplyToCommand(s); }
-        }
-        Reply(" \u0004[calib]\u0001 commands:");
-        Reply(" \u0010!help\u0001 - this list");
-        Reply(" \u0010!practice\u0001 - re-apply practice mode (cheats, no bots, 60min round, buy anywhere)");
-        Reply(" \u0010!throw x y z vx vy vz\u0001 - throw a synthetic smoke from position with velocity");
-        Reply(" \u0010!mark <name>\u0001 - save your position as a labeled test target (beam pillar)");
-        Reply(" \u0010!marks\u0001 / \u0010!unmark <name>\u0001 - list markers / delete one");
-        Reply(" \u0010!test [marker] [pass=1] [tol=80] [limit]\u0001 - test a marker (or your spot if none), live errors in chat");
-        Reply(" \u0010!stop\u0001 - cancel the running test and clear smokes");
-        Reply(" \u0010!clearsmokes\u0001 - delete all live smoke volumes immediately");
-        Reply(" \u0010!smokes [on|off]\u0001 - toggle whether test smokes stay visible or clear at bloom");
-        Reply(" \u0010!lineup <marker>\u0001 - best throw spot near you: beam at feet + yellow aim cross in the sky");
-        Reply(" \u0010!plineup <marker> [deep]\u0001 - throw from your EXACT position onto the marker; deep = exhaustive 360 search");
-        Reply(" \u0010!goto\u0001 - teleport into the last !lineup spot with exact angles, then just click");
-        Reply(" during test runs, chat shows each throw: \u0010#n/total type click bounces -> predict (x,y,z)\u0001");
-        Reply(" then \u0010landed (x,y,z)\u0001 when it settles - compare the two to judge the prediction");
+        Reply(player, command, Calib("commands:"));
+        Reply(player, command, $" {ChatColors.Gold}!help{ChatColors.Default} - this list");
+        Reply(player, command, $" {ChatColors.Gold}!practice{ChatColors.Default} - re-apply practice mode (cheats, no bots, 60min round, buy anywhere)");
+        Reply(player, command, $" {ChatColors.Gold}!throw x y z vx vy vz{ChatColors.Default} - throw a synthetic smoke from position with velocity");
+        Reply(player, command, $" {ChatColors.Gold}!mark <name>{ChatColors.Default} - save your position as a labeled test target (beam pillar)");
+        Reply(player, command, $" {ChatColors.Gold}!marks{ChatColors.Default} / {ChatColors.Gold}!unmark <name>{ChatColors.Default} - list markers / delete one");
+        Reply(player, command, $" {ChatColors.Gold}!test [marker] [pass=1] [tol=80] [limit]{ChatColors.Default} - test a marker (or your spot if none), live errors in chat");
+        Reply(player, command, $" {ChatColors.Gold}!stop{ChatColors.Default} - cancel the running test and clear smokes");
+        Reply(player, command, $" {ChatColors.Gold}!clearsmokes{ChatColors.Default} - delete all live smoke volumes immediately");
+        Reply(player, command, $" {ChatColors.Gold}!smokes [on|off]{ChatColors.Default} - toggle whether test smokes stay visible or clear at bloom");
+        Reply(player, command, $" {ChatColors.Gold}!lineup <marker>{ChatColors.Default} - best throw spot near you: beam at feet + yellow aim cross in the sky");
+        Reply(player, command, $" {ChatColors.Gold}!plineup <marker> [deep]{ChatColors.Default} - throw from your EXACT position onto the marker; deep = exhaustive 360 search");
+        Reply(player, command, $" {ChatColors.Gold}!goto{ChatColors.Default} - teleport into the last !lineup spot with exact angles, then just click");
+        Reply(player, command, $" during test runs, chat shows each throw: {ChatColors.Gold}#n/total type click bounces -> predict (x,y,z){ChatColors.Default}");
+        Reply(player, command, $" then {ChatColors.Gold}landed (x,y,z){ChatColors.Default} when it settles - compare the two to judge the prediction");
     }
 
     [ConsoleCommand("css_practice", "Re-apply practice mode settings")]
@@ -998,7 +999,7 @@ public class CalibrationThrowerPlugin : BasePlugin
     public void OnPracticeCommand(CCSPlayerController? player, CommandInfo command)
     {
         ApplyPracticeSettings();
-        if (player != null) { player.PrintToChat(" \u0004[calib]\u0001 practice settings applied"); }
+        if (player != null) { player.PrintToChat(Calib("practice settings applied")); }
     }
 
     [ConsoleCommand("css_calib_throw", "Synthetic throw: x y z vx vy vz")]

@@ -1,9 +1,16 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
+    <!-- serve hosts an ASP.NET Core minimal API; the shared framework ships
+         with the SDK, so this pulls nothing from NuGet. -->
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
     <ProjectReference Include="..\Sim\SmokeSolver.Sim.csproj" />
     <ProjectReference Include="..\Extraction\SmokeSolver.Extraction.csproj" />
     <ProjectReference Include="..\Solver\SmokeSolver.Solver.csproj" />
+    <!-- Used directly by ViewerData's radar renderer; pinned to the version
+         ValveResourceFormat expects so the transitive graph cannot drift. -->
+    <PackageReference Include="SkiaSharp" Version="3.119.2" />
+    <PackageReference Include="SkiaSharp.NativeAssets.Linux.NoDependencies" Version="3.119.2" />
   </ItemGroup>
 
   <PropertyGroup>
