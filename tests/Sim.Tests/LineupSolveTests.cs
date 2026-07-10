@@ -166,10 +166,7 @@ public class LineupSolveTests
             grid, zone, SolveMin, SolveMax, [ThrowType.Stand],
             origins: [new Vector3(256, 1024, 0), new Vector3(280, 1024, 0)]);
 
-        Assert.True(result.Count <= 1, $"same-bucket origins should not both survive, got {result.Count}");
-        foreach (var lineup in result)
-        {
-            Assert.Equal((4, 16), Bucket(lineup.Feet));
-        }
+        var lineup = Assert.Single(result);
+        Assert.Equal((4, 16), Bucket(lineup.Feet));
     }
 }
