@@ -44,7 +44,7 @@ public static class BestLineupCommand
             options["attrs"] = "Default,default,EntitySolid";
         }
         var (mesh, _, _, attributeFilter) = LoadCommon(options);
-        var navAreas = JsonSerializer.Deserialize<List<NavAreaJson>>(File.ReadAllText(Require(options, "nav")))!;
+        var navAreas = LoadJson<List<NavAreaJson>>(Require(options, "nav"), "nav areas");
         var constants = LoadConstants(options);
         var (target, hasZ) = ParseVec2or3(Require(options, "target"));
         var near = ParseVec(Require(options, "near"));

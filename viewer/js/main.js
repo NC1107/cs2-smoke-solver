@@ -2,10 +2,10 @@
 // import the feature modules; they call back into the orchestrators defined
 // here (setTarget, select, runQuery) via the init*/set*Callbacks hooks.
 
-import { state, filtered } from "./state.js";
+import { state, filtered, esc } from "./state.js";
 import { loadMapData, runQuery as postLineupQuery } from "./api.js";
 import { loadRadar, readColors, recolorRadar, draw, resize, resetView, initMap2d } from "./map2d.js";
-import { ensure3d, resetEnsure3d, current3d, sync3d, set3dCallbacks } from "./view3d.js";
+import { ensure3d, resetEnsure3d, current3d, sync3d, set3dCallbacks, applyTheme3d } from "./view3d.js";
 import { renderLineups, initPanel } from "./panel.js";
 
 (async () => {
@@ -14,7 +14,7 @@ import { renderLineups, initPanel } from "./panel.js";
     box.style.cssText = "position:fixed; inset:0; z-index:60; display:flex; align-items:center; justify-content:center";
     box.innerHTML =
       `<div style="background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:18px 24px; max-width:460px">` +
-      `<b>failed to load ${file}</b><br>` +
+      `<b>failed to load ${esc(file)}</b><br>` +
       `<span style="color:var(--muted)">regenerate it with the <code>viewerdata</code> CLI command, then reload</span></div>`;
     document.body.appendChild(box);
   }
@@ -32,6 +32,8 @@ import { renderLineups, initPanel } from "./panel.js";
   const canvas = state.canvas;
   const stage3d = state.stage3d;
   const statusEl = state.statusEl;
+  const heatBtn = document.getElementById("heat");
+  const keyEl = document.getElementById("key-dots");
 
   try {
     await loadRadar();
@@ -47,14 +49,27 @@ import { renderLineups, initPanel } from "./panel.js";
     sync3d();
   }
 
+  // Heat mode swaps the map key from marker shapes to coverage colors (L23).
+  function setHeat(on) {
+    state.heatOn = on;
+    heatBtn.classList.toggle("primary", on);
+    keyEl.classList.toggle("heat", on);
+  }
+
   const solvingOverlay = document.getElementById("solving-overlay");
+  const cancelBtn = document.getElementById("solve-cancel");
+  let solveController = null;
+  cancelBtn.addEventListener("click", () => solveController?.abort());
 
   async function runQuery(body) {
     state.busy = true;
     statusEl.textContent = "solving…";
+    solveController = new AbortController();
+    const prevFocus = document.activeElement;
     solvingOverlay.classList.add("on");
+    cancelBtn.focus();
     try {
-      const { error, data } = await postLineupQuery(body);
+      const { error, data } = await postLineupQuery(body, solveController.signal);
       if (error) {
         statusEl.textContent = error;
         return;
@@ -67,14 +82,18 @@ import { renderLineups, initPanel } from "./panel.js";
       next.lineups.forEach((l, i) => { l._idx = i; });
       state.result = next;
       state.selected = -1;
-      document.getElementById("heat").disabled = !next.coverage;
+      heatBtn.disabled = !next.coverage;
       renderLineups();
       sync3d();
     } catch (err) {
-      statusEl.textContent = `error: ${err.message}`;
+      statusEl.textContent = err.name === "AbortError" ? "cancelled" : `error: ${err.message}`;
     } finally {
       state.busy = false;
+      solveController = null;
       solvingOverlay.classList.remove("on");
+      if (prevFocus instanceof HTMLElement && document.contains(prevFocus)) {
+        prevFocus.focus();
+      }
       draw();
     }
   }
@@ -84,11 +103,10 @@ import { renderLineups, initPanel } from "./panel.js";
     state.picking = false;
     state.result = null;
     state.selected = -1;
-    state.heatOn = false;
+    setHeat(false);
     canvas.classList.remove("picking");
     document.getElementById("search-all").disabled = false;
-    document.getElementById("heat").disabled = true;
-    document.getElementById("heat").classList.remove("primary");
+    heatBtn.disabled = true;
     statusEl.textContent = note;
     renderLineups();
     draw();
@@ -111,28 +129,26 @@ import { renderLineups, initPanel } from "./panel.js";
     state.target = null;
     state.result = null;
     state.selected = -1;
-    state.heatOn = false;
+    setHeat(false);
     canvas.classList.remove("picking");
     document.getElementById("search-all").disabled = true;
-    document.getElementById("heat").disabled = true;
-    document.getElementById("heat").classList.remove("primary");
+    heatBtn.disabled = true;
     statusEl.textContent = "";
     renderLineups();
     draw();
   });
-  document.getElementById("heat").addEventListener("click", () => {
-    state.heatOn = !state.heatOn;
-    document.getElementById("heat").classList.toggle("primary", state.heatOn);
+  heatBtn.addEventListener("click", () => {
+    setHeat(!state.heatOn);
     statusEl.textContent = state.heatOn
-      ? "heatmap: green = reachable (brighter = more options), red = standable but NO throw reaches"
-      : `${filtered().length} lineups - click a marker`;
+      ? "heatmap: blue fill = reachable (brighter = more options), orange outline = standable but NO throw reaches"
+      : `${filtered().length} lineups - click a marker or use the list`;
     draw();
   });
   for (const f of Object.values(state.filters)) {
     f.addEventListener("change", () => { state.selected = -1; renderLineups(); draw(); sync3d(); });
   }
 
-  initPanel({ onSetTarget: setTarget });
+  initPanel({ onSetTarget: setTarget, onSelect: select });
   initMap2d({ onSetTarget: setTarget, onSelect: select, onRunQuery: runQuery });
   set3dCallbacks({ onSetTarget: setTarget, onSelect: select });
 
@@ -165,6 +181,31 @@ import { renderLineups, initPanel } from "./panel.js";
       draw();
     }
   });
+
+  matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => {
+    readColors();
+    recolorRadar();
+    draw();
+    applyTheme3d();
+  });
+
+  // A resolution media query fires once per boundary crossing, so re-register
+  // after each change to keep tracking DPR across monitor moves (M45).
+  (function watchDpr() {
+    matchMedia(`(resolution: ${window.devicePixelRatio}dppx)`).addEventListener(
+      "change", () => { resize(); current3d()?.resize3d(); watchDpr(); }, { once: true });
+  })();
+
+  // Below the breakpoint the control cards collapse to <details>; CSS cannot
+  // force a closed details open again at desktop width, so sync it here.
+  const compactMq = matchMedia("(max-width: 640px)");
+  const syncCompactControls = () => {
+    for (const d of document.querySelectorAll("#controls details")) {
+      d.open = !compactMq.matches;
+    }
+  };
+  syncCompactControls();
+  compactMq.addEventListener("change", syncCompactControls);
 
   readColors();
   recolorRadar();

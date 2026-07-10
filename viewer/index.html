@@ -8,75 +8,90 @@
 </head>
 <body>
 
-<div id="solving-overlay"><div class="box"><div class="spin"></div><div>calculating lineups…<br><span style="color:var(--muted);font-size:12px">simulating throws across the map</span></div></div></div>
+<div id="solving-overlay" role="dialog" aria-modal="true" aria-busy="true" aria-label="Calculating lineups">
+  <div class="box">
+    <div class="spin" aria-hidden="true"></div>
+    <div>calculating lineups…<br><span class="overlay-sub">simulating throws across the map</span></div>
+    <button id="solve-cancel" class="btn">Cancel</button>
+  </div>
+</div>
 <div class="toolbar">
   <span class="brand" id="brand">Smoke Solver</span>
-  <span id="status"></span>
+  <span id="status" role="status" aria-live="polite"></span>
   <span id="readout"></span>
 </div>
 
-<div id="controls">
-<div class="card" id="card-view">
-  <button id="pick" class="primary">Target</button>
-  <button id="search-all" disabled>Search map</button>
-  <button id="heat" disabled>Heatmap</button>
-  <button id="view3d">3D</button>
-  <button id="clear">Clear</button>
-</div>
-<div class="card" id="card-filters">
-    <select id="f-type" title="movement">
-      <option value="">any movement</option>
-      <option value="Stand">stand</option>
-      <option value="Crouch">crouch</option>
-      <option value="JumpThrow">jump</option>
-      <option value="CrouchJumpThrow">crouch+jump</option>
-      <option value="RunJumpThrow">run+jump</option>
-    </select>
-    <select id="f-strength" title="mouse buttons">
-      <option value="">any click</option>
-      <option value="1">left</option>
-      <option value="0.5">mid (L+R)</option>
-      <option value="0">right</option>
-    </select>
-    <select id="f-bounces" title="max bounces">
-      <option value="">any bounces</option>
-      <option value="1">≤1 bounce</option>
-      <option value="2">≤2</option>
-      <option value="3">≤3</option>
-    </select>
-    <select id="f-flight" title="max flight seconds">
-      <option value="">any flight</option>
-      <option value="3">≤3s</option>
-      <option value="4">≤4s</option>
-      <option value="6">≤6s</option>
-    </select>
-    <select id="f-stability" title="min stability">
-      <option value="">any stability</option>
-      <option value="0.6">≥60%</option>
-      <option value="0.8">≥80%</option>
-      <option value="1">100%</option>
-    </select>
-    <select id="f-precision" title="landing distance from target (1u ≈ 1.9cm)">
-      <option value="">any precision</option>
-      <option value="32">≤32u</option>
-      <option value="16">≤16u</option>
-      <option value="8">≤8u</option>
-      <option value="4">≤4u</option>
-      <option value="2">≤2u</option>
-      <option value="1">≤1u (perfect)</option>
-    </select>
-</div>
-</div>
-
 <div class="stage">
+  <div id="controls">
+    <details class="card" id="card-view" open>
+      <summary>actions</summary>
+      <div class="card-body">
+        <button id="pick" class="btn primary">Target</button>
+        <button id="search-all" class="btn" disabled>Search map</button>
+        <button id="heat" class="btn" disabled>Heatmap</button>
+        <button id="view3d" class="btn">3D</button>
+        <button id="clear" class="btn">Clear</button>
+      </div>
+    </details>
+    <details class="card" id="card-filters" open>
+      <summary>filters</summary>
+      <div class="card-body">
+        <select id="f-type" title="movement" aria-label="Movement type">
+          <option value="">any movement</option>
+          <option value="Stand">stand</option>
+          <option value="Crouch">crouch</option>
+          <option value="JumpThrow">jump</option>
+          <option value="CrouchJumpThrow">crouch+jump</option>
+          <option value="RunJumpThrow">run+jump</option>
+        </select>
+        <select id="f-strength" title="mouse buttons" aria-label="Mouse buttons">
+          <option value="">any click</option>
+          <option value="1">left</option>
+          <option value="0.5">mid (L+R)</option>
+          <option value="0">right</option>
+        </select>
+        <select id="f-bounces" title="max bounces" aria-label="Maximum bounces">
+          <option value="">any bounces</option>
+          <option value="1">≤1 bounce</option>
+          <option value="2">≤2 bounces</option>
+          <option value="3">≤3 bounces</option>
+        </select>
+        <select id="f-flight" title="max flight seconds" aria-label="Maximum flight time">
+          <option value="">any flight</option>
+          <option value="3">≤3s flight</option>
+          <option value="4">≤4s flight</option>
+          <option value="6">≤6s flight</option>
+        </select>
+        <select id="f-stability" title="min stability" aria-label="Minimum stability">
+          <option value="">any stability</option>
+          <option value="0.6">≥60% stable</option>
+          <option value="0.8">≥80% stable</option>
+          <option value="1">100% stable</option>
+        </select>
+        <select id="f-precision" title="landing distance from target (1u ≈ 1.9cm)" aria-label="Landing precision, distance from target">
+          <option value="">any precision</option>
+          <option value="32">≤32u</option>
+          <option value="16">≤16u</option>
+          <option value="8">≤8u</option>
+          <option value="4">≤4u</option>
+          <option value="2">≤2u</option>
+          <option value="1">≤1u (perfect)</option>
+        </select>
+      </div>
+    </details>
+  </div>
   <canvas id="map" aria-label="Top-down map; click to set a smoke target and throw origins"></canvas>
   <div id="stage3d" style="position:absolute; inset:0; display:none"></div>
   <div id="tip"></div>
-  <div class="key" id="key-dots"><span><span class="cross">●</span> target</span><span><span class="dot left"></span> left</span><span><span class="dot mid"></span> mid (L+R)</span><span><span class="dot right"></span> right</span><span class="shape">● stand&ensp;○ jump&ensp;■ crouch&ensp;□ cr+jump&ensp;▲ run+jump</span><span id="key-count"></span></div>
+  <div class="key" id="key-dots">
+    <span class="key-group" id="key-markers"><span><span class="cross">●</span> target</span><span><span class="dot left"></span> left</span><span><span class="dot mid"></span> mid (L+R)</span><span><span class="dot right"></span> right</span><span class="shape">● stand&ensp;○ jump&ensp;■ crouch&ensp;□ cr+jump&ensp;▲ run+jump</span></span>
+    <span class="key-group" id="key-heat"><span><span class="swatch ok"></span> reachable (brighter = more throws)</span><span><span class="swatch none"></span> standable, no throw reaches</span></span>
+    <span id="key-count"></span>
+  </div>
   <div class="panel" id="panel">
     <div class="paste">
-      <input id="getpos-in" placeholder="paste getpos → target">
-      <button id="getpos-set">set</button>
+      <input id="getpos-in" placeholder="paste getpos → target" aria-label="Paste getpos output to set target">
+      <button id="getpos-set" class="btn">set</button>
     </div>
     <details class="setup">
       <summary>practice setup</summary>
@@ -84,9 +99,9 @@
 mp_freezetime 0; mp_restartgame 1;
 sv_infinite_ammo 1; sv_grenade_trajectory 1;
 sv_autobunnyhopping 1; sv_enablebunnyhopping 1;
-give weapon_smokegrenade<button data-copy="cmd-setup">copy</button></div>
+give weapon_smokegrenade<button data-copy="cmd-setup" class="btn">copy</button></div>
     </details>
-    <div id="lineup-list" style="display: grid; gap: 6px"></div>
+    <div id="lineup-list"></div>
   </div>
 </div>
 

@@ -8,11 +8,25 @@ static class SyntheticMeshes
     /// Axis-aligned quad walls assembled into test scenes.
     /// Each quad is two triangles; all triangles get attribute 0 ("default").
     /// </summary>
-    public static CollisionMesh FromQuads(IEnumerable<(float[] A, float[] B, float[] C, float[] D)> quads)
+    public static CollisionMesh FromQuads(IEnumerable<(float[] A, float[] B, float[] C, float[] D)> quads) =>
+        FromQuads(
+            quads.Select(q => (q.A, q.B, q.C, q.D, (byte)0)),
+            ["default"],
+            [[]]);
+
+    /// <summary>
+    /// Quad scene with per-quad attribute indices and explicit attribute groups,
+    /// for tests exercising attribute filters and interaction layers.
+    /// </summary>
+    public static CollisionMesh FromQuads(
+        IEnumerable<(float[] A, float[] B, float[] C, float[] D, byte Attribute)> quads,
+        string[] attributeNames,
+        string[][] attributeInteractAs)
     {
         var vertices = new List<float>();
         var indices = new List<int>();
-        foreach (var (a, b, c, d) in quads)
+        var attributes = new List<byte>();
+        foreach (var (a, b, c, d, attribute) in quads)
         {
             var baseIndex = vertices.Count / 3;
             vertices.AddRange(a);
@@ -21,6 +35,8 @@ static class SyntheticMeshes
             vertices.AddRange(d);
             indices.AddRange([baseIndex, baseIndex + 1, baseIndex + 2]);
             indices.AddRange([baseIndex, baseIndex + 2, baseIndex + 3]);
+            attributes.Add(attribute);
+            attributes.Add(attribute);
         }
         return new CollisionMesh
         {
@@ -28,9 +44,9 @@ static class SyntheticMeshes
             GameBuildId = "test",
             Vertices = [.. vertices],
             Indices = [.. indices],
-            TriangleAttributes = new byte[indices.Count / 3],
-            AttributeNames = ["default"],
-            AttributeInteractAs = [[]],
+            TriangleAttributes = [.. attributes],
+            AttributeNames = attributeNames,
+            AttributeInteractAs = attributeInteractAs,
         };
     }
 

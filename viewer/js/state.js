@@ -45,3 +45,13 @@ export function filtered() {
 export const typeShort = { Stand: "stand", Crouch: "crouch", JumpThrow: "jump", CrouchJumpThrow: "crouch+jump", RunJumpThrow: "run+jump" };
 export const clickShort = s => s >= 0.99 ? "left click" : s >= 0.49 ? "mid (L+R)" : "right click";
 export const clickClass = s => s >= 0.99 ? "left" : s >= 0.49 ? "mid" : "right";
+
+// Shared physical/UI constants (M44); world units unless noted.
+export const SMOKE_BLOOM_RADIUS = 144; // settled smoke bloom radius
+export const PICK_RADIUS_PX = 12; // marker hit-test radius, screen px
+export const HEAT_CELL = 24; // coverage heat map cell size
+export const EYE_HEIGHT = 64; // standing eye height (getpos z offset)
+
+// Minimal HTML escaper for API-derived strings rendered via innerHTML (L20).
+export const esc = s => String(s).replace(/[&<>"']/g,
+  c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#39;" }[c]));

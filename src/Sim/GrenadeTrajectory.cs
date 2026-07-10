@@ -96,6 +96,18 @@ public static class GrenadeTrajectory
     // BEFORE the elasticity multiply (STOP_EPSILON in the SDK).
     const float StopEpsilon = 0.1f;
 
+    // Source engine base gravity (sv_gravity default); scaled per-projectile
+    // by the calibrated GravityScale.
+    const float BaseGravity = 800f;
+
+    // A contact normal with z at or above this is "floor" for bounce and rest
+    // decisions; below it the surface is a wall/ramp.
+    const float FloorNormalZ = 0.7f;
+
+    // Post-contact positional backoff keeping the hull from re-embedding in
+    // the surface it just hit.
+    const float ContactBackoff = 1e-3f;
+
     public static TrajectoryResult Simulate(VoxelGrid grid, ThrowSpec spec, ThrowConstants? constants = null)
     {
         var k = constants ?? ThrowConstants.Default;
@@ -104,7 +116,7 @@ public static class GrenadeTrajectory
         // second inline copy silently desynchronized the two paths once.
         var (position, velocity) = DeriveInitial(spec, constants);
 
-        var gravity = 800f * k.GravityScale;
+        var gravity = BaseGravity * k.GravityScale;
         var bounces = 0;
         var time = 0f;
         Vector3? firstTouch = null;
@@ -130,6 +142,7 @@ public static class GrenadeTrajectory
             if (grid.IsSolid(grid.Index(cx, cy, cz)))
             {
                 var (contact, axis) = FindContact(grid, position, next);
+                var preImpact = velocity;
                 position = contact;
                 firstTouch ??= contact;
                 bounces++;
@@ -141,7 +154,13 @@ public static class GrenadeTrajectory
                     1 => velocity with { Y = -velocity.Y },
                     _ => velocity with { Z = -velocity.Z },
                 };
-                velocity *= k.Elasticity;
+                // Same floor-impact angle damp the exact simulator applies: without
+                // it, stage-1 voxel candidates in the fast-steep regime overshot
+                // the exact path by ~120u and VerifyExact rejected them wholesale.
+                var speed = preImpact.Length();
+                var u = speed > 1e-6f ? MathF.Abs(preImpact.Z) / speed : 0f;
+                var damp = speed > k.DampGateSpeed && u > 0.5f && axis == 2 ? 1.5f - u : 1f;
+                velocity *= k.Elasticity * damp;
                 if (axis == 2 && velocity.Length() < k.StopSpeed && HasGroundBelow(grid, position))
                 {
                     return new TrajectoryResult(position, bounces, time, Lost: false, firstTouch);
@@ -156,10 +175,6 @@ public static class GrenadeTrajectory
         return new TrajectoryResult(position, bounces, time, Lost: !HasGroundBelow(grid, position), firstTouch);
     }
 
-    /// <summary>
-    /// Backtracks from a step that ended inside solid to the boundary it crossed,
-    /// returning the contact point and the axis of the crossed face (0=x, 1=y, 2=z).
-    /// </summary>
     /// <summary>
     /// Flight against exact collision triangles with true surface normals; slower
     /// than the voxel model but deflects correctly off slanted geometry. Used to
@@ -220,7 +235,7 @@ public static class GrenadeTrajectory
     public static TrajectoryResult SimulateExactRaw(TriangleCollider collider, Vector3 position, Vector3 velocity, ThrowConstants? constants = null, List<string>? trace = null, List<(Vector3 Position, Vector3 Velocity)>? tickTrace = null)
     {
         var k = constants ?? ThrowConstants.Default;
-        var gravityStep = 800f * k.GravityScale * TimeStep;
+        var gravityStep = BaseGravity * k.GravityScale * TimeStep;
         var bounces = 0;
         var time = 0f;
         Vector3? firstTouch = null;
@@ -249,13 +264,13 @@ public static class GrenadeTrajectory
                 // exactly 0.45 while 68/76 gated ground bounces damped
                 // (flatgrass could not constrain this - its wall hits were all
                 // below the speed gate).
-                var damp = speed > k.DampGateSpeed && u > 0.5f && hit.Normal.Z > 0.7f ? 1.5f - u : 1f;
+                var damp = speed > k.DampGateSpeed && u > 0.5f && hit.Normal.Z > FloorNormalZ ? 1.5f - u : 1f;
                 var vAfter = reflected * (k.Elasticity * damp);
                 trace?.Add($"t={time:F2} contact ({contact.X:F0},{contact.Y:F0},{contact.Z:F0}) normal ({hit.Normal.X:F2},{hit.Normal.Y:F2},{hit.Normal.Z:F2}) v after ({vAfter.X:F0},{vAfter.Y:F0},{vAfter.Z:F0})");
 
                 if (vAfter.Length() < k.StopSpeed)
                 {
-                    if (hit.Normal.Z > 0.7f)
+                    if (hit.Normal.Z > FloorNormalZ)
                     {
                         return new TrajectoryResult(position, bounces, time + TimeStep, Lost: false, firstTouch);
                     }
@@ -264,7 +279,7 @@ public static class GrenadeTrajectory
                     // wall, or settling onto a triangle edge); probe straight
                     // down considering only floor-like surfaces before treating
                     // it as a wall slide.
-                    if (collider.FirstHitHull(position, position + new Vector3(0f, 0f, -2f), HullHalfExtents, minNormalZ: 0.7f) is not null)
+                    if (collider.FirstHitHull(position, position + new Vector3(0f, 0f, -2f), HullHalfExtents, minNormalZ: FloorNormalZ) is not null)
                     {
                         return new TrajectoryResult(position, bounces, time + TimeStep, Lost: false, firstTouch);
                     }
@@ -320,6 +335,10 @@ public static class GrenadeTrajectory
         MathF.Abs(v.Y) < StopEpsilon ? 0f : v.Y,
         MathF.Abs(v.Z) < StopEpsilon ? 0f : v.Z);
 
+    /// <summary>
+    /// Backtracks from a step that ended inside solid to the boundary it crossed,
+    /// returning the contact point and the axis of the crossed face (0=x, 1=y, 2=z).
+    /// </summary>
     static (Vector3 Contact, int Axis) FindContact(VoxelGrid grid, Vector3 free, Vector3 solid)
     {
         var lo = 0f;

@@ -45,7 +45,13 @@ public class VoxelGridTests
     [Fact]
     public void RoundTripsThroughBinaryFormat()
     {
-        var mesh = SyntheticMeshes.FromQuads([SyntheticMeshes.Ground(0, 64, 0)]);
+        var floor = SyntheticMeshes.Ground(0, 64, 0);
+        var wall = SyntheticMeshes.WallY(0, 64, 32, 0, 64);
+        var mesh = SyntheticMeshes.FromQuads(
+            [(floor.Item1, floor.Item2, floor.Item3, floor.Item4, (byte)0),
+             (wall.Item1, wall.Item2, wall.Item3, wall.Item4, (byte)1)],
+            ["default", "ConditionallySolid"],
+            [["passbullets"], ["playerclip", "csgo_grenadeclip"]]);
         var path = Path.Combine(Path.GetTempPath(), $"smokesolver-test-{Guid.NewGuid():N}.s2geo");
         try
         {
@@ -57,10 +63,68 @@ public class VoxelGridTests
             Assert.Equal(mesh.Indices, loaded.Indices);
             Assert.Equal(mesh.TriangleAttributes, loaded.TriangleAttributes);
             Assert.Equal(mesh.AttributeNames, loaded.AttributeNames);
+            Assert.Equal(mesh.AttributeInteractAs.Length, loaded.AttributeInteractAs.Length);
+            for (var i = 0; i < mesh.AttributeInteractAs.Length; i++)
+            {
+                Assert.Equal(mesh.AttributeInteractAs[i], loaded.AttributeInteractAs[i]);
+            }
         }
         finally
         {
             File.Delete(path);
         }
+    }
+
+    [Fact]
+    public void GrenadeSolidFilterKeepsGrenadeClipAndDropsPlayerClipNpcClipAndSky()
+    {
+        // Group names are ambiguous ("ConditionallySolid" covers player clips
+        // AND grenade clips); the interaction layers carry the semantics, and
+        // the layer match is case-insensitive.
+        var mesh = new CollisionMesh
+        {
+            MapName = "synthetic",
+            GameBuildId = "test",
+            Vertices = [],
+            Indices = [],
+            TriangleAttributes = [],
+            AttributeNames = ["default", "ConditionallySolid", "ConditionallySolid", "skybox", "npc"],
+            AttributeInteractAs =
+            [
+                [],
+                ["playerclip"],
+                ["csgo_grenadeclip", "passbullets"],
+                ["Sky"],
+                ["NPCClip", "debris"],
+            ],
+        };
+        var filter = mesh.GrenadeSolidFilter();
+
+        Assert.True(filter(0));
+        Assert.False(filter(1));
+        Assert.True(filter(2));
+        Assert.False(filter(3));
+        Assert.False(filter(4));
+    }
+
+    [Fact]
+    public void GrenadeSolidFilterDropsPlayerClipGeometryFromTheVoxelGrid()
+    {
+        var floor = SyntheticMeshes.Ground(0, 256, 0);
+        var clipWall = SyntheticMeshes.WallY(0, 256, 128, 0, 128);
+        var mesh = SyntheticMeshes.FromQuads(
+            [(floor.Item1, floor.Item2, floor.Item3, floor.Item4, (byte)0),
+             (clipWall.Item1, clipWall.Item2, clipWall.Item3, clipWall.Item4, (byte)1)],
+            ["default", "ConditionallySolid"],
+            [[], ["playerclip"]]);
+        var unfiltered = VoxelGrid.Build(mesh, 16f, new Vector3(0, 0, -16), new Vector3(256, 256, 128));
+        var filtered = VoxelGrid.Build(mesh, 16f, new Vector3(0, 0, -16), new Vector3(256, 256, 128), mesh.GrenadeSolidFilter());
+
+        var (wx, wy, wz) = filtered.CellOf(new Vector3(64, 128, 64));
+        Assert.True(unfiltered.IsSolid(unfiltered.Index(wx, wy, wz)));
+        Assert.False(filtered.IsSolid(filtered.Index(wx, wy, wz)));
+
+        var (fx, fy, fz) = filtered.CellOf(new Vector3(64, 64, 0));
+        Assert.True(filtered.IsSolid(filtered.Index(fx, fy, fz)));
     }
 }

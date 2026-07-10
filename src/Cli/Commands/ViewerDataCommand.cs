@@ -44,7 +44,7 @@ public static class ViewerDataCommand
         var navAreasPath = options.GetValueOrDefault(
             "nav",
             Path.Combine(Path.GetDirectoryName(Path.GetFullPath(Require(options, "geo"))) ?? ".", $"{mesh.MapName}.navareas.json"));
-        var navAreas = JsonSerializer.Deserialize<List<NavAreaJson>>(File.ReadAllText(navAreasPath))!;
+        var navAreas = LoadJson<List<NavAreaJson>>(navAreasPath, "nav areas");
 
         const float NavCell = 64f;
         var gw = (int)MathF.Ceiling((x1 - x0) / NavCell);

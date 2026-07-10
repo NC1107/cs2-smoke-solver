@@ -40,6 +40,11 @@ Themes: the physics core is strong but wrapped in fragile I/O boundaries; the th
   Descoped from M11: the validate polling loop keeps its deliberate blocking cadence (it is a batch CLI); the protocol classes are centralized in Types.cs.
   Verified: solution build, 18/18 tests, publish, plugin redeploy + live throw, new server serving the module viewer with correct MIME types, API 400s, traversal blocked, mesh ETag.
 
+- **Batch 7 - completed 2026-07-10.**
+  Fixed: H6 (TriangleCollider SAT/DDA tests incl. the graze and start-touching cases; exact-integrator tests; golden replays streaming 5 real captures against real dust2 geometry, non-vacuous at ~1.9u), M43 partial (DeriveInitial and integrator behavior covered; LineupSolver.Solve itself remains the largest untested unit), L8 (AttributeInteractAs round-trip, GrenadeSolidFilter semantics + end-to-end, Occlusion DDA edges), L9 (rcon.py and rcon_password deleted), M42 (vendored GLTFLoader deleted), L6 (usage generated from the command table), L2 (LoadJson<T> at six sites), L3 (ExportGltf disposables), L5 (BaseGravity/FloorNormalZ/ContactBackoff constants), L7 (extraction model lookup dictionary), M44 (handled in the batch-6 viewer pass).
+  NEW finding from the test agent, fixed: the voxel stage-1 simulator lacked the exact path's floor-impact damp gate, overshooting ~120u on fast steep throws and starving VerifyExact of candidates; the damp is now applied in both integrators. Post-fix live validation: 40/40 captured, median 0.8u, 98% within 8u (better than the pre-fix baseline).
+  Tests: 18 -> 40, all green, ~1.6s wall.
+
 ## Work batches
 
 Do them roughly in order; batch 1 prevents catastrophes, batch 2 eliminates silent lies, the rest are quality-of-life in priority order.

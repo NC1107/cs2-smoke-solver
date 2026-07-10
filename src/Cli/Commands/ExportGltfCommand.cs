@@ -36,14 +36,14 @@ public static class ExportGltfCommand
     {
         var vpkPath = Path.GetFullPath(Require(options, "vpk"));
         var outPath = options.GetValueOrDefault("out", "data/de_dust2.glb");
-        var package = new SteamDatabase.ValvePak.Package();
+        using var package = new SteamDatabase.ValvePak.Package();
         package.Read(vpkPath);
         var entry = (package.Entries.TryGetValue("vwrld_c", out var worlds) ? worlds : [])
             .FirstOrDefault()
             ?? throw new FileNotFoundException($"no world resource (.vwrld_c) inside {vpkPath}");
         Console.WriteLine($"exporting {entry.GetFullPath()} with materials...");
         package.ReadEntry(entry, out var raw);
-        var resource = new ValveResourceFormat.Resource { FileName = entry.GetFullPath() };
+        using var resource = new ValveResourceFormat.Resource { FileName = entry.GetFullPath() };
         resource.Read(new MemoryStream(raw));
 
         using var loader = new ValveResourceFormat.IO.GameFileLoader(package, vpkPath);

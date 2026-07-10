@@ -36,7 +36,7 @@ public static class ValidateCommand
         // target. One report per marker.
         if (options.TryGetValue("markers", out var markersPath))
         {
-            var markers = JsonSerializer.Deserialize<Dictionary<string, float[]>>(File.ReadAllText(markersPath))!;
+            var markers = LoadJson<Dictionary<string, float[]>>(markersPath, "markers");
             if (markers.Count == 0)
             {
                 Console.Error.WriteLine("no markers in file; use !mark <name> in-game first");
@@ -61,7 +61,7 @@ public static class ValidateCommand
             options["attrs"] = "Default,default,EntitySolid";
         }
         var (mesh, _, _, attributeFilter) = LoadCommon(options);
-        var navAreas = JsonSerializer.Deserialize<List<NavAreaJson>>(File.ReadAllText(Require(options, "nav")))!;
+        var navAreas = LoadJson<List<NavAreaJson>>(Require(options, "nav"), "nav areas");
         var constants = LoadConstants(options);
 
         Vector3 target;

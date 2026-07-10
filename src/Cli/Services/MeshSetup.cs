@@ -96,7 +96,7 @@ public static class MeshSetup
         if (File.Exists(path))
         {
             Console.WriteLine($"throw constants: {path}");
-            return JsonSerializer.Deserialize<ThrowConstants>(File.ReadAllText(path))!;
+            return LoadJson<ThrowConstants>(path, "throw constants");
         }
         return ThrowConstants.Default;
     }

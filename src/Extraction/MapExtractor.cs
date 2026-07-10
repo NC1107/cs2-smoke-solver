@@ -128,6 +128,8 @@ public static class MapExtractor
         List<string> names,
         List<string[]> interactAs)
     {
+        // Lazy: built once, replacing an O(entities x entries) rescan per entity.
+        Dictionary<string, SteamDatabase.ValvePak.PackageEntry>? modelsByPath = null;
         foreach (var lumpEntry in FindEntries(package, "vents_c"))
         {
             package.ReadEntry(lumpEntry, out var lumpRaw);
@@ -141,8 +143,9 @@ public static class MapExtractor
                 {
                     continue;
                 }
-                var modelEntry = FindEntries(package, "vmdl_c")
-                    .FirstOrDefault(e => e.GetFullPath().Equals(model + "_c", StringComparison.OrdinalIgnoreCase));
+                modelsByPath ??= FindEntries(package, "vmdl_c")
+                    .ToDictionary(e => e.GetFullPath().ToLowerInvariant(), e => e);
+                modelsByPath.TryGetValue((model + "_c").ToLowerInvariant(), out var modelEntry);
                 if (modelEntry == null)
                 {
                     continue;

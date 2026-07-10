@@ -3,7 +3,7 @@
 // wraps init/sync. Raycast picks route through callbacks that main.js
 // registers, so this module never imports the orchestrator.
 
-import { state, filtered, clickClass } from "./state.js";
+import { state, filtered, clickClass, SMOKE_BLOOM_RADIUS } from "./state.js";
 import { fetchMesh } from "./api.js";
 
 const stage3d = state.stage3d;
@@ -148,6 +148,10 @@ async function init3d() {
   function resize3d() {
     const w2 = stage3d.clientWidth, h2 = stage3d.clientHeight;
     if (w2 === 0) { return; }
+    // Re-read DPR: it changes when the window moves between monitors (M45).
+    if (renderer.getPixelRatio() !== window.devicePixelRatio) {
+      renderer.setPixelRatio(window.devicePixelRatio);
+    }
     renderer.setSize(w2, h2);
     camera.aspect = w2 / h2;
     camera.updateProjectionMatrix();
@@ -156,12 +160,19 @@ async function init3d() {
 
   // WASD freecam: fly relative to the camera heading; Q/E for down/up,
   // shift for 4x speed. Works alongside orbit (drag) and pan (right-drag).
+  // Key listeners bind in start() and unbind in stop() so 2D mode never
+  // sees them; UI interactions (controls, panel, any form control) are
+  // ignored so typing or toggling never flies the camera (M13).
   const keys = new Set();
-  window.addEventListener("keydown", e => {
-    if (e.target.tagName === "INPUT" || e.target.tagName === "SELECT") { return; }
+  const onKeyDown = e => {
+    if (e.target instanceof Element &&
+        e.target.closest("#controls, .panel, input, select, button, summary, details")) {
+      return;
+    }
     keys.add(e.code);
-  });
-  window.addEventListener("keyup", e => keys.delete(e.code));
+  };
+  const onKeyUp = e => keys.delete(e.code);
+  const onBlur = () => keys.clear();
   // Reused across frames; fly() runs every frame while keys are held.
   const fwd = new THREE.Vector3(), right = new THREE.Vector3(), move = new THREE.Vector3();
   function fly() {
@@ -196,10 +207,41 @@ async function init3d() {
   three = {
     renderer, scene, camera, controls, markerGroup, targetGroup, resize3d,
     markerGeo, markerMats, targetGeo, targetMat, bloomGeo, bloomMat, lineMat,
-    start() { if (live) { return; } live = true; resize3d(); loop(); },
-    stop() { live = false; },
+    start() {
+      if (live) { return; }
+      live = true;
+      window.addEventListener("keydown", onKeyDown);
+      window.addEventListener("keyup", onKeyUp);
+      window.addEventListener("blur", onBlur);
+      resize3d();
+      loop();
+    },
+    stop() {
+      live = false;
+      keys.clear();
+      window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("keyup", onKeyUp);
+      window.removeEventListener("blur", onBlur);
+    },
   };
   return three;
+}
+
+// Re-applies palette-dependent colors after a prefers-color-scheme flip
+// (M45). The terrain's per-vertex height tint stays baked from init; a rare
+// theme flip does not justify rewriting the whole color attribute.
+export function applyTheme3d() {
+  if (!three) {
+    return;
+  }
+  const colors = state.colors;
+  three.scene.background.set(colors.surface);
+  three.markerMats.left.color.set(colors["click-left"]);
+  three.markerMats.mid.color.set(colors["click-mid"]);
+  three.markerMats.right.color.set(colors["click-right"]);
+  three.targetMat.color.set(colors.target);
+  three.bloomMat.color.set(colors.target);
+  three.lineMat.color.set(colors.accent);
 }
 
 // Children share geometries/materials owned by init3d; only geometries
@@ -225,7 +267,7 @@ export function sync3d() {
     const dot = new THREE.Mesh(targetGeo, targetMat);
     dot.position.set(target[0], target[1], tz + 6);
     targetGroup.add(dot);
-    const zoneRadius = state.filters.precision.value ? parseFloat(state.filters.precision.value) : 144;
+    const zoneRadius = state.filters.precision.value ? parseFloat(state.filters.precision.value) : SMOKE_BLOOM_RADIUS;
     const bloom = new THREE.Mesh(bloomGeo, bloomMat);
     bloom.scale.setScalar(zoneRadius);
     bloom.position.copy(dot.position);

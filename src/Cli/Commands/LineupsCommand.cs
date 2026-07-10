@@ -117,7 +117,7 @@ public static class LineupsCommand
             Console.Error.WriteLine($"nav areas not found at {navAreasPath}; run extract first (or pass --nav)");
             return 2;
         }
-        var areas = JsonSerializer.Deserialize<List<NavAreaJson>>(File.ReadAllText(navAreasPath))!;
+        var areas = LoadJson<List<NavAreaJson>>(navAreasPath, "nav areas");
         var navOrigins = LineupSolver.OriginsFromNavAreas(
             grid,
             [.. areas.Select(a => a.Corners)],

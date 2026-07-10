@@ -3,7 +3,7 @@
 // actions (set target, select, run query) go through callbacks that main.js
 // registers, so this module never imports the orchestrator.
 
-import { state, filtered, typeShort, clickShort, clickClass } from "./state.js";
+import { state, filtered, typeShort, clickShort, clickClass, esc, SMOKE_BLOOM_RADIUS, PICK_RADIUS_PX, HEAT_CELL } from "./state.js";
 
 const canvas = state.canvas;
 const ctx = canvas.getContext("2d");
@@ -123,7 +123,7 @@ export function draw() {
   if (state.target) {
     // Circle = the landing zone in play: the precision filter radius when
     // set, otherwise the settled smoke bloom radius (visual estimate).
-    const zoneRadius = state.filters.precision.value ? parseFloat(state.filters.precision.value) : 144;
+    const zoneRadius = state.filters.precision.value ? parseFloat(state.filters.precision.value) : SMOKE_BLOOM_RADIUS;
     ctx.strokeStyle = colors.target;
     ctx.fillStyle = colors.target;
     ctx.lineWidth = 2 / scale;
@@ -138,14 +138,21 @@ export function draw() {
     ctx.fill();
   }
   if (state.heatOn && state.result && state.result.coverage) {
-    // Coverage heat map: green where at least one throw reaches the target,
-    // red where a standable origin was evaluated and nothing reaches it.
-    // Red cells adjacent to green regions are candidates for sim gaps.
-    const CELL = 24;
+    // Coverage heat map, colorblind-safe (M14): blue fill where at least one
+    // throw reaches the target (brighter = more options), orange outline with
+    // no fill where a standable origin was evaluated and nothing reaches it.
+    // Outlined cells adjacent to filled regions are candidates for sim gaps.
+    ctx.lineWidth = Math.min(1.5 / scale, HEAT_CELL / 6);
     for (const [hx, hy, count] of state.result.coverage) {
-      ctx.fillStyle = count > 0 ? colors["heat-ok"] : colors["heat-none"];
-      ctx.globalAlpha = count > 0 ? 0.25 + 0.5 * Math.min(count, 40) / 40 : 0.45;
-      ctx.fillRect(hx - CELL / 2, -hy - CELL / 2, CELL, CELL);
+      if (count > 0) {
+        ctx.fillStyle = colors["heat-ok"];
+        ctx.globalAlpha = 0.25 + 0.5 * Math.min(count, 40) / 40;
+        ctx.fillRect(hx - HEAT_CELL / 2, -hy - HEAT_CELL / 2, HEAT_CELL, HEAT_CELL);
+      } else {
+        ctx.strokeStyle = colors["heat-none"];
+        ctx.globalAlpha = 0.7;
+        ctx.strokeRect(hx - HEAT_CELL / 2 + 1.5, -hy - HEAT_CELL / 2 + 1.5, HEAT_CELL - 3, HEAT_CELL - 3);
+      }
     }
     ctx.globalAlpha = 1;
   }
@@ -237,7 +244,7 @@ export function initMap2d(cb) {
     if (!state.target || state.heatOn) {
       return;
     }
-    const bestIdx = nearestLineup(wx, wy, 12 / scale);
+    const bestIdx = nearestLineup(wx, wy, PICK_RADIUS_PX / scale);
     if (bestIdx >= 0) {
       callbacks.onSelect(bestIdx);
       return;
@@ -258,7 +265,7 @@ export function initMap2d(cb) {
     // Hover details: nearest marker within grab distance shows a tooltip and
     // highlights; the map itself is the lineup list.
     const tip = document.getElementById("tip");
-    const best = state.result && !state.heatOn && !panning ? nearestLineup(wx, wy, 12 / scale) : -1;
+    const best = state.result && !state.heatOn && !panning ? nearestLineup(wx, wy, PICK_RADIUS_PX / scale) : -1;
     if (best !== state.hovered) {
       state.hovered = best;
       scheduleDraw();
@@ -268,7 +275,7 @@ export function initMap2d(cb) {
       tip.innerHTML =
         `<b class="${clickClass(l.strength)}">${clickShort(l.strength)}</b> · ${typeShort[l.type]}` +
         ` · ${l.Bounces} bounce${l.Bounces === 1 ? "" : "s"} · ${l.flightTime.toFixed(1)}s · ${(l.stability * 100).toFixed(0)}%<br>` +
-        `${l.how}<br><span class="cmd2">${l.console}</span><br>` +
+        `${esc(l.how)}<br><span class="cmd2">${esc(l.console)}</span><br>` +
         `<span class="cmd2">rest ${l.rest[0].toFixed(0)}, ${l.rest[1].toFixed(0)} · click marker to pin</span>`;
       tip.style.display = "block";
       const stageRect = canvas.parentElement.getBoundingClientRect();
@@ -276,6 +283,8 @@ export function initMap2d(cb) {
       let ty = e.clientY - stageRect.top + 14;
       if (tx + tip.offsetWidth > stageRect.width - 8) { tx = e.clientX - stageRect.left - tip.offsetWidth - 10; }
       if (ty + tip.offsetHeight > stageRect.height - 8) { ty = e.clientY - stageRect.top - tip.offsetHeight - 10; }
+      tx = Math.max(8, tx);
+      ty = Math.max(8, ty);
       tip.style.left = tx + "px";
       tip.style.top = ty + "px";
       canvas.style.cursor = "pointer";
@@ -303,5 +312,4 @@ export function initMap2d(cb) {
   canvas.addEventListener("dblclick", resetView);
 
   new ResizeObserver(resize).observe(canvas);
-  matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => { readColors(); recolorRadar(); draw(); });
 }

@@ -402,7 +402,7 @@ public sealed class TriangleCollider
         var stepY = direction.Y > 0 ? 1 : direction.Y < 0 ? -1 : 0;
         var stepZ = direction.Z > 0 ? 1 : direction.Z < 0 ? -1 : 0;
         float NextBoundary(int cell, int step, float origin) =>
-            _origin.X * 0 + origin + (cell + (step > 0 ? 1 : 0)) * _cellSize;
+            origin + (cell + (step > 0 ? 1 : 0)) * _cellSize;
         var tDeltaX = stepX != 0 ? _cellSize / MathF.Abs(direction.X) : float.MaxValue;
         var tDeltaY = stepY != 0 ? _cellSize / MathF.Abs(direction.Y) : float.MaxValue;
         var tDeltaZ = stepZ != 0 ? _cellSize / MathF.Abs(direction.Z) : float.MaxValue;

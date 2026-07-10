@@ -11,12 +11,13 @@ export async function loadMapData() {
 // The /api/lineup POST. HTTP failures resolve to `{ error }` carrying the
 // exact user-facing status line (503 means the serve command lacks data
 // flags); network and JSON-parse failures reject so the caller's catch shows
-// `error: <message>` as before.
-export async function runQuery(body) {
+// `error: <message>` as before. Aborting `signal` rejects with AbortError.
+export async function runQuery(body, signal) {
   const res = await fetch("/api/lineup", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
+    signal,
   });
   if (!res.ok) {
     return { error: res.status === 503 ? "no API: serve needs --geo/--nav/--attrs" : `error ${res.status}` };

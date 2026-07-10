@@ -67,6 +67,25 @@ public static class CliParsing
         return (v, parts.Length > 2);
     }
 
+    // User-editable JSON inputs (nav areas, markers, constants) get a named
+    // error instead of a NullReferenceException three stack frames later.
+    public static T LoadJson<T>(string path, string what)
+    {
+        if (!File.Exists(path))
+        {
+            throw new FileNotFoundException($"{what} file not found: {path}");
+        }
+        try
+        {
+            return JsonSerializer.Deserialize<T>(File.ReadAllText(path))
+                ?? throw new InvalidDataException($"{path} is not a valid {what} file (null document)");
+        }
+        catch (JsonException e)
+        {
+            throw new InvalidDataException($"{path} is not a valid {what} file: {e.Message}");
+        }
+    }
+
     public static string Require(Dictionary<string, string> options, string key) =>
         options.TryGetValue(key, out var value) ? value : throw new ArgumentException($"missing required option --{key}");
 
