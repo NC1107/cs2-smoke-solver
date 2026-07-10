@@ -155,7 +155,7 @@ public static class LineupSolver
             {
                 return;
             }
-            var best = baseResult!;
+            var best = baseResult!.Value;
             verified.Add(lineup with
             {
                 RestPoint = InZone(grid, zoneCrossings, best.RestPoint) ? best.RestPoint : lineup.RestPoint,

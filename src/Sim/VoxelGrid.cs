@@ -57,6 +57,10 @@ public sealed class VoxelGrid
 
     void SetSolid(int index) => _solid[index >> 6] |= 1UL << (index & 63);
 
+    // Thread-safe variant for the parallel build: concurrent |= on the same
+    // 64-bit word would lose bits without the interlocked OR.
+    void SetSolidAtomic(int index) => Interlocked.Or(ref _solid[index >> 6], 1UL << (index & 63));
+
     public (int X, int Y, int Z) CellOf(Vector3 p) => (
         (int)MathF.Floor((p.X - Origin.X) / VoxelSize),
         (int)MathF.Floor((p.Y - Origin.Y) / VoxelSize),
@@ -97,11 +101,15 @@ public sealed class VoxelGrid
         var verts = mesh.Vertices;
         var indices = mesh.Indices;
         var halfSize = new Vector3(voxelSize / 2);
-        for (var t = 0; t < indices.Length; t += 3)
+        // Voxelization dominates command startup and every triangle is
+        // independent; solid bits are set with an interlocked OR so ranges
+        // can run in parallel.
+        Parallel.For(0, indices.Length / 3, ti =>
         {
+            var t = ti * 3;
             if (attributeFilter != null && !attributeFilter(mesh.TriangleAttributes[t / 3]))
             {
-                continue;
+                return;
             }
             var v0 = new Vector3(verts[indices[t] * 3], verts[indices[t] * 3 + 1], verts[indices[t] * 3 + 2]);
             var v1 = new Vector3(verts[indices[t + 1] * 3], verts[indices[t + 1] * 3 + 1], verts[indices[t + 1] * 3 + 2]);
@@ -132,12 +140,12 @@ public sealed class VoxelGrid
                         var center = grid.CellCenter(x, y, z);
                         if (TriBoxOverlap.Test(center, halfSize, v0, v1, v2))
                         {
-                            grid.SetSolid(index);
+                            grid.SetSolidAtomic(index);
                         }
                     }
                 }
             }
-        }
+        });
         return grid;
     }
 }

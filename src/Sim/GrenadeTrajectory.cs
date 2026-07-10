@@ -15,9 +15,11 @@ public enum ThrowType
 /// Strength maps the mouse buttons: 1 = left, 0.5 = left+right, 0 = right.
 /// Each click's velocity multiplier is a calibrated constant (ThrowConstants).
 /// </summary>
-public sealed record ThrowSpec(Vector3 EyePosition, float YawDeg, float PitchDeg, ThrowType Type, float Strength = 1f);
+// Struct: allocated once per simulated throw, and solves run millions of
+// simulations inside Parallel.ForEach - heap records were pure gen0 churn.
+public readonly record struct ThrowSpec(Vector3 EyePosition, float YawDeg, float PitchDeg, ThrowType Type, float Strength = 1f);
 
-public sealed record TrajectoryResult(Vector3 RestPoint, int Bounces, float FlightTime, bool Lost, Vector3? FirstTouch = null);
+public readonly record struct TrajectoryResult(Vector3 RestPoint, int Bounces, float FlightTime, bool Lost, Vector3? FirstTouch = null);
 
 /// <summary>
 /// Physics constants for grenade flight, extracted so calibration can fit them.

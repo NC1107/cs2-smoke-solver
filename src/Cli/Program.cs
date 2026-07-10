@@ -732,12 +732,35 @@ static int Serve(Dictionary<string, string> options)
 
     var listener = new System.Net.HttpListener();
     listener.Prefixes.Add($"http://localhost:{port}/");
-    listener.Start();
-    Console.WriteLine($"serving {root} at http://localhost:{port}/  (ctrl-c to stop)");
-
-    while (true)
+    try
     {
-        var context = listener.GetContext();
+        listener.Start();
+    }
+    catch (System.Net.HttpListenerException e)
+    {
+        Console.Error.WriteLine($"error: cannot listen on port {port} ({e.Message}) - is another serve instance running? Use --port to pick a different one.");
+        return 1;
+    }
+    Console.WriteLine($"serving {root} at http://localhost:{port}/  (ctrl-c to stop)");
+    var stopping = false;
+    Console.CancelKeyPress += (_, e) =>
+    {
+        e.Cancel = true;
+        stopping = true;
+        listener.Stop();
+    };
+
+    while (!stopping)
+    {
+        System.Net.HttpListenerContext context;
+        try
+        {
+            context = listener.GetContext();
+        }
+        catch (Exception) when (stopping)
+        {
+            break; // listener stopped by ctrl-c
+        }
         try
         {
             HandleRequest(context, root, mesh, attributeFilter, navAreas, serveConstants, options.GetValueOrDefault("attrs", ""));
@@ -756,6 +779,8 @@ static int Serve(Dictionary<string, string> options)
             }
         }
     }
+    listener.Close();
+    return 0;
 }
 
 static byte[] MeshPayload(CollisionMesh mesh, Func<byte, bool>? attributeFilter)
@@ -875,8 +900,13 @@ static void HandleRequest(
         ".css" => "text/css",
         _ => "application/octet-stream",
     };
-    var bytes2 = File.ReadAllBytes(path);
-    context.Response.OutputStream.Write(bytes2);
+    // Stream instead of buffering: data/ can contain multi-hundred-MB
+    // exports, and a full ReadAllBytes spiked process memory per request.
+    using (var fs = File.OpenRead(path))
+    {
+        context.Response.ContentLength64 = fs.Length;
+        fs.CopyTo(context.Response.OutputStream);
+    }
     context.Response.Close();
 }
 
@@ -1111,7 +1141,8 @@ static TargetSolve SolveForTarget(
         [.. coverage.Select(kv => new[] { kv.Key.X, kv.Key.Y, kv.Value })],
         lineups,
         min,
-        max);
+        max,
+        collider);
 }
 
 static Vector3? SnapTargetToGround(VoxelGrid grid, int x, int y)
@@ -1444,8 +1475,7 @@ static int BestLineup(Dictionary<string, string> options)
     var best = solve.Lineups
         .OrderBy(l => Vector3.Distance(l.Feet, near) + TypePenalty(l.Type))
         .First();
-    var aimCollider = new TriangleCollider(mesh, solve.RegionMin, solve.RegionMax, mesh.GrenadeSolidFilter());
-    var aim = AimReferencePoint(aimCollider, best.Feet, best.Type, best.PitchDeg, best.YawDeg);
+    var aim = AimReferencePoint(solve.Collider, best.Feet, best.Type, best.PitchDeg, best.YawDeg);
     var result = new
     {
         found = true,
@@ -1511,20 +1541,29 @@ static int PointLineup(Dictionary<string, string> options)
     var samples = new List<(float Err, ThrowType Type, float Strength, float Pitch, float Yaw, Vector3 RestPos)>();
     void CoarseSweep(float yawRange, float yawStep)
     {
+        // Independent simulations over a read-only collider: fan the
+        // (type, strength, yaw) columns across cores and merge.
+        var columns = new List<(ThrowType Type, float Strength, float Yaw)>();
         foreach (var type in types)
         {
             foreach (var strength in strengths)
             {
                 for (var yaw = baseYaw - yawRange; yaw <= baseYaw + yawRange; yaw += yawStep)
                 {
-                    for (var pitch = -86f; pitch <= 2f; pitch += 4f)
-                    {
-                        var s = Simulate(type, strength, pitch, yaw);
-                        samples.Add((s.Err, type, strength, pitch, yaw, s.RestPos));
-                    }
+                    columns.Add((type, strength, yaw));
                 }
             }
         }
+        var merged = new System.Collections.Concurrent.ConcurrentBag<(float, ThrowType, float, float, float, Vector3)>();
+        Parallel.ForEach(columns, column =>
+        {
+            for (var pitch = -86f; pitch <= 2f; pitch += 4f)
+            {
+                var s = Simulate(column.Type, column.Strength, pitch, column.Yaw);
+                merged.Add((s.Err, column.Type, column.Strength, pitch, column.Yaw, s.RestPos));
+            }
+        });
+        samples.AddRange(merged);
     }
 
     // Bounce landscapes are non-convex: refining only the single best coarse
@@ -1543,7 +1582,8 @@ static int PointLineup(Dictionary<string, string> options)
             }
             accepted.Add(c);
         }
-        foreach (var c in accepted)
+        var refined = new System.Collections.Concurrent.ConcurrentBag<(float Err, ThrowType Type, float Strength, float Pitch, float Yaw, Vector3 RestPos)>();
+        Parallel.ForEach(accepted, c =>
         {
             var local = c;
             foreach (var (range, step) in new[] { (2.2f, 0.4f), (0.45f, 0.08f) })
@@ -1560,6 +1600,10 @@ static int PointLineup(Dictionary<string, string> options)
                     }
                 }
             }
+            refined.Add(local);
+        });
+        foreach (var local in refined)
+        {
             if (local.Err + TypePenalty(local.Type) < best.Err + TypePenalty(best.Type))
             {
                 best = local;
@@ -1691,7 +1735,7 @@ static int Validate(Dictionary<string, string> options)
         return 1;
     }
 
-    var collider = new TriangleCollider(mesh, solve.RegionMin, solve.RegionMax, mesh.GrenadeSolidFilter());
+    var collider = solve.Collider;
     var plans = lineups.Select((l, i) =>
     {
         var eye = l.Feet + new Vector3(0, 0, GrenadeTrajectory.EyeHeight(l.Type));
@@ -2134,5 +2178,6 @@ sealed record TargetSolve(
     List<int[]> Coverage,
     List<Lineup> Lineups,
     Vector3 RegionMin,
-    Vector3 RegionMax);
+    Vector3 RegionMax,
+    TriangleCollider Collider);
 

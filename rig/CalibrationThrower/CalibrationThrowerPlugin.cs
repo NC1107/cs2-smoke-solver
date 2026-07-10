@@ -96,6 +96,16 @@ public class CalibrationThrowerPlugin : BasePlugin
         RegisterListener<Listeners.OnMapStart>(OnMapStart);
         _writerThread = new Thread(DrainWriteQueue) { IsBackground = true, Name = "calib-capture-writer" };
         _writerThread.Start();
+        try
+        {
+            var settingsPath = Path.Combine(CalibDir, "settings.json");
+            if (File.Exists(settingsPath))
+            {
+                var settings = JsonSerializer.Deserialize<JsonElement>(File.ReadAllText(settingsPath));
+                _showTestSmokes = settings.TryGetProperty("showTestSmokes", out var sEl) && sEl.GetBoolean();
+            }
+        }
+        catch (Exception) { }
         Server.PrintToConsole($"[CalibrationThrower] watching {RequestPath}, writing to {OutputPath}");
         AddTimer(6.0f, RunSignatureSelfTest);
         if (hotReload)
@@ -208,6 +218,15 @@ public class CalibrationThrowerPlugin : BasePlugin
         Server.ExecuteCommand("mp_freezetime 0; mp_roundtime 60; mp_roundtime_defuse 60; mp_startmoney 16000; mp_maxmoney 16000; mp_buy_anywhere 1; mp_buytime 999999");
         Server.ExecuteCommand("mp_warmup_end; mp_restartgame 1");
         Server.PrintToConsole("[CalibrationThrower] practice settings applied");
+    }
+
+    // mp_restartgame destroys beam entities; redraw the saved markers once
+    // the new round has settled.
+    [GameEventHandler]
+    public HookResult OnRoundStart(CounterStrikeSharp.API.Core.EventRoundStart ev, GameEventInfo info)
+    {
+        AddTimer(1.0f, RedrawMarkerBeams);
+        return HookResult.Continue;
     }
 
     void OnTick()
@@ -511,13 +530,19 @@ public class CalibrationThrowerPlugin : BasePlugin
         });
     }
 
+    // Scratch state reused across ticks: fresh HashSet/List allocations every
+    // tick were steady gen0 churn on the server's most latency-sensitive path.
+    readonly HashSet<uint> _aliveScratch = [];
+    readonly List<uint> _deadScratch = [];
+
     void TrackProjectiles()
     {
         if (_tracked.Count == 0)
         {
             return;
         }
-        var alive = new HashSet<uint>();
+        var alive = _aliveScratch;
+        alive.Clear();
         foreach (var projectile in Utilities.FindAllEntitiesByDesignerName<CSmokeGrenadeProjectile>("smokegrenade_projectile"))
         {
             if (!projectile.IsValid || !_tracked.TryGetValue(projectile.Index, out var track))
@@ -552,8 +577,17 @@ public class CalibrationThrowerPlugin : BasePlugin
             }
         }
 
-        foreach (var (index, track) in _tracked.Where(t => !alive.Contains(t.Key)).ToList())
+        _deadScratch.Clear();
+        foreach (var kv in _tracked)
         {
+            if (!alive.Contains(kv.Key))
+            {
+                _deadScratch.Add(kv.Key);
+            }
+        }
+        foreach (var index in _deadScratch)
+        {
+            var track = _tracked[index];
             _tracked.Remove(index);
             FlushRecord(track);
         }
@@ -664,7 +698,9 @@ public class CalibrationThrowerPlugin : BasePlugin
         var markers = LoadMarkers();
         markers[name] = [pawn.AbsOrigin.X, pawn.AbsOrigin.Y, pawn.AbsOrigin.Z];
         SaveMarkers(markers);
-        DrawMarkerBeam(markers[name]);
+        // Full redraw: re-marking an existing name must not leave the old
+        // pillar standing at the previous location.
+        RedrawMarkerBeams();
         player!.PrintToChat($" \u0004[calib]\u0001 marked \u0010{name}\u0001 at ({pawn.AbsOrigin.X:F0},{pawn.AbsOrigin.Y:F0},{pawn.AbsOrigin.Z:F0}) - {markers.Count} total");
     }
 
@@ -901,6 +937,12 @@ public class CalibrationThrowerPlugin : BasePlugin
         {
             _showTestSmokes = !_showTestSmokes;
         }
+        try
+        {
+            File.WriteAllText(Path.Combine(CalibDir, "settings.json"),
+                JsonSerializer.Serialize(new { showTestSmokes = _showTestSmokes }));
+        }
+        catch (IOException) { }
         var msg = _showTestSmokes
             ? " \u0004[calib]\u0001 test smokes: \u0010visible\u0001 (bloom and linger like real throws)"
             : " \u0004[calib]\u0001 test smokes: \u0010hidden\u0001 (recorded and cleared at bloom)";

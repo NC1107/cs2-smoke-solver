@@ -12,7 +12,11 @@ public sealed class TriangleCollider
 {
     readonly float[] _vertices;
     readonly int[] _indices;
-    readonly List<int>[] _cells;
+    // CSR layout: triangles of cell i live in _cellTris[_cellStart[i].._cellStart[i+1]].
+    // Flat arrays keep the innermost query loop on contiguous memory; per-cell
+    // List<int> objects scattered indices across the heap.
+    readonly int[] _cellStart;
+    readonly int[] _cellTris;
     readonly Vector3 _origin;
     readonly float _cellSize;
     readonly int _nx;
@@ -28,14 +32,13 @@ public sealed class TriangleCollider
         _nx = Math.Max(1, (int)MathF.Ceiling((regionMax.X - regionMin.X) / cellSize));
         _ny = Math.Max(1, (int)MathF.Ceiling((regionMax.Y - regionMin.Y) / cellSize));
         _nz = Math.Max(1, (int)MathF.Ceiling((regionMax.Z - regionMin.Z) / cellSize));
-        _cells = new List<int>[(long)_nx * _ny * _nz];
+        var cellCount = _nx * _ny * _nz;
+        _cellStart = new int[cellCount + 1];
 
-        for (var t = 0; t < _indices.Length; t += 3)
+        // Two passes build the CSR directly: count entries per cell, prefix-sum
+        // into offsets, then place triangle ids.
+        void ForEachCoveredCell(int t, Action<int> visit)
         {
-            if (attributeFilter != null && !attributeFilter(mesh.TriangleAttributes[t / 3]))
-            {
-                continue;
-            }
             var (a, b, c) = (Vertex(_indices[t]), Vertex(_indices[t + 1]), Vertex(_indices[t + 2]));
             var triMin = Vector3.Min(a, Vector3.Min(b, c));
             var triMax = Vector3.Max(a, Vector3.Max(b, c));
@@ -43,7 +46,7 @@ public sealed class TriangleCollider
                 triMax.Y < regionMin.Y || triMin.Y > regionMax.Y ||
                 triMax.Z < regionMin.Z || triMin.Z > regionMax.Z)
             {
-                continue;
+                return;
             }
             var (x0, y0, z0) = CellOf(triMin);
             var (x1, y1, z1) = CellOf(triMax);
@@ -53,11 +56,33 @@ public sealed class TriangleCollider
                 {
                     for (var x = Math.Max(x0, 0); x <= Math.Min(x1, _nx - 1); x++)
                     {
-                        var index = (z * _ny + y) * _nx + x;
-                        (_cells[index] ??= []).Add(t);
+                        visit((z * _ny + y) * _nx + x);
                     }
                 }
             }
+        }
+
+        for (var t = 0; t < _indices.Length; t += 3)
+        {
+            if (attributeFilter != null && !attributeFilter(mesh.TriangleAttributes[t / 3]))
+            {
+                continue;
+            }
+            ForEachCoveredCell(t, index => _cellStart[index + 1]++);
+        }
+        for (var i = 0; i < cellCount; i++)
+        {
+            _cellStart[i + 1] += _cellStart[i];
+        }
+        _cellTris = new int[_cellStart[cellCount]];
+        var fill = new int[cellCount];
+        for (var t = 0; t < _indices.Length; t += 3)
+        {
+            if (attributeFilter != null && !attributeFilter(mesh.TriangleAttributes[t / 3]))
+            {
+                continue;
+            }
+            ForEachCoveredCell(t, index => _cellTris[_cellStart[index] + fill[index]++] = t);
         }
     }
 
@@ -118,14 +143,10 @@ public sealed class TriangleCollider
             {
                 for (var x = Math.Max(x0, 0); x <= Math.Min(x1, _nx - 1); x++)
                 {
-                    var bucket = _cells[(z * _ny + y) * _nx + x];
-                    if (bucket == null)
+                    var cell = (z * _ny + y) * _nx + x;
+                    for (var i = _cellStart[cell]; i < _cellStart[cell + 1]; i++)
                     {
-                        continue;
-                    }
-                    foreach (var t in bucket)
-                    {
-                        if (SweptBoxTriangle(from, direction, halfExtents, t) is { } hit
+                        if (SweptBoxTriangle(from, direction, halfExtents, _cellTris[i]) is { } hit
                             && hit.T < bestT
                             && hit.Normal.Z >= minNormalZ)
                         {
@@ -154,14 +175,10 @@ public sealed class TriangleCollider
             {
                 for (var x = Math.Max(x0, 0); x <= Math.Min(x1, _nx - 1); x++)
                 {
-                    var bucket = _cells[(z * _ny + y) * _nx + x];
-                    if (bucket == null)
+                    var cell = (z * _ny + y) * _nx + x;
+                    for (var i = _cellStart[cell]; i < _cellStart[cell + 1]; i++)
                     {
-                        continue;
-                    }
-                    foreach (var t in bucket)
-                    {
-                        if (BoxTriangleOverlap(center, halfExtents, t))
+                        if (BoxTriangleOverlap(center, halfExtents, _cellTris[i]))
                         {
                             return true;
                         }
@@ -315,28 +332,113 @@ public sealed class TriangleCollider
         var bestT = float.MaxValue;
         var bestNormal = Vector3.Zero;
 
-        // Walk the segment's cells; a short integration step spans at most a few.
         var (x0, y0, z0) = CellOf(from);
         var (x1, y1, z1) = CellOf(to);
-        for (var z = Math.Max(Math.Min(z0, z1), 0); z <= Math.Min(Math.Max(z0, z1), _nz - 1); z++)
+        var span = Math.Abs(x1 - x0) + Math.Abs(y1 - y0) + Math.Abs(z1 - z0);
+        if (span <= 3)
         {
-            for (var y = Math.Max(Math.Min(y0, y1), 0); y <= Math.Min(Math.Max(y0, y1), _ny - 1); y++)
+            // Per-tick integration steps cover at most a few cells; the tiny
+            // AABB walk beats DDA setup cost there.
+            for (var z = Math.Max(Math.Min(z0, z1), 0); z <= Math.Min(Math.Max(z0, z1), _nz - 1); z++)
             {
-                for (var x = Math.Max(Math.Min(x0, x1), 0); x <= Math.Min(Math.Max(x0, x1), _nx - 1); x++)
+                for (var y = Math.Max(Math.Min(y0, y1), 0); y <= Math.Min(Math.Max(y0, y1), _ny - 1); y++)
                 {
-                    var bucket = _cells[(z * _ny + y) * _nx + x];
-                    if (bucket == null)
+                    for (var x = Math.Max(Math.Min(x0, x1), 0); x <= Math.Min(Math.Max(x0, x1), _nx - 1); x++)
                     {
-                        continue;
-                    }
-                    foreach (var t in bucket)
-                    {
-                        if (HitTriangle(from, direction, t) is { } hit && hit.T < bestT)
+                        var cell = (z * _ny + y) * _nx + x;
+                        for (var i = _cellStart[cell]; i < _cellStart[cell + 1]; i++)
                         {
-                            (bestT, bestNormal) = hit;
+                            if (HitTriangle(from, direction, _cellTris[i]) is { } hit && hit.T < bestT)
+                            {
+                                (bestT, bestNormal) = hit;
+                            }
                         }
                     }
                 }
+            }
+            return bestT <= 1f ? (bestT, bestNormal) : null;
+        }
+
+        // Long rays (aim references, radar probes): Amanatides-Woo DDA visits
+        // only the cells on the line - O(n) instead of O(n^3) over the AABB -
+        // and stops as soon as the best hit precedes the next cell boundary.
+        var gridMin = _origin;
+        var gridMax = _origin + new Vector3(_nx, _ny, _nz) * _cellSize;
+        var tMin = 0f;
+        var tMax = 1f;
+        for (var axis = 0; axis < 3; axis++)
+        {
+            var d = axis == 0 ? direction.X : axis == 1 ? direction.Y : direction.Z;
+            var o = axis == 0 ? from.X : axis == 1 ? from.Y : from.Z;
+            var lo = axis == 0 ? gridMin.X : axis == 1 ? gridMin.Y : gridMin.Z;
+            var hi = axis == 0 ? gridMax.X : axis == 1 ? gridMax.Y : gridMax.Z;
+            if (MathF.Abs(d) < 1e-9f)
+            {
+                if (o < lo || o > hi)
+                {
+                    return null;
+                }
+                continue;
+            }
+            var t0 = (lo - o) / d;
+            var t1 = (hi - o) / d;
+            if (t0 > t1)
+            {
+                (t0, t1) = (t1, t0);
+            }
+            tMin = MathF.Max(tMin, t0);
+            tMax = MathF.Min(tMax, t1);
+            if (tMin > tMax)
+            {
+                return null;
+            }
+        }
+
+        var start = from + direction * tMin;
+        var cx = Math.Clamp((int)MathF.Floor((start.X - _origin.X) / _cellSize), 0, _nx - 1);
+        var cy = Math.Clamp((int)MathF.Floor((start.Y - _origin.Y) / _cellSize), 0, _ny - 1);
+        var cz = Math.Clamp((int)MathF.Floor((start.Z - _origin.Z) / _cellSize), 0, _nz - 1);
+        var stepX = direction.X > 0 ? 1 : direction.X < 0 ? -1 : 0;
+        var stepY = direction.Y > 0 ? 1 : direction.Y < 0 ? -1 : 0;
+        var stepZ = direction.Z > 0 ? 1 : direction.Z < 0 ? -1 : 0;
+        float NextBoundary(int cell, int step, float origin) =>
+            _origin.X * 0 + origin + (cell + (step > 0 ? 1 : 0)) * _cellSize;
+        var tDeltaX = stepX != 0 ? _cellSize / MathF.Abs(direction.X) : float.MaxValue;
+        var tDeltaY = stepY != 0 ? _cellSize / MathF.Abs(direction.Y) : float.MaxValue;
+        var tDeltaZ = stepZ != 0 ? _cellSize / MathF.Abs(direction.Z) : float.MaxValue;
+        var tNextX = stepX != 0 ? (NextBoundary(cx, stepX, _origin.X) - from.X) / direction.X : float.MaxValue;
+        var tNextY = stepY != 0 ? (NextBoundary(cy, stepY, _origin.Y) - from.Y) / direction.Y : float.MaxValue;
+        var tNextZ = stepZ != 0 ? (NextBoundary(cz, stepZ, _origin.Z) - from.Z) / direction.Z : float.MaxValue;
+
+        var tCellEnter = tMin;
+        while (tCellEnter <= tMax)
+        {
+            if (bestT < tCellEnter)
+            {
+                break; // the recorded hit precedes every cell still ahead
+            }
+            var cell = (cz * _ny + cy) * _nx + cx;
+            for (var i = _cellStart[cell]; i < _cellStart[cell + 1]; i++)
+            {
+                if (HitTriangle(from, direction, _cellTris[i]) is { } hit && hit.T < bestT)
+                {
+                    (bestT, bestNormal) = hit;
+                }
+            }
+            if (tNextX <= tNextY && tNextX <= tNextZ)
+            {
+                tCellEnter = tNextX; cx += stepX; tNextX += tDeltaX;
+                if (cx < 0 || cx >= _nx) { break; }
+            }
+            else if (tNextY <= tNextZ)
+            {
+                tCellEnter = tNextY; cy += stepY; tNextY += tDeltaY;
+                if (cy < 0 || cy >= _ny) { break; }
+            }
+            else
+            {
+                tCellEnter = tNextZ; cz += stepZ; tNextZ += tDeltaZ;
+                if (cz < 0 || cz >= _nz) { break; }
             }
         }
         return bestT <= 1f ? (bestT, bestNormal) : null;

@@ -335,10 +335,6 @@
 </div>
 </div>
 
-<script src="viewer/lib/three.min.js"></script>
-<script src="viewer/lib/OrbitControls.js"></script>
-<script src="viewer/lib/GLTFLoader.js"></script>
-
 <div class="stage">
   <canvas id="map" aria-label="Top-down map; click to set a smoke target and throw origins"></canvas>
   <div id="stage3d" style="position:absolute; inset:0; display:none"></div>
@@ -478,6 +474,16 @@ give weapon_smokegrenade<button data-copy="cmd-setup">copy</button></div>
       (!filters.precision.value || Math.hypot(l.rest[0] - t[0], l.rest[1] - t[1]) <= parseFloat(filters.precision.value)));
   }
 
+  // Nearest visible marker to a world-space point, or -1 if none within maxDist.
+  function nearestLineup(wx, wy, maxDist) {
+    let best = -1, bestD = maxDist;
+    for (const l of filtered()) {
+      const d = Math.hypot(l.feet[0] - wx, l.feet[1] - wy);
+      if (d < bestD) { bestD = d; best = l._idx; }
+    }
+    return best;
+  }
+
   function resetView() {
     const w = canvas.clientWidth, h = canvas.clientHeight;
     scale = Math.min(w / (RX1 - RX0), h / (RY1 - RY0)) * 0.97;
@@ -486,6 +492,16 @@ give weapon_smokegrenade<button data-copy="cmd-setup">copy</button></div>
     draw();
   }
   const worldOf = (px, py) => [(px - ox) / scale, -((py - oy) / scale)];
+
+  // Coalesces bursts of pointer/wheel events into one redraw per frame.
+  let drawQueued = false;
+  function scheduleDraw() {
+    if (drawQueued) {
+      return;
+    }
+    drawQueued = true;
+    requestAnimationFrame(() => { drawQueued = false; draw(); });
+  }
 
   function draw() {
     const w = canvas.clientWidth, h = canvas.clientHeight;
@@ -534,7 +550,7 @@ give weapon_smokegrenade<button data-copy="cmd-setup">copy</button></div>
     }
     const shown = heatOn ? [] : filtered();
     shown.forEach(l => {
-      const idx = result.lineups.indexOf(l);
+      const idx = l._idx;
       const isSelected = idx === selected || idx === hovered;
       const clickColor = colors[`click-${clickClass(l.strength)}`] || colors.accent;
       if (isSelected) {
@@ -644,6 +660,7 @@ give weapon_smokegrenade<button data-copy="cmd-setup">copy</button></div>
         statusEl.textContent = `none from there (${next.origins} spots); try another`;
         return;
       }
+      next.lineups.forEach((l, i) => { l._idx = i; });
       result = next;
       selected = -1;
       document.getElementById("heat").disabled = !next.coverage;
@@ -765,12 +782,7 @@ give weapon_smokegrenade<button data-copy="cmd-setup">copy</button></div>
     if (!target || heatOn) {
       return;
     }
-    const shown = filtered();
-    let bestIdx = -1, bestDist = 12 / scale;
-    shown.forEach(l => {
-      const d = Math.hypot(l.feet[0] - wx, l.feet[1] - wy);
-      if (d < bestDist) { bestDist = d; bestIdx = result.lineups.indexOf(l); }
-    });
+    const bestIdx = nearestLineup(wx, wy, 12 / scale);
     if (bestIdx >= 0) {
       select(bestIdx);
       return;
@@ -783,7 +795,7 @@ give weapon_smokegrenade<button data-copy="cmd-setup">copy</button></div>
       ox += e.clientX - lastX;
       oy += e.clientY - lastY;
       lastX = e.clientX; lastY = e.clientY;
-      requestAnimationFrame(draw);
+      scheduleDraw();
     }
     const [wx, wy] = worldOf(e.clientX - rect.left, e.clientY - rect.top);
     readout.textContent = `${wx.toFixed(0)}, ${wy.toFixed(0)}`;
@@ -791,16 +803,10 @@ give weapon_smokegrenade<button data-copy="cmd-setup">copy</button></div>
     // Hover details: nearest marker within grab distance shows a tooltip and
     // highlights; the map itself is the lineup list.
     const tip = document.getElementById("tip");
-    let best = -1, bestD = 12 / scale;
-    if (result && !heatOn && !panning) {
-      for (const l of filtered()) {
-        const d = Math.hypot(l.feet[0] - wx, l.feet[1] - wy);
-        if (d < bestD) { bestD = d; best = result.lineups.indexOf(l); }
-      }
-    }
+    const best = result && !heatOn && !panning ? nearestLineup(wx, wy, 12 / scale) : -1;
     if (best !== hovered) {
       hovered = best;
-      requestAnimationFrame(draw);
+      scheduleDraw();
     }
     if (best >= 0) {
       const l = result.lineups[best];
@@ -826,7 +832,7 @@ give weapon_smokegrenade<button data-copy="cmd-setup">copy</button></div>
   canvas.addEventListener("pointerleave", () => {
     readout.textContent = "";
     document.getElementById("tip").style.display = "none";
-    if (hovered !== -1) { hovered = -1; requestAnimationFrame(draw); }
+    if (hovered !== -1) { hovered = -1; scheduleDraw(); }
   });
   // ---------- 3D view (three.js, collision mesh) ----------
   const stage3d = document.getElementById("stage3d");
@@ -836,7 +842,21 @@ give weapon_smokegrenade<button data-copy="cmd-setup">copy</button></div>
     threePromise ??= init3d();
     return threePromise;
   }
+  const scriptPromises = {};
+  function loadScript(src) {
+    scriptPromises[src] ??= new Promise((resolve, reject) => {
+      const s = document.createElement("script");
+      s.src = src;
+      s.onload = resolve;
+      s.onerror = () => { delete scriptPromises[src]; s.remove(); reject(new Error(`failed to load ${src}`)); };
+      document.head.appendChild(s);
+    });
+    return scriptPromises[src];
+  }
   async function init3d() {
+    // three.js is opt-in, so keep its ~740 KB off the 2D-only load path.
+    await loadScript("viewer/lib/three.min.js");
+    await loadScript("viewer/lib/OrbitControls.js");
     const res = await fetch("/api/mesh");
     if (!res.ok) {
       throw new Error(`mesh HTTP ${res.status}`);
@@ -898,6 +918,20 @@ give weapon_smokegrenade<button data-copy="cmd-setup">copy</button></div>
     const targetGroup = new THREE.Group();
     scene.add(targetGroup);
 
+    // Shared marker assets: sync3d re-parents these instead of allocating new
+    // GPU buffers per rebuild (three.js never frees them on plain .remove()).
+    const markerGeo = new THREE.SphereGeometry(14, 10, 8);
+    const markerMats = {
+      left: new THREE.MeshBasicMaterial({ color: colors["click-left"] }),
+      mid: new THREE.MeshBasicMaterial({ color: colors["click-mid"] }),
+      right: new THREE.MeshBasicMaterial({ color: colors["click-right"] }),
+    };
+    const targetGeo = new THREE.SphereGeometry(10, 16, 12);
+    const targetMat = new THREE.MeshBasicMaterial({ color: colors.target });
+    const bloomGeo = new THREE.SphereGeometry(1, 24, 16); // unit sphere, scaled to the zone radius
+    const bloomMat = new THREE.MeshBasicMaterial({ color: colors.target, transparent: true, opacity: 0.14, depthWrite: false });
+    const lineMat = new THREE.LineBasicMaterial({ color: colors.accent });
+
     const raycaster = new THREE.Raycaster();
     const meshObj = scene.children.find(o => o.isMesh);
     let down = null;
@@ -939,16 +973,17 @@ give weapon_smokegrenade<button data-copy="cmd-setup">copy</button></div>
       keys.add(e.code);
     });
     window.addEventListener("keyup", e => keys.delete(e.code));
+    // Reused across frames; fly() runs every frame while keys are held.
+    const fwd = new THREE.Vector3(), right = new THREE.Vector3(), move = new THREE.Vector3();
     function fly() {
       if (keys.size === 0) { return; }
       const speed = (keys.has("ShiftLeft") || keys.has("ShiftRight")) ? 48 : 12;
-      const fwd = new THREE.Vector3();
       camera.getWorldDirection(fwd);
       fwd.z = 0;
       if (fwd.lengthSq() < 1e-6) { fwd.set(0, 1, 0); }
       fwd.normalize();
-      const right = new THREE.Vector3(fwd.y, -fwd.x, 0);
-      const move = new THREE.Vector3();
+      right.set(fwd.y, -fwd.x, 0);
+      move.set(0, 0, 0);
       if (keys.has("KeyW")) { move.add(fwd); }
       if (keys.has("KeyS")) { move.sub(fwd); }
       if (keys.has("KeyD")) { move.add(right); }
@@ -971,49 +1006,56 @@ give weapon_smokegrenade<button data-copy="cmd-setup">copy</button></div>
     }
     three = {
       renderer, scene, camera, controls, markerGroup, targetGroup, resize3d,
+      markerGeo, markerMats, targetGeo, targetMat, bloomGeo, bloomMat, lineMat,
       start() { if (live) { return; } live = true; resize3d(); loop(); },
       stop() { live = false; },
     };
     return three;
   }
 
+  // Children share geometries/materials owned by init3d; only geometries
+  // flagged as owned (the per-selection trajectory line) need disposal.
+  function clearGroup(group) {
+    while (group.children.length) {
+      const child = group.children[0];
+      if (child.userData.ownedGeometry) { child.geometry.dispose(); }
+      group.remove(child);
+    }
+  }
+
   function sync3d() {
     if (!three || stage3d.style.display === "none") {
       return;
     }
-    const { markerGroup, targetGroup } = three;
-    while (markerGroup.children.length) { markerGroup.remove(markerGroup.children[0]); }
-    while (targetGroup.children.length) { targetGroup.remove(targetGroup.children[0]); }
+    const { markerGroup, targetGroup, markerGeo, markerMats, targetGeo, targetMat, bloomGeo, bloomMat, lineMat } = three;
+    clearGroup(markerGroup);
+    clearGroup(targetGroup);
     if (target) {
       const tz = target.length > 2 ? target[2] : 0;
-      const dot = new THREE.Mesh(new THREE.SphereGeometry(10, 16, 12),
-        new THREE.MeshBasicMaterial({ color: colors.target }));
+      const dot = new THREE.Mesh(targetGeo, targetMat);
       dot.position.set(target[0], target[1], tz + 6);
       targetGroup.add(dot);
       const zoneRadius = filters.precision.value ? parseFloat(filters.precision.value) : 144;
-      const bloom = new THREE.Mesh(new THREE.SphereGeometry(zoneRadius, 24, 16),
-        new THREE.MeshBasicMaterial({ color: colors.target, transparent: true, opacity: 0.14, depthWrite: false }));
+      const bloom = new THREE.Mesh(bloomGeo, bloomMat);
+      bloom.scale.setScalar(zoneRadius);
       bloom.position.copy(dot.position);
       targetGroup.add(bloom);
     }
     if (result) {
-      const sphere = new THREE.SphereGeometry(14, 10, 8);
       for (const l of filtered()) {
-        const i = result.lineups.indexOf(l);
-        const m = new THREE.Mesh(sphere, new THREE.MeshBasicMaterial({
-          color: colors[`click-${clickClass(l.strength)}`] || colors.accent }));
+        const m = new THREE.Mesh(markerGeo, markerMats[clickClass(l.strength)]);
         m.position.set(l.feet[0], l.feet[1], l.feet[2] + 20);
-        m.userData.idx = i;
-        if (i === selected) { m.scale.setScalar(1.8); }
+        m.userData.idx = l._idx;
+        if (l._idx === selected) { m.scale.setScalar(1.8); }
         markerGroup.add(m);
       }
       if (selected >= 0) {
         const l = result.lineups[selected];
         const pts = [new THREE.Vector3(l.feet[0], l.feet[1], l.feet[2] + 20),
                      new THREE.Vector3(l.rest[0], l.rest[1], l.rest[2] + 4)];
-        markerGroup.add(new THREE.Line(
-          new THREE.BufferGeometry().setFromPoints(pts),
-          new THREE.LineBasicMaterial({ color: colors.accent })));
+        const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), lineMat);
+        line.userData.ownedGeometry = true;
+        markerGroup.add(line);
       }
     }
   }
@@ -1056,7 +1098,7 @@ give weapon_smokegrenade<button data-copy="cmd-setup">copy</button></div>
     ox = px - (px - ox) * (next / scale);
     oy = py - (py - oy) * (next / scale);
     scale = next;
-    requestAnimationFrame(draw);
+    scheduleDraw();
   }, { passive: false });
   canvas.addEventListener("dblclick", resetView);
 

@@ -104,7 +104,9 @@ public static class SmokeFloodFill
             Grid = grid,
             RestPoint = restPoint,
             Cells = [.. cells],
-            CellSet = [.. cells],
+            // visited already contains exactly the flooded cells; rebuilding a
+            // second HashSet per fill doubled the allocation cost of stage 1.
+            CellSet = visited,
         };
     }
 
