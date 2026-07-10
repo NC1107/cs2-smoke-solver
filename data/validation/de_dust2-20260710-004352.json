@@ -1,0 +1,106 @@
+{
+  "map": "de_dust2",
+  "build": "2000839",
+  "timestamp": "2026-07-10T00:43:52.1554663-04:00",
+  "target": [
+    -436.71628,
+    1592.5829,
+    19.94853
+  ],
+  "tolerance": 80,
+  "summary": {
+    "lineups": 2,
+    "submitted": 2,
+    "matched": 2,
+    "notDetonated": 0,
+    "passRadius": 1,
+    "withinPass": 1,
+    "within8": 2,
+    "errMedian": 1.3950151,
+    "errMean": 0.80791634,
+    "errP90": 1.3950151,
+    "errMax": 1.3950151
+  },
+  "results": [
+    {
+      "Index": 0,
+      "Type": "Crouch",
+      "Strength": 0.5,
+      "Stability": 0.4,
+      "Feet": [
+        -552,
+        1440,
+        -112
+      ],
+      "Yaw": 27.514595,
+      "Pitch": -45,
+      "PredictedBounces": 5,
+      "RealBounces": 4,
+      "Pos": [
+        -542.87866,
+        1444.7512,
+        -53.70329
+      ],
+      "Vel": [
+        250.12433,
+        130.28748,
+        336.10196
+      ],
+      "PredictedRest": [
+        -388.61194,
+        1594.1025,
+        87.256584
+      ],
+      "RealRest": [
+        -388.7801,
+        1593.9628,
+        87.2874
+      ],
+      "Detonated": true,
+      "ErrPredicted": 0.22081761,
+      "ErrTarget": 47.956043,
+      "DivergenceTick": -1,
+      "DivergenceClass": "TRACKED"
+    },
+    {
+      "Index": 1,
+      "Type": "Stand",
+      "Strength": 1,
+      "Stability": 0.4,
+      "Feet": [
+        -120,
+        1488,
+        16
+      ],
+      "Yaw": 167.13815,
+      "Pitch": -1,
+      "PredictedBounces": 7,
+      "RealBounces": 6,
+      "Pos": [
+        -135.3177,
+        1491.4974,
+        83.08248
+      ],
+      "Vel": [
+        -646.2158,
+        147.55031,
+        127.51089
+      ],
+      "PredictedRest": [
+        -364.05286,
+        1564.1351,
+        -124.69629
+      ],
+      "RealRest": [
+        -365.41614,
+        1563.8414,
+        -124.66064
+      ],
+      "Detonated": true,
+      "ErrPredicted": 1.3950151,
+      "ErrTarget": 76.8751,
+      "DivergenceTick": -1,
+      "DivergenceClass": "TRACKED"
+    }
+  ]
+}

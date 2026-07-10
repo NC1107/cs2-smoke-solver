@@ -1,0 +1,33 @@
+# Build output
+bin/
+obj/
+*.user
+
+# Game install + steamcmd (74 GB, managed by steamcmd - never stage)
+rig/server/
+rig/steamcmd/
+
+# Regenerable extraction/render artifacts
+data/*.s2geo
+data/*.glb
+data/*.png
+data/*.bin
+data/viewer-map.json
+data/cache/
+data/navareas*
+data/de_dust2*
+
+# High-volume capture telemetry (rotated, regenerable from live runs)
+data/calib/captures*.jsonl
+
+# Live IPC mailbox files (transient protocol state)
+data/calib/request.json
+data/calib/*-request.json
+data/calib/stop-request
+data/calib/request.json.bad
+
+# Tracked on purpose (hand-made calibration ground truth):
+#   data/calib/markers.json
+#   data/throws.json
+#   data/throw-constants.json
+#   data/validation/
