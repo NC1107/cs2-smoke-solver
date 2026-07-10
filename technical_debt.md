@@ -15,7 +15,8 @@ Regions: **core** = src/ (Sim, Solver, Cli, Extraction), **plugin** = rig/Calibr
 | Low | 24 |
 | **Total** | **98** |
 
-Themes: the physics core is strong but wrapped in fragile I/O boundaries; the three load-bearing rig mechanisms (signature scan, meta queue, file IPC) all fail silently; nothing long-lived is supervised; the viewer's 3D lifecycle leaks; accessibility is the weakest UI axis; the exact-physics stack that decides every answer has zero test coverage.
+Themes at audit time: the physics core was strong but wrapped in fragile I/O boundaries; the three load-bearing rig mechanisms (signature scan, meta queue, file IPC) all failed silently; nothing long-lived was supervised; the viewer's 3D lifecycle leaked; accessibility was the weakest UI axis; the exact-physics stack had zero test coverage.
+**Status: all seven batches completed 2026-07-10 (see Progress). 95+ of 98 findings resolved; partials and descopes are noted honestly in the batch entries.**
 
 ## Progress
 
@@ -44,6 +45,11 @@ Themes: the physics core is strong but wrapped in fragile I/O boundaries; the th
   Fixed: H6 (TriangleCollider SAT/DDA tests incl. the graze and start-touching cases; exact-integrator tests; golden replays streaming 5 real captures against real dust2 geometry, non-vacuous at ~1.9u), M43 partial (DeriveInitial and integrator behavior covered; LineupSolver.Solve itself remains the largest untested unit), L8 (AttributeInteractAs round-trip, GrenadeSolidFilter semantics + end-to-end, Occlusion DDA edges), L9 (rcon.py and rcon_password deleted), M42 (vendored GLTFLoader deleted), L6 (usage generated from the command table), L2 (LoadJson<T> at six sites), L3 (ExportGltf disposables), L5 (BaseGravity/FloorNormalZ/ContactBackoff constants), L7 (extraction model lookup dictionary), M44 (handled in the batch-6 viewer pass).
   NEW finding from the test agent, fixed: the voxel stage-1 simulator lacked the exact path's floor-impact damp gate, overshooting ~120u on fast steep throws and starving VerifyExact of candidates; the damp is now applied in both integrators. Post-fix live validation: 40/40 captured, median 0.8u, 98% within 8u (better than the pre-fix baseline).
   Tests: 18 -> 40, all green, ~1.6s wall.
+
+- **Batch 6 - completed 2026-07-10.**
+  Fixed: H19 (keyboard-navigable lineup list with roving tabindex driving the same selection path as canvas markers), M28 (aria-live status; solve overlay is a proper dialog with focus management), M15 (labeled selects with units in options; light-theme muted text at 5.55:1 / 6.15:1), M14 + L23 (colorblind-safe heatmap: blue fill vs orange outline-only, dual-channel, folded into the map key), M27 (controls anchored in the stage; sub-640px collapse to details, full-width panel), M12 (AbortController + Cancel button on the solve overlay), M13 (WASD keys bound only while 3D is live, cleared on blur/stop, UI-target guard), M45 (theme changes recolor the 3D scene; DPR changes re-apply on monitor moves), L17 (tooltip clamped), L21 (one .btn base class), L20 (esc() for API-derived strings), L16 (dead CSS removed; lineup card click wired to deselect), M44 (named viewer constants).
+  Verified live in a browser including the accessibility tree: keyboard selection, mid-flight cancel with focus restoration, colorblind heatmap swatches, responsive collapse at 500px, theme flip recoloring 2D and 3D, zero console errors.
+  Note: most batch-6 file changes were swept into the batch-7 commit by parallel timing; this commit adds the final straggler and this note.
 
 ## Work batches
 

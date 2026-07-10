@@ -54,7 +54,8 @@ export async function loadRadar() {
 
 export function recolorRadar() {
   const colors = state.colors;
-  const rc = radarCanvas.getContext("2d");
+  // willReadFrequently: recolor does a getImageData readback per theme flip.
+  const rc = radarCanvas.getContext("2d", { willReadFrequently: true });
   rc.drawImage(radar, 0, 0);
   const data = rc.getImageData(0, 0, radar.width, radar.height);
   const d = data.data;
