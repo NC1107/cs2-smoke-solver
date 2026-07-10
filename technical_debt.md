@@ -17,6 +17,12 @@ Regions: **core** = src/ (Sim, Solver, Cli, Extraction), **plugin** = rig/Calibr
 
 Themes: the physics core is strong but wrapped in fragile I/O boundaries; the three load-bearing rig mechanisms (signature scan, meta queue, file IPC) all fail silently; nothing long-lived is supervised; the viewer's 3D lifecycle leaks; accessibility is the weakest UI axis; the exact-physics stack that decides every answer has zero test coverage.
 
+## Progress
+
+- **Batch 1 - completed 2026-07-10.**
+  Fixed: C1, H24, L24 (gitignore + baseline commit + scratch cleanup), H12, H17, M17, M35 (atomic rename IPC end to end, shared calibipc.py), H20, H21, H22, M18 (watcher claim-by-rename, stale discard, solver-error distinction, stderr to rig.log, malformed-request quarantine), H13 (offset tailing with rotation guard), H23 (50 MB capture rotation), H4 (async capture writer off the tick thread), H5 (AddTimer everywhere, slot-safe callbacks), M16 (Unload flushes captures and beams), M22 (marker/array validation), M34 (summary from JSON report), plus a watcher heartbeat (C2 groundwork).
+  Verified: build + 18/18 tests, live end-to-end throw through the new protocol (capture persisted by the writer thread, legacy 317 MB file auto-rotated), chat relay, heartbeat.
+
 ## Work batches
 
 Do them roughly in order; batch 1 prevents catastrophes, batch 2 eliminates silent lies, the rest are quality-of-life in priority order.

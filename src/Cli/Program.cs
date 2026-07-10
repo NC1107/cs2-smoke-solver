@@ -1630,8 +1630,9 @@ static int Validate(Dictionary<string, string> options)
 
     var requestPath = Path.Combine(calibDir, "request.json");
     var capturesPath = Path.Combine(calibDir, "captures.jsonl");
-    var baseline = File.Exists(capturesPath) ? File.ReadAllLines(capturesPath).Count(l => l.Trim().Length > 0) : 0;
-    Console.WriteLine($"submitting {plans.Count} throws to {requestPath} (captures baseline {baseline}) ...");
+    var tailer = new CaptureTailer(capturesPath);
+    var baseline = tailer.InitializeAtEnd();
+    Console.WriteLine($"submitting {plans.Count} throws to {requestPath} (captures baseline offset {baseline}) ...");
 
     // Batches of 6 per request file: the plugin polls every 8 ticks (~1/8s)
     // and launches the whole batch in one tick, so throughput is bounded by
@@ -1647,7 +1648,7 @@ static int Validate(Dictionary<string, string> options)
             Console.WriteLine($"stopped by user request after {submitted}/{plans.Count}");
             break;
         }
-        File.WriteAllText(requestPath, JsonSerializer.Serialize(new
+        RequestFile.WriteAtomic(requestPath, JsonSerializer.Serialize(new
         {
             throws = batch.Select(p => new
             {
@@ -1687,20 +1688,26 @@ static int Validate(Dictionary<string, string> options)
     // Captures arrive when each projectile despawns; match them back to plans
     // by initial position + velocity (synthetic throws echo them exactly).
     var matches = new Dictionary<int, JsonElement>();
-    var consumedLines = baseline;
     var idleMs = 0;
     while (matches.Count < submitted && idleMs < 120000)
     {
         Thread.Sleep(2000);
         idleMs += 2000;
-        var lines = File.Exists(capturesPath)
-            ? File.ReadAllLines(capturesPath).Where(l => l.Trim().Length > 0).ToArray()
-            : [];
-        for (var li = consumedLines; li < lines.Length; li++)
+        foreach (var line in tailer.ReadNewLines())
         {
-            var c = JsonSerializer.Deserialize<JsonElement>(lines[li]);
-            var s = c.GetProperty("start").EnumerateArray().Select(e => e.GetSingle()).ToArray();
-            var v = c.GetProperty("velocity").EnumerateArray().Select(e => e.GetSingle()).ToArray();
+            JsonElement c;
+            float[] s, v;
+            try
+            {
+                c = JsonSerializer.Deserialize<JsonElement>(line);
+                s = c.GetProperty("start").EnumerateArray().Select(e => e.GetSingle()).ToArray();
+                v = c.GetProperty("velocity").EnumerateArray().Select(e => e.GetSingle()).ToArray();
+            }
+            catch (JsonException)
+            {
+                Console.Error.WriteLine("  skipping malformed capture line");
+                continue;
+            }
             foreach (var p in plans)
             {
                 if (matches.ContainsKey(p.Index))
@@ -1716,7 +1723,7 @@ static int Validate(Dictionary<string, string> options)
                 }
             }
         }
-        consumedLines = lines.Length;
+
         if (matches.Count > 0 && matches.Count % 50 == 0)
         {
             Console.WriteLine($"  matched {matches.Count}/{submitted}");
@@ -1949,6 +1956,72 @@ sealed record NavAreaJson(uint Id, float[][] Corners);
 static class MeshPayloadCache
 {
     public static byte[]? Bytes;
+}
+
+// The plugin claims request.json by rename, so it must only ever see a
+// complete file: write to a temp sibling and rename into place (atomic on
+// the same filesystem).
+static class RequestFile
+{
+    public static void WriteAtomic(string requestPath, string json)
+    {
+        var tmp = requestPath + ".tmp";
+        File.WriteAllText(tmp, json);
+        File.Move(tmp, requestPath, overwrite: true);
+    }
+}
+
+// Tail captures.jsonl without re-reading the whole growing file: remember the
+// byte offset, and only consume newline-terminated lines so a read that lands
+// mid-append defers the partial line to the next poll instead of crashing.
+sealed class CaptureTailer(string path)
+{
+    long _offset;
+    readonly List<string> _pending = [];
+
+    public long InitializeAtEnd()
+    {
+        if (File.Exists(path))
+        {
+            using var fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+            _offset = fs.Length;
+        }
+        return _offset;
+    }
+
+    public IReadOnlyList<string> ReadNewLines()
+    {
+        _pending.Clear();
+        if (!File.Exists(path))
+        {
+            return _pending;
+        }
+        using var fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+        if (fs.Length < _offset)
+        {
+            _offset = 0; // the plugin rotated the file; start over on the fresh one
+        }
+        if (fs.Length == _offset)
+        {
+            return _pending;
+        }
+        fs.Seek(_offset, SeekOrigin.Begin);
+        using var reader = new StreamReader(fs);
+        var chunk = reader.ReadToEnd();
+        var consumed = 0;
+        int nl;
+        while ((nl = chunk.IndexOf('\n', consumed)) >= 0)
+        {
+            var line = chunk[consumed..nl].Trim();
+            if (line.Length > 0)
+            {
+                _pending.Add(line);
+            }
+            consumed = nl + 1;
+        }
+        _offset += System.Text.Encoding.UTF8.GetByteCount(chunk[..consumed]);
+        return _pending;
+    }
 }
 
 sealed record ValidatePlan(int Index, Lineup Lineup, Vector3 Pos, Vector3 Vel, Vector3 PredictedRest, int PredictedBounces);

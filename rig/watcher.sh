@@ -1,49 +1,105 @@
 #!/bin/bash
-# Services in-game !test and !lineup requests written by the CalibrationThrower
-# plugin. !test runs a full validate round; !lineup finds the nearest lineup
-# and relays it back to chat with a beam at the stand spot.
-export PATH="$HOME/.dotnet:$PATH"
-CALIB=/home/npc/Documents/projects/cs2-smoke-solver/data/calib
-cd /home/npc/Documents/projects/cs2-smoke-solver
-CLI="dotnet run --project src/Cli -c Release -v q --"
+# Services in-game requests written by the CalibrationThrower plugin.
+#
+# Directory contract for $CALIB (default: <repo>/data/calib):
+#   request.json           written by relays/CLI (atomic rename), consumed by the plugin
+#   test-request.json      written by plugin (!test), claimed and serviced here
+#   lineup-request.json    written by plugin (!lineup), claimed and serviced here
+#   plineup-request.json   written by plugin (!plineup), claimed and serviced here
+#   stop-request           written by plugin (!stop), consumed by the validate CLI
+#   captures.jsonl         appended by the plugin, tailed by the validate CLI
+#   watcher.heartbeat      touched every loop; staleness means this script died
+#   rig.log                shared log for watcher + python relays
+#
+# set -e is deliberately omitted: a failed request must not kill the poll
+# loop. Each request is claimed by rename first, so a crash mid-service
+# never replays or loses the original file.
+set -u -o pipefail
 
+REPO="$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)"
+CALIB="${SMOKESOLVER_CALIB_DIR:-$REPO/data/calib}"
+LOG="$CALIB/rig.log"
+export PATH="$HOME/.dotnet:$PATH"
+export PYTHONPATH="$REPO/rig${PYTHONPATH:+:$PYTHONPATH}"
+cd "$REPO"
+CLI=(dotnet run --project src/Cli -c Release -v q --)
+
+logw() { printf '%s watcher %s\n' "$(date '+%F %T')" "$*" | tee -a "$LOG"; }
+
+# Requests written while the watcher was down must not fire hours later.
+for f in "$CALIB"/test-request.json "$CALIB"/lineup-request.json "$CALIB"/plineup-request.json; do
+  if [ -f "$f" ]; then
+    logw "discarding stale request left from previous session: $f"
+    rm -f "$f"
+  fi
+done
+
+# Claim a request by rename; parse only after the claim so a mid-write file
+# is retried on the next poll instead of being destroyed.
+claim() {
+  local src="$1" dst="$1.processing"
+  mv "$src" "$dst" 2>/dev/null && echo "$dst"
+}
+
+# Print one requested JSON field per line from a file.
+fields() {
+  local file="$1"; shift
+  python3 - "$file" "$@" << 'PYEOF'
+import json, sys
+doc = json.load(open(sys.argv[1]))
+for key in sys.argv[2:]:
+    default = {"pass": 1, "tolerance": 80, "limit": 0, "mode": "quick"}.get(key, "")
+    v = doc.get(key, default)
+    if isinstance(v, list):
+        print(",".join(str(x) for x in v))
+    else:
+        print(v)
+PYEOF
+}
+
+service_test() {
+  local f="$1"
+  local name target pass tol limit
+  { read -r name; read -r target; read -r pass; read -r tol; read -r limit; } \
+    < <(fields "$f" name pos pass tolerance limit) || { logw "bad test request, skipping"; rm -f "$f"; return; }
+  logw "test run for '$name' @ $target (pass $pass, tolerance $tol, limit $limit)"
+  local out
+  out=$("${CLI[@]}" validate --geo data/de_dust2.s2geo --nav data/de_dust2.navareas.json \
+        --target " $target" --pass "$pass" --tolerance "$tol" --limit "$limit" 2>> "$LOG")
+  echo "$out" | tail -4 >> "$LOG"
+  if echo "$out" | grep -q "^0 lineups solved"; then
+    python3 rig/relay-chat.py "no lineups found for '$name' - nothing can land within ${tol}u of it"
+  else
+    readarray -t summary < <(python3 rig/summarize-run.py)
+    python3 rig/relay-chat.py "${summary[@]}"
+  fi
+  rm -f "$f"
+  logw "test for '$name' done"
+}
+
+service_lineup() {
+  local f="$1" relay="$2"
+  local name target from mode result
+  { read -r name; read -r target; read -r from; read -r mode; } \
+    < <(fields "$f" name pos player mode) || { logw "bad lineup request, skipping"; rm -f "$f"; return; }
+  logw "$relay for '$name' from ($from) mode=$mode"
+  if [ "$relay" = "relay-plineup.py" ]; then
+    result=$("${CLI[@]}" pointlineup --geo data/de_dust2.s2geo --from " $from" --target " $target" \
+             --mode "$mode" 2>> "$LOG" | tail -1)
+  else
+    result=$("${CLI[@]}" bestlineup --geo data/de_dust2.s2geo --nav data/de_dust2.navareas.json \
+             --target " $target" --near " $from" 2>> "$LOG" | tail -1)
+  fi
+  logw "result: ${result:-<empty>}"
+  python3 "rig/$relay" "$(cat "$f")" "$result"
+  rm -f "$f"
+}
+
+logw "watcher started (calib dir: $CALIB)"
 while true; do
-  if [ -f "$CALIB/test-request.json" ]; then
-    REQ=$(cat "$CALIB/test-request.json"); rm -f "$CALIB/test-request.json"
-    TARGET=$(echo "$REQ" | python3 -c 'import json,sys; p=json.load(sys.stdin)["pos"]; print(f"{p[0]},{p[1]},{p[2]}")')
-    NAME=$(echo "$REQ" | python3 -c 'import json,sys; print(json.load(sys.stdin)["name"])')
-    PASS=$(echo "$REQ" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("pass", 1))')
-    TOL=$(echo "$REQ" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("tolerance", 80))')
-    LIMIT=$(echo "$REQ" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("limit", 0))')
-    echo "[watcher] test run for marker $NAME @ $TARGET (pass $PASS, tolerance $TOL, limit $LIMIT)"
-    OUT=$($CLI validate --geo data/de_dust2.s2geo --nav data/de_dust2.navareas.json --target " $TARGET" --pass "$PASS" --tolerance "$TOL" --limit "$LIMIT" 2>&1)
-    echo "$OUT" | tail -4
-    if echo "$OUT" | grep -q "^0 lineups solved"; then
-      python3 /home/npc/Documents/projects/cs2-smoke-solver/rig/relay-chat.py "no lineups found for '$NAME' - nothing can land within ${TOL}u of it"
-    else
-      IFS=$'\n' readarray -t SUMMARY < <(python3 /home/npc/Documents/projects/cs2-smoke-solver/rig/summarize-run.py)
-      python3 /home/npc/Documents/projects/cs2-smoke-solver/rig/relay-chat.py "${SUMMARY[@]}"
-    fi
-    echo "[watcher] test for $NAME done"
-  fi
-  if [ -f "$CALIB/lineup-request.json" ]; then
-    REQ=$(cat "$CALIB/lineup-request.json"); rm -f "$CALIB/lineup-request.json"
-    echo "[watcher] lineup request: $REQ"
-    TARGET=$(echo "$REQ" | python3 -c 'import json,sys; p=json.load(sys.stdin)["pos"]; print(f" {p[0]},{p[1]},{p[2]}")')
-    NEAR=$(echo "$REQ" | python3 -c 'import json,sys; p=json.load(sys.stdin)["player"]; print(f" {p[0]},{p[1]},{p[2]}")')
-    RESULT=$($CLI bestlineup --geo data/de_dust2.s2geo --nav data/de_dust2.navareas.json --target "$TARGET" --near "$NEAR" 2>/dev/null | tail -1)
-    echo "[watcher] result: $RESULT"
-    python3 /home/npc/Documents/projects/cs2-smoke-solver/rig/relay-lineup.py "$REQ" "$RESULT"
-  fi
-  if [ -f "$CALIB/plineup-request.json" ]; then
-    REQ=$(cat "$CALIB/plineup-request.json"); rm -f "$CALIB/plineup-request.json"
-    echo "[watcher] plineup request: $REQ"
-    TARGET=$(echo "$REQ" | python3 -c 'import json,sys; p=json.load(sys.stdin)["pos"]; print(f" {p[0]},{p[1]},{p[2]}")')
-    FROM=$(echo "$REQ" | python3 -c 'import json,sys; p=json.load(sys.stdin)["player"]; print(f" {p[0]},{p[1]},{p[2]}")')
-    MODE=$(echo "$REQ" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("mode", "quick"))')
-    RESULT=$($CLI pointlineup --geo data/de_dust2.s2geo --from "$FROM" --target "$TARGET" --mode "$MODE" 2>/dev/null | tail -1)
-    echo "[watcher] result: $RESULT"
-    python3 /home/npc/Documents/projects/cs2-smoke-solver/rig/relay-plineup.py "$REQ" "$RESULT"
-  fi
+  touch "$CALIB/watcher.heartbeat"
+  if f=$(claim "$CALIB/test-request.json"); then service_test "$f"; fi
+  if f=$(claim "$CALIB/lineup-request.json"); then service_lineup "$f" relay-lineup.py; fi
+  if f=$(claim "$CALIB/plineup-request.json"); then service_lineup "$f" relay-plineup.py; fi
   sleep 2
 done

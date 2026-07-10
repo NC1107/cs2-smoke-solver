@@ -36,7 +36,16 @@ public class CalibrationThrowerPlugin : BasePlugin
 
     readonly Dictionary<uint, TrackedThrow> _tracked = new();
     int _pollCountdown;
+    bool _sawPartialRequest;
     readonly Queue<(string? Note, float[]? Predict)> _pendingMeta = new();
+
+    // Capture persistence runs off the tick thread: records are queued here
+    // and drained by a background writer holding one long-lived stream.
+    // Serialized synchronously at ~74 KB a record, flushes were a guaranteed
+    // multi-frame hitch whenever several smokes settled in the same tick.
+    readonly System.Collections.Concurrent.BlockingCollection<TrackedThrow> _writeQueue = [];
+    Thread? _writerThread;
+    const long RotateBytes = 50L * 1024 * 1024;
 
     static bool AnyHumanConnected() =>
         Utilities.GetPlayers().Any(p => p.IsValid && !p.IsBot);
@@ -78,13 +87,73 @@ public class CalibrationThrowerPlugin : BasePlugin
         RegisterListener<Listeners.OnEntitySpawned>(OnEntitySpawned);
         RegisterListener<Listeners.OnTick>(OnTick);
         RegisterListener<Listeners.OnMapStart>(OnMapStart);
+        _writerThread = new Thread(DrainWriteQueue) { IsBackground = true, Name = "calib-capture-writer" };
+        _writerThread.Start();
         Server.PrintToConsole($"[CalibrationThrower] watching {RequestPath}, writing to {OutputPath}");
         if (hotReload)
         {
             // Deferred: executing config commands synchronously inside a hot
             // reload has crashed the server (mp_restartgame mid-reload).
-            new CounterStrikeSharp.API.Modules.Timers.Timer(3.0f, ApplyPracticeSettings);
+            AddTimer(3.0f, ApplyPracticeSettings);
         }
+    }
+
+    public override void Unload(bool hotReload)
+    {
+        // Flush everything still airborne so a reload mid-run cannot lose
+        // captures, then stop the writer and clear world beams the next
+        // instance will not know about.
+        foreach (var track in _tracked.Values)
+        {
+            _writeQueue.Add(track);
+        }
+        _tracked.Clear();
+        _writeQueue.CompleteAdding();
+        _writerThread?.Join(TimeSpan.FromSeconds(5));
+        foreach (var beam in _markerBeams.Concat(_aimBeams).Where(b => b.IsValid))
+        {
+            beam.Remove();
+        }
+        _markerBeams.Clear();
+        _aimBeams.Clear();
+    }
+
+    void DrainWriteQueue()
+    {
+        while (!_writeQueue.IsAddingCompleted || _writeQueue.Count > 0)
+        {
+            try
+            {
+                using (var writer = new StreamWriter(OutputPath, append: true))
+                {
+                    foreach (var track in _writeQueue.GetConsumingEnumerable())
+                    {
+                        writer.WriteLine(SerializeRecord(track));
+                        writer.Flush();
+                        if (writer.BaseStream.Length > RotateBytes && _tracked.Count == 0)
+                        {
+                            break; // close the stream, rotate below, reopen
+                        }
+                    }
+                }
+                if (File.Exists(OutputPath) && new FileInfo(OutputPath).Length > RotateBytes && _tracked.Count == 0)
+                {
+                    RotateCaptures();
+                }
+            }
+            catch (Exception e)
+            {
+                Server.NextFrame(() => Server.PrintToConsole($"[CalibrationThrower] capture writer error: {e.Message}"));
+                Thread.Sleep(1000);
+            }
+        }
+    }
+
+    void RotateCaptures()
+    {
+        var rotated = Path.Combine(CalibDir, $"captures-{DateTime.UtcNow:yyyyMMdd-HHmmss}.jsonl");
+        File.Move(OutputPath, rotated);
+        Server.NextFrame(() => Server.PrintToConsole($"[CalibrationThrower] rotated captures to {rotated}"));
     }
 
     // gamemode_competitive.cfg execs after server.cfg during map spawn and
@@ -92,7 +161,7 @@ public class CalibrationThrowerPlugin : BasePlugin
     // once the map has settled instead of fighting the exec order.
     void OnMapStart(string mapName)
     {
-        new CounterStrikeSharp.API.Modules.Timers.Timer(5.0f, ApplyPracticeSettings);
+        AddTimer(5.0f, ApplyPracticeSettings);
     }
 
     // A human connecting can restart warmup (competitive gamemode behavior),
@@ -102,7 +171,12 @@ public class CalibrationThrowerPlugin : BasePlugin
     {
         if (ev.Userid is { IsBot: false } player)
         {
-            new CounterStrikeSharp.API.Modules.Timers.Timer(0.5f, () => GiveSmokeIfMissing(player));
+            var slot = player.Slot;
+            AddTimer(0.5f, () =>
+            {
+                var p = Utilities.GetPlayerFromSlot(slot);
+                if (p != null) { GiveSmokeIfMissing(p); }
+            });
         }
         return HookResult.Continue;
     }
@@ -112,8 +186,7 @@ public class CalibrationThrowerPlugin : BasePlugin
     {
         if (ev.Userid is { IsBot: false })
         {
-            new CounterStrikeSharp.API.Modules.Timers.Timer(3.0f, () =>
-                Server.ExecuteCommand("mp_warmup_end"));
+            AddTimer(3.0f, () => Server.ExecuteCommand("mp_warmup_end"));
         }
         return HookResult.Continue;
     }
@@ -144,10 +217,23 @@ public class CalibrationThrowerPlugin : BasePlugin
         {
             return;
         }
+        // Claim by rename before reading: writers use temp+rename so a visible
+        // request.json is always complete, and once claimed no writer can race
+        // the read/delete pair.
+        var claimed = RequestPath + ".processing";
         try
         {
-            var doc = JsonSerializer.Deserialize<JsonElement>(File.ReadAllText(RequestPath));
-            File.Delete(RequestPath);
+            File.Move(RequestPath, claimed, overwrite: true);
+        }
+        catch (IOException)
+        {
+            return; // writer or another consumer got there first; next poll retries
+        }
+        try
+        {
+            var doc = JsonSerializer.Deserialize<JsonElement>(File.ReadAllText(claimed));
+            File.Delete(claimed);
+            _sawPartialRequest = false;
             if (doc.TryGetProperty("cmd", out var cmdEl))
             {
                 var cmd = cmdEl.GetString()!;
@@ -164,12 +250,12 @@ public class CalibrationThrowerPlugin : BasePlugin
                 if (doc.TryGetProperty("beam", out var beamEl))
                 {
                     var b = beamEl.EnumerateArray().Select(e => e.GetSingle()).ToArray();
-                    DrawMarkerBeam(b);
+                    if (b.Length >= 3) { DrawMarkerBeam(b); }
                 }
                 if (doc.TryGetProperty("aimbeam", out var aimEl))
                 {
                     var a = aimEl.EnumerateArray().Select(e => e.GetSingle()).ToArray();
-                    DrawAimCross(a);
+                    if (a.Length >= 3) { DrawAimCross(a); }
                 }
                 if (doc.TryGetProperty("store", out var storeEl))
                 {
@@ -193,9 +279,29 @@ public class CalibrationThrowerPlugin : BasePlugin
             }
             LaunchFromJson(doc);
         }
+        catch (JsonException e)
+        {
+            // One retry tolerates a legacy in-place writer; after that the
+            // file is quarantined so it cannot wedge the channel forever.
+            if (!_sawPartialRequest)
+            {
+                _sawPartialRequest = true;
+                try { File.Move(claimed, RequestPath, overwrite: true); } catch (IOException) { }
+                return;
+            }
+            _sawPartialRequest = false;
+            var bad = RequestPath + ".bad";
+            try
+            {
+                File.Move(claimed, bad, overwrite: true);
+                Server.PrintToConsole($"[CalibrationThrower] malformed request quarantined to {bad}: {e.Message}");
+            }
+            catch (IOException) { }
+        }
         catch (Exception e)
         {
-            Server.PrintToConsole($"[CalibrationThrower] bad request file: {e}");
+            try { File.Delete(claimed); } catch (IOException) { }
+            Server.PrintToConsole($"[CalibrationThrower] request failed: {e}");
         }
     }
 
@@ -295,7 +401,12 @@ public class CalibrationThrowerPlugin : BasePlugin
             // the weapon slot is still transitioning and drops to the ground.
             if (!synthetic && thrower is { IsValid: true })
             {
-                new CounterStrikeSharp.API.Modules.Timers.Timer(1.2f, () => GiveSmokeIfMissing(thrower));
+                var slot = thrower.Slot;
+                AddTimer(1.2f, () =>
+                {
+                    var p = Utilities.GetPlayerFromSlot(slot);
+                    if (p != null) { GiveSmokeIfMissing(p); }
+                });
             }
         });
     }
@@ -348,19 +459,23 @@ public class CalibrationThrowerPlugin : BasePlugin
         }
     }
 
+    static string SerializeRecord(TrackedThrow track) => JsonSerializer.Serialize(new
+    {
+        thrower = track.ThrowerName,
+        start = track.StartPos,
+        velocity = track.StartVel,
+        detonated = track.Detonated,
+        rest = track.LastPosition,
+        samples = track.Ticks,
+    });
+
     void FlushRecord(TrackedThrow track)
     {
-        var record = new
-        {
-            thrower = track.ThrowerName,
-            start = track.StartPos,
-            velocity = track.StartVel,
-            detonated = track.Detonated,
-            rest = track.LastPosition,
-            samples = track.Ticks,
-        };
-        File.AppendAllText(OutputPath, JsonSerializer.Serialize(record) + "\n");
-        Server.PrintToConsole($"[CalibrationThrower] capture written ({track.Ticks.Count} ticks, detonated={track.Detonated}, rest ({track.LastPosition?[0]:F0},{track.LastPosition?[1]:F0},{track.LastPosition?[2]:F0}))");
+        // Persistence happens on the writer thread; the record is immutable
+        // from here on because the projectile is removed from _tracked before
+        // FlushRecord is called.
+        _writeQueue.Add(track);
+        Server.PrintToConsole($"[CalibrationThrower] capture queued ({track.Ticks.Count} ticks, detonated={track.Detonated}, rest ({track.LastPosition?[0]:F0},{track.LastPosition?[1]:F0},{track.LastPosition?[2]:F0}))");
         if (track.Note != null && AnyHumanConnected())
         {
             var err = "";
@@ -381,10 +496,29 @@ public class CalibrationThrowerPlugin : BasePlugin
     readonly List<CBeam> _markerBeams = [];
     readonly List<CBeam> _aimBeams = [];
 
-    Dictionary<string, float[]> LoadMarkers() =>
-        File.Exists(MarkersPath)
-            ? JsonSerializer.Deserialize<Dictionary<string, float[]>>(File.ReadAllText(MarkersPath)) ?? []
-            : [];
+    Dictionary<string, float[]> LoadMarkers()
+    {
+        if (!File.Exists(MarkersPath))
+        {
+            return [];
+        }
+        try
+        {
+            var raw = JsonSerializer.Deserialize<Dictionary<string, float[]>>(File.ReadAllText(MarkersPath)) ?? [];
+            var bad = raw.Where(kv => kv.Value is not { Length: 3 }).Select(kv => kv.Key).ToList();
+            foreach (var key in bad)
+            {
+                Server.PrintToConsole($"[CalibrationThrower] dropping malformed marker '{key}' (expected 3 coordinates)");
+                raw.Remove(key);
+            }
+            return raw;
+        }
+        catch (JsonException e)
+        {
+            Server.PrintToConsole($"[CalibrationThrower] markers.json is not valid JSON, ignoring: {e.Message}");
+            return [];
+        }
+    }
 
     void SaveMarkers(Dictionary<string, float[]> markers) =>
         File.WriteAllText(MarkersPath, JsonSerializer.Serialize(markers, new JsonSerializerOptions { WriteIndented = true }));
