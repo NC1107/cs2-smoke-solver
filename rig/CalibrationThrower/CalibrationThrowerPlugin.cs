@@ -169,6 +169,7 @@ public class CalibrationThrowerPlugin : BasePlugin
     // once the map has settled instead of fighting the exec order.
     void OnMapStart(string mapName)
     {
+        _lastLineup.Clear();
         AddTimer(5.0f, ApplyPracticeSettings);
         AddTimer(8.0f, RunSignatureSelfTest);
     }
@@ -273,7 +274,8 @@ public class CalibrationThrowerPlugin : BasePlugin
                 }
                 if (doc.TryGetProperty("store", out var storeEl))
                 {
-                    _lastLineup = (
+                    var slot = storeEl.TryGetProperty("slot", out var slotEl) ? slotEl.GetInt32() : -1;
+                    _lastLineup[slot] = (
                         storeEl.GetProperty("pos").EnumerateArray().Select(e => e.GetSingle()).ToArray(),
                         storeEl.GetProperty("pitch").GetSingle(),
                         storeEl.GetProperty("yaw").GetSingle(),
@@ -765,7 +767,10 @@ public class CalibrationThrowerPlugin : BasePlugin
     }
 
     string LineupRequestPath => Path.Combine(CalibDir, "lineup-request.json");
-    (float[] Pos, float Pitch, float Yaw, string Hint, float[]? Aim)? _lastLineup;
+    // Keyed by player slot: a shared single value let one player's !lineup
+    // overwrite another's pending !goto, and stale entries survived map
+    // changes (teleporting players to old-map coordinates).
+    readonly Dictionary<int, (float[] Pos, float Pitch, float Yaw, string Hint, float[]? Aim)> _lastLineup = [];
     // When true, test smokes bloom and linger like real ones; when false they
     // are recorded and deleted the moment they bloom.
     bool _showTestSmokes;
@@ -824,6 +829,7 @@ public class CalibrationThrowerPlugin : BasePlugin
             pos,
             mode,
             map = Server.MapName,
+            slot = player!.Slot,
             player = new[] { pawn.AbsOrigin.X, pawn.AbsOrigin.Y, pawn.AbsOrigin.Z },
         }));
         player!.PrintToChat(mode == "deep"
@@ -837,11 +843,14 @@ public class CalibrationThrowerPlugin : BasePlugin
     {
         var pawn = player?.PlayerPawn.Value;
         if (pawn == null) { return; }
-        if (_lastLineup is not var (pos, pitch, yaw, hint, aim) || pos == null)
+        // Fall back to the anonymous slot (-1) so single-player workflows
+        // keep working even if a store payload lacked the slot field.
+        if (!_lastLineup.TryGetValue(player!.Slot, out var stored) && !_lastLineup.TryGetValue(-1, out stored))
         {
-            player!.PrintToChat(" \u0002[calib]\u0001 no lineup stored - use !lineup <marker> first");
+            player.PrintToChat(" \u0002[calib]\u0001 no lineup stored - use !lineup <marker> first");
             return;
         }
+        var (pos, pitch, yaw, hint, aim) = stored;
         if (aim != null)
         {
             DrawAimCross(aim);
@@ -874,6 +883,7 @@ public class CalibrationThrowerPlugin : BasePlugin
             name,
             pos,
             map = Server.MapName,
+            slot = player!.Slot,
             player = new[] { pawn.AbsOrigin.X, pawn.AbsOrigin.Y, pawn.AbsOrigin.Z },
         }));
         player!.PrintToChat($" \u0004[calib]\u0001 finding best lineup for \u0010{name}\u0001 near you...");

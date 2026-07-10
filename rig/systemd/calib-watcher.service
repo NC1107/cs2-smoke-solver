@@ -1,0 +1,13 @@
+[Unit]
+Description=Calibration rig request watcher
+After=cs2-server.service
+
+[Service]
+EnvironmentFile=/home/npc/Documents/projects/cs2-smoke-solver/rig/rig.env
+WorkingDirectory=/home/npc/Documents/projects/cs2-smoke-solver
+ExecStart=/home/npc/Documents/projects/cs2-smoke-solver/rig/watcher.sh
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target

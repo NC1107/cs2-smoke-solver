@@ -1,0 +1,14 @@
+[Unit]
+Description=CS2 dedicated server (smoke calibration rig)
+After=network.target
+
+[Service]
+EnvironmentFile=/home/npc/Documents/projects/cs2-smoke-solver/rig/rig.env
+ExecStart=/home/npc/Documents/projects/cs2-smoke-solver/rig/start-server.sh
+Restart=on-failure
+RestartSec=5
+# The engine writes a core-sized state on crash; give it room to die cleanly.
+TimeoutStopSec=20
+
+[Install]
+WantedBy=default.target

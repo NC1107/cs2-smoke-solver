@@ -35,5 +35,5 @@ calibipc.send({
     ],
     "beam": feet,
     "aimbeam": aim,
-    "store": {"pos": feet, "pitch": pitch, "yaw": yaw, "hint": hint, "aim": aim},
+    "store": {"pos": feet, "pitch": pitch, "yaw": yaw, "hint": hint, "aim": aim, "slot": req.get("slot", -1)},
 })

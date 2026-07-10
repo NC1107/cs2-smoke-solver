@@ -22,7 +22,14 @@ LOG="$CALIB/rig.log"
 export PATH="$HOME/.dotnet:$PATH"
 export PYTHONPATH="$REPO/rig${PYTHONPATH:+:$PYTHONPATH}"
 cd "$REPO"
-CLI=(dotnet run --project src/Cli -c Release -v q --)
+# Prefer the published binary (rig/deploy: dotnet publish src/Cli -o rig/bin):
+# it is decoupled from the working tree, so a mid-edit compile error cannot
+# turn into silent in-game failures. dotnet run remains as a dev fallback.
+if [ -x "$REPO/rig/bin/SmokeSolver.Cli" ]; then
+  CLI=("$REPO/rig/bin/SmokeSolver.Cli")
+else
+  CLI=(dotnet run --project src/Cli -c Release -v q --)
+fi
 
 logw() { printf '%s watcher %s\n' "$(date '+%F %T')" "$*" | tee -a "$LOG"; }
 

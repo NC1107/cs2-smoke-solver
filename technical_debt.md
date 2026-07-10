@@ -27,6 +27,10 @@ Themes: the physics core is strong but wrapped in fragile I/O boundaries; the th
   Fixed: H2 (signature self-test at load/map start; synthetic throws disable loudly on failure), H3 (meta correlated to spawns by initial pos/vel epsilon; registered only after a successful native create), H1 (command allowlist on the request channel), H14 (z-cap relative to target), H15 (cache key includes tolerance/originReach/attrs, version bumped), H16 (API body validation with 400s and a size cap), H25, H26, H27 (viewer boot/mesh error paths and 3D init re-entrancy), M6 (empty-zone guard plus diagnostic), M7 (process-wide invariant culture), M19 (invariant chat-command parsing), M20 (map identity in every request, per-map markers, map-aware watcher), M39 (top-level CLI error handling).
   Verified: builds, 18/18 tests, live throw after self-test (synthetics enabled), `{"cmd":"quit"}` rejected by allowlist with server alive, API returns clean 400s for malformed/out-of-bounds/non-finite bodies.
 
+- **Batch 3 - completed 2026-07-10.**
+  Fixed: C2 (three systemd user units with Restart=on-failure and journald logging; watcher heartbeat), C1 follow-through (74 GB install relocated to ~/cs2-rig), M31 (published CLI binary in rig/bin used by the watcher and units), M32/M33 (bash-array CLI, set -u -o pipefail, per-request functions - landed with the batch-1 watcher rewrite), M36/L15 (paths derived from script location / rig.env; no hardcoded user paths in scripts), M37 (rig/deploy-plugin.sh: build, atomic file-set copy, cfg sync, hot reload), M38 (journald + shared rig.log via calibipc logging), M21 (per-player !goto state keyed by slot, cleared on map start).
+  Verified: all three units active under systemd, plugin loaded on the relocated server, fresh watcher heartbeat, end-to-end throw captured through the new paths.
+
 ## Work batches
 
 Do them roughly in order; batch 1 prevents catastrophes, batch 2 eliminates silent lies, the rest are quality-of-life in priority order.

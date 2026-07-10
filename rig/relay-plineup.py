@@ -38,7 +38,7 @@ calibipc.send({
         " verification throw incoming - watch where it lands",
     ],
     "aimbeam": aim,
-    "store": {"pos": player, "pitch": pitch, "yaw": yaw, "hint": hint, "aim": aim},
+    "store": {"pos": player, "pitch": pitch, "yaw": yaw, "hint": hint, "aim": aim, "slot": req.get("slot", -1)},
 })
 
 calibipc.send({"throws": [{

@@ -1,0 +1,12 @@
+[Unit]
+Description=Smoke solver web viewer + lineup API
+
+[Service]
+EnvironmentFile=/home/npc/Documents/projects/cs2-smoke-solver/rig/rig.env
+WorkingDirectory=/home/npc/Documents/projects/cs2-smoke-solver
+ExecStart=/home/npc/Documents/projects/cs2-smoke-solver/rig/bin/SmokeSolver.Cli serve --port 8137 --geo data/de_dust2.s2geo --nav data/de_dust2.navareas.json --attrs "Default,default,EntitySolid"
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target
