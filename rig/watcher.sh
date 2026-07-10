@@ -57,14 +57,28 @@ for key in sys.argv[2:]:
 PYEOF
 }
 
+# A request solved against the wrong map's geometry produces confidently
+# wrong answers, so the map field is mandatory and its assets must exist.
+map_assets() {
+  local map="$1"
+  GEO="data/$map.s2geo"
+  NAV="data/$map.navareas.json"
+  if [ ! -f "$GEO" ] || [ ! -f "$NAV" ]; then
+    python3 rig/relay-chat.py "no extracted geometry for map '$map' - run the extract command first"
+    return 1
+  fi
+}
+
 service_test() {
   local f="$1"
-  local name target pass tol limit
-  { read -r name; read -r target; read -r pass; read -r tol; read -r limit; } \
-    < <(fields "$f" name pos pass tolerance limit) || { logw "bad test request, skipping"; rm -f "$f"; return; }
-  logw "test run for '$name' @ $target (pass $pass, tolerance $tol, limit $limit)"
+  local name target pass tol limit map
+  { read -r name; read -r target; read -r pass; read -r tol; read -r limit; read -r map; } \
+    < <(fields "$f" name pos pass tolerance limit map) || { logw "bad test request, skipping"; rm -f "$f"; return; }
+  map="${map:-de_dust2}"
+  map_assets "$map" || { rm -f "$f"; return; }
+  logw "test run for '$name' @ $target on $map (pass $pass, tolerance $tol, limit $limit)"
   local out
-  out=$("${CLI[@]}" validate --geo data/de_dust2.s2geo --nav data/de_dust2.navareas.json \
+  out=$("${CLI[@]}" validate --geo "$GEO" --nav "$NAV" \
         --target " $target" --pass "$pass" --tolerance "$tol" --limit "$limit" 2>> "$LOG")
   echo "$out" | tail -4 >> "$LOG"
   if echo "$out" | grep -q "^0 lineups solved"; then
@@ -79,15 +93,17 @@ service_test() {
 
 service_lineup() {
   local f="$1" relay="$2"
-  local name target from mode result
-  { read -r name; read -r target; read -r from; read -r mode; } \
-    < <(fields "$f" name pos player mode) || { logw "bad lineup request, skipping"; rm -f "$f"; return; }
-  logw "$relay for '$name' from ($from) mode=$mode"
+  local name target from mode map result
+  { read -r name; read -r target; read -r from; read -r mode; read -r map; } \
+    < <(fields "$f" name pos player mode map) || { logw "bad lineup request, skipping"; rm -f "$f"; return; }
+  map="${map:-de_dust2}"
+  map_assets "$map" || { rm -f "$f"; return; }
+  logw "$relay for '$name' from ($from) on $map mode=$mode"
   if [ "$relay" = "relay-plineup.py" ]; then
-    result=$("${CLI[@]}" pointlineup --geo data/de_dust2.s2geo --from " $from" --target " $target" \
+    result=$("${CLI[@]}" pointlineup --geo "$GEO" --from " $from" --target " $target" \
              --mode "$mode" 2>> "$LOG" | tail -1)
   else
-    result=$("${CLI[@]}" bestlineup --geo data/de_dust2.s2geo --nav data/de_dust2.navareas.json \
+    result=$("${CLI[@]}" bestlineup --geo "$GEO" --nav "$NAV" \
              --target " $target" --near " $from" 2>> "$LOG" | tail -1)
   fi
   logw "result: ${result:-<empty>}"

@@ -23,6 +23,10 @@ Themes: the physics core is strong but wrapped in fragile I/O boundaries; the th
   Fixed: C1, H24, L24 (gitignore + baseline commit + scratch cleanup), H12, H17, M17, M35 (atomic rename IPC end to end, shared calibipc.py), H20, H21, H22, M18 (watcher claim-by-rename, stale discard, solver-error distinction, stderr to rig.log, malformed-request quarantine), H13 (offset tailing with rotation guard), H23 (50 MB capture rotation), H4 (async capture writer off the tick thread), H5 (AddTimer everywhere, slot-safe callbacks), M16 (Unload flushes captures and beams), M22 (marker/array validation), M34 (summary from JSON report), plus a watcher heartbeat (C2 groundwork).
   Verified: build + 18/18 tests, live end-to-end throw through the new protocol (capture persisted by the writer thread, legacy 317 MB file auto-rotated), chat relay, heartbeat.
 
+- **Batch 2 - completed 2026-07-10.**
+  Fixed: H2 (signature self-test at load/map start; synthetic throws disable loudly on failure), H3 (meta correlated to spawns by initial pos/vel epsilon; registered only after a successful native create), H1 (command allowlist on the request channel), H14 (z-cap relative to target), H15 (cache key includes tolerance/originReach/attrs, version bumped), H16 (API body validation with 400s and a size cap), H25, H26, H27 (viewer boot/mesh error paths and 3D init re-entrancy), M6 (empty-zone guard plus diagnostic), M7 (process-wide invariant culture), M19 (invariant chat-command parsing), M20 (map identity in every request, per-map markers, map-aware watcher), M39 (top-level CLI error handling).
+  Verified: builds, 18/18 tests, live throw after self-test (synthetics enabled), `{"cmd":"quit"}` rejected by allowlist with server alive, API returns clean 400s for malformed/out-of-bounds/non-finite bodies.
+
 ## Work batches
 
 Do them roughly in order; batch 1 prevents catastrophes, batch 2 eliminates silent lies, the rest are quality-of-life in priority order.

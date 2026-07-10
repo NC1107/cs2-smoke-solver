@@ -368,7 +368,27 @@ give weapon_smokegrenade<button data-copy="cmd-setup">copy</button></div>
 
 <script>
 (async () => {
-  const mapData = await fetch("data/viewer-map.json").then(r => r.json());
+  function bootError(file) {
+    const box = document.createElement("div");
+    box.style.cssText = "position:fixed; inset:0; z-index:60; display:flex; align-items:center; justify-content:center";
+    box.innerHTML =
+      `<div style="background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:18px 24px; max-width:460px">` +
+      `<b>failed to load ${file}</b><br>` +
+      `<span style="color:var(--muted)">regenerate it with the <code>viewerdata</code> CLI command, then reload</span></div>`;
+    document.body.appendChild(box);
+  }
+
+  let mapData;
+  try {
+    const res = await fetch("data/viewer-map.json");
+    if (!res.ok) {
+      throw new Error(`HTTP ${res.status}`);
+    }
+    mapData = await res.json();
+  } catch {
+    bootError("data/viewer-map.json");
+    return;
+  }
   document.getElementById("brand").textContent = mapData.map;
   document.getElementById("meta").textContent =
     `build ${mapData.build}`;
@@ -398,10 +418,16 @@ give weapon_smokegrenade<button data-copy="cmd-setup">copy</button></div>
   // 255 wall), G encodes ground height for a subtle floor tint. Recolor it to
   // the active palette once per theme into an offscreen canvas.
   const radar = new Image();
-  await new Promise(resolve => {
-    radar.onload = resolve;
-    radar.src = "data/" + mapData.image;
-  });
+  try {
+    await new Promise((resolve, reject) => {
+      radar.onload = resolve;
+      radar.onerror = reject;
+      radar.src = "data/" + mapData.image;
+    });
+  } catch {
+    bootError("data/" + mapData.image);
+    return;
+  }
   const radarCanvas = document.createElement("canvas");
   radarCanvas.width = radar.width;
   radarCanvas.height = radar.height;
@@ -805,11 +831,17 @@ give weapon_smokegrenade<button data-copy="cmd-setup">copy</button></div>
   // ---------- 3D view (three.js, collision mesh) ----------
   const stage3d = document.getElementById("stage3d");
   let three = null; // lazy-initialized bundle of scene state
-  async function ensure3d() {
-    if (three) {
-      return three;
+  let threePromise = null; // memoized in-flight init so re-toggles share one
+  function ensure3d() {
+    threePromise ??= init3d();
+    return threePromise;
+  }
+  async function init3d() {
+    const res = await fetch("/api/mesh");
+    if (!res.ok) {
+      throw new Error(`mesh HTTP ${res.status}`);
     }
-    const buf = await fetch("/api/mesh").then(r => r.arrayBuffer());
+    const buf = await res.arrayBuffer();
     const dv = new DataView(buf);
     const vCount = dv.getInt32(0, true);
     const iCount = dv.getInt32(4, true);
@@ -939,7 +971,7 @@ give weapon_smokegrenade<button data-copy="cmd-setup">copy</button></div>
     }
     three = {
       renderer, scene, camera, controls, markerGroup, targetGroup, resize3d,
-      start() { live = true; resize3d(); loop(); },
+      start() { if (live) { return; } live = true; resize3d(); loop(); },
       stop() { live = false; },
     };
     return three;
@@ -993,10 +1025,23 @@ give weapon_smokegrenade<button data-copy="cmd-setup">copy</button></div>
     document.getElementById("view3d").classList.toggle("primary", on);
     if (on) {
       statusEl.textContent = "loading 3D mesh…";
-      const t3 = await ensure3d();
-      statusEl.textContent = "3D: WASD fly (QE up/down, shift fast) · drag orbit · right-drag pan · scroll zoom · click terrain = set target · click marker = pin";
-      t3.start();
-      sync3d();
+      try {
+        const t3 = await ensure3d();
+        if (stage3d.style.display === "none") { // toggled off while loading
+          statusEl.textContent = "";
+          return;
+        }
+        statusEl.textContent = "3D: WASD fly (QE up/down, shift fast) · drag orbit · right-drag pan · scroll zoom · click terrain = set target · click marker = pin";
+        t3.start();
+        sync3d();
+      } catch {
+        threePromise = null;
+        stage3d.style.display = "none";
+        canvas.style.display = "block";
+        document.getElementById("view3d").classList.remove("primary");
+        statusEl.textContent = "3D unavailable: serve needs --geo";
+        draw();
+      }
     } else if (three) {
       three.stop();
       draw();

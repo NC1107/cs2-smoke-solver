@@ -47,6 +47,13 @@ public static class LineupSolver
         ThrowConstants? constants = null,
         ConcurrentDictionary<(int X, int Y), int>? coverage = null)
     {
+        if (zoneCrossings.Count == 0)
+        {
+            // A NaN centroid from the division below defeats every distance
+            // prune (NaN comparisons are false), so the solver would simulate
+            // every angle from every origin and still return nothing.
+            return [];
+        }
         var zoneCentroid = Vector3.Zero;
         foreach (var cell in zoneCrossings.Keys)
         {

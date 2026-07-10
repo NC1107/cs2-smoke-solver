@@ -37,7 +37,14 @@ public class CalibrationThrowerPlugin : BasePlugin
     readonly Dictionary<uint, TrackedThrow> _tracked = new();
     int _pollCountdown;
     bool _sawPartialRequest;
-    readonly Queue<(string? Note, float[]? Predict)> _pendingMeta = new();
+    // Metadata for launched synthetic throws, matched to spawned projectiles
+    // by initial position/velocity instead of FIFO order: queue ordering
+    // mislabeled real player throws whenever a native create failed or a
+    // human threw mid-batch.
+    readonly List<(float[] Pos, float[] Vel, string? Note, float[]? Predict, int ExpireTick)> _pendingMeta = [];
+    bool _syntheticDisabled;
+    bool _selfTestObserved;
+    const string SelfTestNote = "signature self-test";
 
     // Capture persistence runs off the tick thread: records are queued here
     // and drained by a background writer holding one long-lived stream.
@@ -90,6 +97,7 @@ public class CalibrationThrowerPlugin : BasePlugin
         _writerThread = new Thread(DrainWriteQueue) { IsBackground = true, Name = "calib-capture-writer" };
         _writerThread.Start();
         Server.PrintToConsole($"[CalibrationThrower] watching {RequestPath}, writing to {OutputPath}");
+        AddTimer(6.0f, RunSignatureSelfTest);
         if (hotReload)
         {
             // Deferred: executing config commands synchronously inside a hot
@@ -162,6 +170,7 @@ public class CalibrationThrowerPlugin : BasePlugin
     void OnMapStart(string mapName)
     {
         AddTimer(5.0f, ApplyPracticeSettings);
+        AddTimer(8.0f, RunSignatureSelfTest);
     }
 
     // A human connecting can restart warmup (competitive gamemode behavior),
@@ -237,6 +246,11 @@ public class CalibrationThrowerPlugin : BasePlugin
             if (doc.TryGetProperty("cmd", out var cmdEl))
             {
                 var cmd = cmdEl.GetString()!;
+                if (!IsAllowedCommand(cmd))
+                {
+                    Server.PrintToConsole($"[CalibrationThrower] REJECTED command not on the allowlist: {cmd}");
+                    return;
+                }
                 Server.ExecuteCommand(cmd);
                 Server.PrintToConsole($"[CalibrationThrower] executed: {cmd}");
                 return;
@@ -305,19 +319,87 @@ public class CalibrationThrowerPlugin : BasePlugin
         }
     }
 
+    // The request channel is writable by any local process running as the
+    // server's user; a free-form console channel would hand that process the
+    // entire server. Only practice-mode and plugin-management commands pass.
+    static readonly string[] AllowedCommandPrefixes =
+    [
+        "sv_cheats", "sv_infinite_ammo", "sv_autobunnyhopping", "sv_grenade_",
+        "bot_kick", "bot_quota", "mp_", "css_plugins reload", "changelevel ",
+    ];
+
+    static bool IsAllowedCommand(string cmd) =>
+        cmd.Split(';', StringSplitOptions.TrimEntries)
+            .All(part => part.Length == 0 ||
+                         AllowedCommandPrefixes.Any(prefix => part.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)));
+
+    // A game update can silently re-point the byte signature at a different
+    // grenade's Create() (it bound to the flashbang once): fire one throw
+    // below the map at load and verify a smokegrenade_projectile spawn is
+    // observed. On failure, synthetic throwing is disabled loudly rather than
+    // corrupting a calibration dataset with wrong-type throws.
+    void RunSignatureSelfTest()
+    {
+        _selfTestObserved = false;
+        float[] pos = [0f, 0f, -2000f];
+        float[] vel = [0f, 0f, -100f];
+        _pendingMeta.Add((pos, vel, SelfTestNote, null, Server.TickCount + 640));
+        if (!ThrowSynthetic(new Vector(pos[0], pos[1], pos[2]), new Vector(vel[0], vel[1], vel[2])))
+        {
+            FailSelfTest("native Create() returned null");
+            return;
+        }
+        AddTimer(2.0f, () =>
+        {
+            if (!_selfTestObserved)
+            {
+                FailSelfTest("no smokegrenade_projectile spawn observed within 2s");
+            }
+            else
+            {
+                _syntheticDisabled = false;
+                Server.PrintToConsole("[CalibrationThrower] signature self-test passed");
+            }
+        });
+    }
+
+    void FailSelfTest(string reason)
+    {
+        _syntheticDisabled = true;
+        Server.PrintToConsole($"[CalibrationThrower] SIGNATURE SELF-TEST FAILED ({reason}) - synthetic throws disabled. The CSmokeGrenadeProjectile::Create signature likely broke with a game update.");
+        if (AnyHumanConnected())
+        {
+            Server.PrintToChatAll(" \u0002[calib] signature self-test failed - synthetic throws disabled until the plugin is updated\u0001");
+        }
+    }
+
     void LaunchFromJson(JsonElement doc)
     {
+        if (_syntheticDisabled)
+        {
+            Server.PrintToConsole("[CalibrationThrower] throw rejected: signature self-test failed");
+            return;
+        }
         var pos = doc.GetProperty("pos").EnumerateArray().Select(e => e.GetSingle()).ToArray();
         var vel = doc.GetProperty("vel").EnumerateArray().Select(e => e.GetSingle()).ToArray();
+        if (pos.Length < 3 || vel.Length < 3)
+        {
+            Server.PrintToConsole("[CalibrationThrower] throw rejected: pos/vel need 3 components");
+            return;
+        }
         var note = doc.TryGetProperty("note", out var noteEl) ? noteEl.GetString() : null;
         var predict = doc.TryGetProperty("predict", out var pEl)
             ? pEl.EnumerateArray().Select(e => e.GetSingle()).ToArray() : null;
-        _pendingMeta.Enqueue((note, predict));
         if (note != null && AnyHumanConnected())
         {
             Server.PrintToChatAll($" \u0004[calib]\u0001 {note}");
         }
-        ThrowSynthetic(new Vector(pos[0], pos[1], pos[2]), new Vector(vel[0], vel[1], vel[2]));
+        // Register metadata only after the native call succeeds so a failed
+        // create can never leave an orphan entry for a later spawn to steal.
+        if (ThrowSynthetic(new Vector(pos[0], pos[1], pos[2]), new Vector(vel[0], vel[1], vel[2])))
+        {
+            _pendingMeta.Add((pos, vel, note, predict, Server.TickCount + 640));
+        }
     }
 
     // No-owner path: sandbox test maps (e.g. cs_flatgrass) often ship without
@@ -327,7 +409,7 @@ public class CalibrationThrowerPlugin : BasePlugin
     // fall back to team CT (2) and a zero owner handle when nobody's connected.
     const int FallbackTeamNum = 2;
 
-    void ThrowSynthetic(Vector pos, Vector vel)
+    bool ThrowSynthetic(Vector pos, Vector vel)
     {
         var owner = Utilities.GetPlayers().FirstOrDefault(p => p.IsValid && p.PlayerPawn.Value != null);
         var ownerPawn = owner?.PlayerPawn.Value;
@@ -337,7 +419,7 @@ public class CalibrationThrowerPlugin : BasePlugin
         if (smoke == null || !smoke.IsValid)
         {
             Server.PrintToConsole("[CalibrationThrower] native smoke Create() returned null");
-            return;
+            return false;
         }
         smoke.TeamNum = teamNum;
         if (ownerPawn != null)
@@ -347,6 +429,7 @@ public class CalibrationThrowerPlugin : BasePlugin
             smoke.OwnerEntity.Raw = ownerPawn.EntityHandle.Raw;
         }
         Server.PrintToConsole($"[CalibrationThrower] synthetic throw from ({pos.X:F0},{pos.Y:F0},{pos.Z:F0}) vel ({vel.X:F0},{vel.Y:F0},{vel.Z:F0}) owner={owner?.PlayerName ?? "(none)"}");
+        return true;
     }
 
     void OnEntitySpawned(CEntityInstance entity)
@@ -382,8 +465,23 @@ public class CalibrationThrowerPlugin : BasePlugin
                 _tracked.Remove(projectile.Index);
             }
             var thrower = projectile.Thrower.Value?.As<CCSPlayerPawn>().Controller.Value?.As<CCSPlayerController>();
-            var synthetic = _pendingMeta.Count > 0;
-            var meta = synthetic ? _pendingMeta.Dequeue() : default;
+            // Expire metadata whose throw evidently never spawned (native call
+            // succeeded but the entity vanished pre-spawn, ~10s grace).
+            _pendingMeta.RemoveAll(m => Server.TickCount > m.ExpireTick);
+            var metaIndex = _pendingMeta.FindIndex(m =>
+                MathF.Abs(m.Pos[0] - startPos.X) < 1.5f && MathF.Abs(m.Pos[1] - startPos.Y) < 1.5f &&
+                MathF.Abs(m.Pos[2] - startPos.Z) < 1.5f && MathF.Abs(m.Vel[0] - startVel.X) < 1.5f &&
+                MathF.Abs(m.Vel[1] - startVel.Y) < 1.5f && MathF.Abs(m.Vel[2] - startVel.Z) < 1.5f);
+            var synthetic = metaIndex >= 0;
+            var meta = synthetic ? _pendingMeta[metaIndex] : default;
+            if (synthetic)
+            {
+                _pendingMeta.RemoveAt(metaIndex);
+                if (meta.Note == SelfTestNote)
+                {
+                    _selfTestObserved = true;
+                }
+            }
             _tracked[projectile.Index] = new TrackedThrow
             {
                 StartPos = [startPos.X, startPos.Y, startPos.Z],
@@ -471,6 +569,10 @@ public class CalibrationThrowerPlugin : BasePlugin
 
     void FlushRecord(TrackedThrow track)
     {
+        if (track.Note == SelfTestNote)
+        {
+            return; // synthetic probe below the map, not calibration data
+        }
         // Persistence happens on the writer thread; the record is immutable
         // from here on because the projectile is removed from _tracked before
         // FlushRecord is called.
@@ -492,7 +594,9 @@ public class CalibrationThrowerPlugin : BasePlugin
         }
     }
 
-    string MarkersPath => Path.Combine(CalibDir, "markers.json");
+    // Markers are world coordinates: keyed per map so a dust2 marker can
+    // never aim a solve on another map's geometry.
+    string MarkersPath => Path.Combine(CalibDir, $"markers-{Server.MapName}.json");
     readonly List<CBeam> _markerBeams = [];
     readonly List<CBeam> _aimBeams = [];
 
@@ -624,7 +728,7 @@ public class CalibrationThrowerPlugin : BasePlugin
             pos = markerPos;
             numericFrom = 2;
         }
-        else if (command.ArgCount > 1 && !float.TryParse(command.GetArg(1), out _))
+        else if (command.ArgCount > 1 && !float.TryParse(command.GetArg(1), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out _))
         {
             Reply($" \u0002[calib]\u0001 no marker named '{command.GetArg(1)}' - use !marks to list");
             return;
@@ -642,11 +746,11 @@ public class CalibrationThrowerPlugin : BasePlugin
             numericFrom = 1;
         }
         float NumArg(int i, float fallback) =>
-            command.ArgCount > numericFrom + i && float.TryParse(command.GetArg(numericFrom + i), out var v) ? v : fallback;
+            command.ArgCount > numericFrom + i && float.TryParse(command.GetArg(numericFrom + i), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var v) ? v : fallback;
         var pass = NumArg(0, 1f);
         var tolerance = NumArg(1, 80f);
         var limit = (int)NumArg(2, 0f);
-        File.WriteAllText(TestRequestPath, JsonSerializer.Serialize(new { name, pos, pass, tolerance, limit }));
+        File.WriteAllText(TestRequestPath, JsonSerializer.Serialize(new { name, pos, pass, tolerance, limit, map = Server.MapName }));
         Reply($" \u0004[calib]\u0001 test queued for \u0010{name}\u0001 ({pos[0]:F0},{pos[1]:F0},{pos[2]:F0}) - pass \u0010{pass:F0}u\u0001, tolerance \u0010{tolerance:F0}u\u0001{(limit > 0 ? $", limit \u0010{limit}\u0001" : "")}");
     }
 
@@ -719,6 +823,7 @@ public class CalibrationThrowerPlugin : BasePlugin
             name,
             pos,
             mode,
+            map = Server.MapName,
             player = new[] { pawn.AbsOrigin.X, pawn.AbsOrigin.Y, pawn.AbsOrigin.Z },
         }));
         player!.PrintToChat(mode == "deep"
@@ -768,6 +873,7 @@ public class CalibrationThrowerPlugin : BasePlugin
         {
             name,
             pos,
+            map = Server.MapName,
             player = new[] { pawn.AbsOrigin.X, pawn.AbsOrigin.Y, pawn.AbsOrigin.Z },
         }));
         player!.PrintToChat($" \u0004[calib]\u0001 finding best lineup for \u0010{name}\u0001 near you...");
@@ -848,7 +954,7 @@ public class CalibrationThrowerPlugin : BasePlugin
     public void OnThrowCommand(CCSPlayerController? player, CommandInfo command)
     {
         var args = command.ArgString.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-        var nums = args.Select(a => float.TryParse(a, out var v) ? v : (float?)null).ToArray();
+        var nums = args.Select(a => float.TryParse(a, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var v) ? v : (float?)null).ToArray();
         if (nums.Length < 6 || nums.Any(n => n == null))
         {
             command.ReplyToCommand("[CalibrationThrower] need 6 numbers: x y z vx vy vz");

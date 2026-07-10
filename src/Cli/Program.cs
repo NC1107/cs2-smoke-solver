@@ -740,7 +740,7 @@ static int Serve(Dictionary<string, string> options)
         var context = listener.GetContext();
         try
         {
-            HandleRequest(context, root, mesh, attributeFilter, navAreas, serveConstants);
+            HandleRequest(context, root, mesh, attributeFilter, navAreas, serveConstants, options.GetValueOrDefault("attrs", ""));
         }
         catch (Exception e)
         {
@@ -797,7 +797,8 @@ static void HandleRequest(
     CollisionMesh? mesh,
     Func<byte, bool>? attributeFilter,
     List<NavAreaJson>? navAreas,
-    ThrowConstants constants)
+    ThrowConstants constants,
+    string attrs)
 {
     var raw = context.Request.Url?.AbsolutePath ?? "/";
     if (raw == "/api/mesh" && mesh != null)
@@ -821,12 +822,22 @@ static void HandleRequest(
             context.Response.Close();
             return;
         }
+        if (context.Request.ContentLength64 > 4096)
+        {
+            WriteApiError(context, 400, "request body too large");
+            return;
+        }
         using var body = JsonDocument.Parse(context.Request.InputStream);
+        if (ValidateLineupQuery(body.RootElement, mesh) is { } validationError)
+        {
+            WriteApiError(context, 400, validationError);
+            return;
+        }
 
         // Repeat clicks are free: results are cached on disk keyed by build,
         // constants, and the quantized query. A new game build or recalibration
         // changes the key, so stale answers cannot leak through.
-        var cacheKey = QueryCacheKey(mesh, constants, body.RootElement);
+        var cacheKey = QueryCacheKey(mesh, constants, body.RootElement, attrs);
         var cachePath = Path.Combine("data", "cache", cacheKey + ".json");
         string response;
         if (File.Exists(cachePath))
@@ -873,7 +884,67 @@ static void HandleRequest(
 /// Interactive two-click query: land a smoke at `target`, throwing from near `origin`.
 /// Returns the best lineups from nav-walkable positions around the origin click.
 /// </summary>
-static string QueryCacheKey(CollisionMesh mesh, ThrowConstants constants, JsonElement query)
+static void WriteApiError(System.Net.HttpListenerContext context, int status, string message)
+{
+    context.Response.StatusCode = status;
+    context.Response.ContentType = "application/json";
+    var payload = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(new { error = message }));
+    context.Response.OutputStream.Write(payload);
+    context.Response.Close();
+}
+
+// Malformed or absurd queries must fail fast with a 400: a NaN or out-of-map
+// coordinate otherwise flows into a minutes-long map-wide solve and a fresh
+// cache file per distinct body.
+static string? ValidateLineupQuery(JsonElement query, CollisionMesh mesh)
+{
+    if (query.ValueKind != JsonValueKind.Object)
+    {
+        return "body must be a JSON object";
+    }
+    if (!query.TryGetProperty("target", out var targetEl) || targetEl.ValueKind != JsonValueKind.Array ||
+        targetEl.GetArrayLength() is < 2 or > 3)
+    {
+        return "target must be [x,y] or [x,y,z]";
+    }
+    var (meshMin, meshMax) = mesh.ComputeBounds();
+    foreach (var el in targetEl.EnumerateArray())
+    {
+        if (el.ValueKind != JsonValueKind.Number || !float.IsFinite(el.GetSingle()))
+        {
+            return "target coordinates must be finite numbers";
+        }
+    }
+    var tx = targetEl[0].GetSingle();
+    var ty = targetEl[1].GetSingle();
+    if (tx < meshMin.X - 512 || tx > meshMax.X + 512 || ty < meshMin.Y - 512 || ty > meshMax.Y + 512)
+    {
+        return "target is outside the map bounds";
+    }
+    if (query.TryGetProperty("origin", out var originEl))
+    {
+        if (originEl.ValueKind != JsonValueKind.Array || originEl.GetArrayLength() < 2 ||
+            originEl.EnumerateArray().Any(e => e.ValueKind != JsonValueKind.Number || !float.IsFinite(e.GetSingle())))
+        {
+            return "origin must be [x,y] with finite numbers";
+        }
+    }
+    if (query.TryGetProperty("originReach", out var reachEl) &&
+        (reachEl.ValueKind != JsonValueKind.Number || !float.IsFinite(reachEl.GetSingle()) ||
+         reachEl.GetSingle() is < 16 or > 4000))
+    {
+        return "originReach must be between 16 and 4000";
+    }
+    if (query.TryGetProperty("tolerance", out var tolEl) &&
+        (tolEl.ValueKind != JsonValueKind.Number || !float.IsFinite(tolEl.GetSingle()) ||
+         tolEl.GetSingle() is < 1 or > 512))
+    {
+        return "tolerance must be between 1 and 512";
+    }
+    return null;
+}
+
+static string QueryCacheKey(CollisionMesh mesh, ThrowConstants constants, JsonElement query, string attrs)
 {
     var targetEl = query.GetProperty("target");
     var tx = (int)MathF.Round(targetEl[0].GetSingle() / 16f);
@@ -882,10 +953,14 @@ static string QueryCacheKey(CollisionMesh mesh, ThrowConstants constants, JsonEl
     var origin = query.TryGetProperty("origin", out var originEl)
         ? $"{(int)MathF.Round(originEl[0].GetSingle() / 32f)},{(int)MathF.Round(originEl[1].GetSingle() / 32f)}"
         : "all";
+    // Every input that changes the answer must be in the key, or two queries
+    // differing only in that input replay each other's cached results.
+    var reach = query.TryGetProperty("originReach", out var reachEl) ? reachEl.GetSingle() : -1f;
+    var tol = query.TryGetProperty("tolerance", out var tolEl) ? tolEl.GetSingle() : 80f;
     // Bump when solver or sim behavior changes: cached answers from older code
     // must never be replayed as current results.
-    const int QueryVersion = 5;
-    var seed = $"v{QueryVersion}|{mesh.MapName}|{mesh.GameBuildId}|{JsonSerializer.Serialize(constants)}|{tx},{ty},{tz}|{origin}";
+    const int QueryVersion = 6;
+    var seed = $"v{QueryVersion}|{mesh.MapName}|{mesh.GameBuildId}|{JsonSerializer.Serialize(constants)}|{tx},{ty},{tz}|{origin}|{reach:F0}|{tol:F0}|{attrs}";
     var hash = System.Security.Cryptography.SHA1.HashData(Encoding.UTF8.GetBytes(seed));
     return Convert.ToHexString(hash)[..20].ToLowerInvariant();
 }
@@ -964,7 +1039,9 @@ static TargetSolve SolveForTarget(
     var max = new Vector3(
         MathF.Min(MathF.Max(target.X, originClick.X + originReach) + 500, meshMax.X),
         MathF.Min(MathF.Max(target.Y, originClick.Y + originReach) + 500, meshMax.Y),
-        MathF.Min(meshMax.Z + 64, 900));
+        // Cap relative to the target: an absolute world-Z cap silently
+        // excluded all playable space on high maps like de_vertigo.
+        MathF.Min(meshMax.Z + 64, target.Z + 900));
     var grid = VoxelGrid.Build(mesh, voxelSize, min, max, attributeFilter);
 
     var navZ = hasTargetZ ? null : LineupSolver.NavGroundZ([.. navAreas.Select(a => a.Corners)], target.X, target.Y);
@@ -999,6 +1076,11 @@ static TargetSolve SolveForTarget(
                 }
             }
         }
+    }
+
+    if (zoneCrossings.Count == 0)
+    {
+        Console.Error.WriteLine($"target ({target.X:F0},{target.Y:F0},{target.Z:F0}) has no reachable landing cells (inside solid, or tolerance too small)");
     }
 
     var origins = LineupSolver.OriginsFromNavAreas(
