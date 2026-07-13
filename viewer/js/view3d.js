@@ -274,29 +274,22 @@ export function ensureTexturedScene(url = "data/de_dust2_textured.glb") {
     root.rotation.x = Math.PI / 2;
     root.scale.setScalar(1 / 0.0254);
 
-    // The exporter can't classify roughness/metalness channels for this game
-    // build's shader format (a version-support gap in the VRF library), so
-    // those materials fall back to shiny PBR defaults and blow out to white
-    // under direct light. Force a matte, non-metallic response wherever a
-    // roughness map never got attached, rather than fighting it with light
-    // intensity - the actual bug is in the material, not the lighting.
+    // Render unlit rather than PBR-lit. CS2's own bake already puts lighting
+    // into the textures/vertex tints, and the exporter can't classify
+    // roughness/metalness channels for this game build's shader format (a
+    // version-support gap in the VRF library) - the combination sent PBR
+    // materials to both extremes (pitch black roof undersides, blown-out
+    // white walls) depending on viewing angle. A flat, unlit material is
+    // both simpler and closer to what the game itself would show here.
     root.traverse(o => {
-      if (o.isMesh && o.material && !o.material.roughnessMap) {
-        o.material.roughness = 1;
-        o.material.metalness = 0;
+      if (o.isMesh && o.material) {
+        o.material = new THREE.MeshBasicMaterial({ map: o.material.map, color: o.material.color });
       }
     });
 
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(state.colors.surface);
     scene.add(root);
-    // Modest, neutral lighting: real textures already carry their own
-    // albedo detail, so avoid the earlier over-bright wash-out by keeping
-    // both lights well under full intensity.
-    scene.add(new THREE.HemisphereLight(0xffffff, 0x3a3630, 0.7));
-    const sun = new THREE.DirectionalLight(0xffffff, 0.55);
-    sun.position.set(0.4, 0.25, 1);
-    scene.add(sun);
 
     texturedScene = scene;
     return scene;
