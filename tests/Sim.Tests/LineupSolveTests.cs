@@ -158,6 +158,41 @@ public class LineupSolveTests
     }
 
     [Fact]
+    public void RefinementFindsAZoneTheCoarseAngleGridStepsOver()
+    {
+        // A wall lob: on the steep side of the arc the landing point moves
+        // 100-200u per 6-degree coarse pitch step, so a small zone between two
+        // coarse samples is invisible to the fixed grid. The zone sits at the
+        // rest point of a pitch -62 throw, halfway between the -65 and -59
+        // lattice pitches; only the near-miss refinement sweep can land in it.
+        var mesh = SyntheticMeshes.FromQuads([
+            SyntheticMeshes.Ground(0, 2048, 0),
+            SyntheticMeshes.WallX(1000, 0, 2048, 0, 160),
+        ]);
+        var grid = VoxelGrid.Build(mesh, 16f, new Vector3(0, 0, -16), new Vector3(2048, 2048, 512));
+        var origin = new Vector3(256, 1024, 0);
+        var eye = origin + new Vector3(0, 0, GrenadeTrajectory.EyeHeight(ThrowType.Stand));
+        var reference = GrenadeTrajectory.Simulate(grid, new ThrowSpec(eye, 0f, -62f, ThrowType.Stand, 1f));
+        var zone = Zone(grid, reference.RestPoint.X, reference.RestPoint.X,
+            reference.RestPoint.Y, reference.RestPoint.Y, 3);
+
+        var result = LineupSolver.Solve(
+            grid, zone, SolveMin, new Vector3(2048, 2048, 512), [ThrowType.Stand],
+            yawStepDeg: 6f, pitchStepDeg: 6f, origins: [origin]);
+
+        Assert.NotEmpty(result);
+        var lineup = result[0];
+        var (cx, cy, cz) = grid.CellOf(lineup.RestPoint);
+        Assert.True(zone.ContainsKey(grid.Index(cx, cy, cz)),
+            $"lineup rest {lineup.RestPoint} is not a zone cell");
+        // The winning pitch cannot sit on the coarse lattice (-65 + 6k), or the
+        // fixed grid would have found it and this test would prove nothing.
+        var offLattice = MathF.Abs((lineup.PitchDeg + 65f) % 6f);
+        Assert.True(offLattice > 1f && offLattice < 5f,
+            $"pitch {lineup.PitchDeg} lies on the coarse lattice; refinement was not exercised");
+    }
+
+    [Fact]
     public void BucketWinnerKeepsFewestBouncesThenRichestReachableBand()
     {
         var grid = Ground2048;

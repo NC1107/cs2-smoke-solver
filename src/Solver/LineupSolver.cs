@@ -24,6 +24,12 @@ public sealed record Lineup(
 public static class LineupSolver
 {
     const float YawSpreadDeg = 30f;
+    // The in-zone region of angle space is a thin ribbon at range (often under a
+    // degree thick), so any fixed angle grid aliases into distance bands of false
+    // "impossible" origins. Coarse samples that nearly land in-zone seed a local
+    // fine sweep at a quarter of the coarse step instead.
+    const int MaxRefineSeeds = 8;
+    const int RefineHalfSpan = 2;
     static readonly float[] Strengths = [1f, 0.5f, 0f];
 
     // Loose upper bounds used only to prune hopeless origins; a real measured
@@ -60,6 +66,11 @@ public static class LineupSolver
             zoneCentroid += grid.CellCenter(cell);
         }
         zoneCentroid /= zoneCrossings.Count;
+        var zoneRadius = 0f;
+        foreach (var cell in zoneCrossings.Keys)
+        {
+            zoneRadius = MathF.Max(zoneRadius, Vector3.Distance(grid.CellCenter(cell), zoneCentroid));
+        }
 
         origins ??= FindStandableOrigins(grid, originMin, originMax);
         var best = new ConcurrentDictionary<(int, int), Lineup>();
@@ -70,6 +81,28 @@ public static class LineupSolver
             var distance = new Vector2(toZone.X, toZone.Y).Length();
             var yawCenter = MathF.Atan2(toZone.Y, toZone.X) * 180f / MathF.PI;
             var hits = 0;
+
+            // Returns how far the rest point missed the zone centroid (squared), or
+            // 0 for an in-zone hit, or MaxValue for a lost/expired throw. Hits are
+            // recorded into the bucket dictionary as a side effect.
+            float Evaluate(Vector3 eye, float yaw, float pitch, ThrowType type, float strength)
+            {
+                var result = GrenadeTrajectory.Simulate(grid, new ThrowSpec(eye, yaw, pitch, type, strength), constants);
+                if (result.Lost || result.FlightTime >= GrenadeTrajectory.MaxFlightSeconds - 0.01f)
+                {
+                    return float.MaxValue;
+                }
+                var (cx, cy, cz) = grid.CellOf(result.RestPoint);
+                if (!grid.InBounds(cx, cy, cz) || !zoneCrossings.TryGetValue(grid.Index(cx, cy, cz), out var crossings))
+                {
+                    return Vector3.DistanceSquared(result.RestPoint, zoneCentroid);
+                }
+                hits++;
+                var lineup = new Lineup(feet, Normalize(yaw), pitch, type, result.RestPoint, result.Bounces, result.FlightTime, crossings, Strength: strength);
+                var key = ((int)MathF.Floor(feet.X / 64f), (int)MathF.Floor(feet.Y / 64f));
+                best.AddOrUpdate(key, lineup, (_, current) => Better(lineup, current) ? lineup : current);
+                return 0f;
+            }
 
             foreach (var type in types)
             {
@@ -82,26 +115,42 @@ public static class LineupSolver
                     {
                         continue;
                     }
+                    // A near miss is one coarse step's worth of landing displacement
+                    // (roughly distance * step in radians) from the zone edge.
+                    var reach = zoneRadius + distance * MathF.Max(yawStepDeg, pitchStepDeg) * MathF.PI / 180f;
+                    var reachSq = reach * reach;
+                    var nearMisses = new List<(float Yaw, float Pitch, float MissSq)>();
                     for (var yaw = yawCenter - YawSpreadDeg; yaw <= yawCenter + YawSpreadDeg; yaw += yawStepDeg)
                     {
                         // Steeper than -65 degrees is an impractical sky-lob; players cannot
                         // line it up reliably and it telegraphs for seconds.
                         for (var pitch = -65f; pitch <= 0f; pitch += pitchStepDeg)
                         {
-                            var result = GrenadeTrajectory.Simulate(grid, new ThrowSpec(eye, yaw, pitch, type, strength), constants);
-                            if (result.Lost || result.FlightTime >= GrenadeTrajectory.MaxFlightSeconds - 0.01f)
+                            var missSq = Evaluate(eye, yaw, pitch, type, strength);
+                            if (missSq > 0f && missSq <= reachSq)
                             {
-                                continue;
+                                nearMisses.Add((yaw, pitch, missSq));
                             }
-                            var (cx, cy, cz) = grid.CellOf(result.RestPoint);
-                            if (!grid.InBounds(cx, cy, cz) || !zoneCrossings.TryGetValue(grid.Index(cx, cy, cz), out var crossings))
+                        }
+                    }
+                    nearMisses.Sort((a, b) => a.MissSq.CompareTo(b.MissSq));
+                    foreach (var (seedYaw, seedPitch, _) in nearMisses.Take(MaxRefineSeeds))
+                    {
+                        // The fine lattice spans the seed's whole coarse Voronoi cell
+                        // so ribbons anywhere between coarse samples get sampled.
+                        for (var i = -RefineHalfSpan; i <= RefineHalfSpan; i++)
+                        {
+                            for (var j = -RefineHalfSpan; j <= RefineHalfSpan; j++)
                             {
-                                continue;
+                                if (i == 0 && j == 0)
+                                {
+                                    continue;
+                                }
+                                Evaluate(eye,
+                                    seedYaw + i * yawStepDeg / (2 * RefineHalfSpan),
+                                    seedPitch + j * pitchStepDeg / (2 * RefineHalfSpan),
+                                    type, strength);
                             }
-                            hits++;
-                            var lineup = new Lineup(feet, Normalize(yaw), pitch, type, result.RestPoint, result.Bounces, result.FlightTime, crossings, Strength: strength);
-                            var key = ((int)MathF.Floor(feet.X / 64f), (int)MathF.Floor(feet.Y / 64f));
-                            best.AddOrUpdate(key, lineup, (_, current) => Better(lineup, current) ? lineup : current);
                         }
                     }
                 }
@@ -128,37 +177,95 @@ public static class LineupSolver
         float minStability = 0.4f,
         ThrowConstants? constants = null)
     {
-        (float DYaw, float DPitch)[] offsets = [(0, 0), (-0.6f, 0), (0.6f, 0), (0, -0.6f), (0, 0.6f)];
+        // One perturbation step; also the re-aim lattice pitch, so the rescue
+        // search and the stability probes share simulations.
+        const float StepDeg = 0.6f;
+        const int AimReach = 2;
+        (int DYaw, int DPitch)[] offsets = [(0, 0), (-1, 0), (1, 0), (0, -1), (0, 1)];
+
+        var zoneCentroid = Vector3.Zero;
+        foreach (var cell in zoneCrossings.Keys)
+        {
+            zoneCentroid += grid.CellCenter(cell);
+        }
+        zoneCentroid /= Math.Max(zoneCrossings.Count, 1);
 
         var verified = new ConcurrentBag<Lineup>();
         Parallel.ForEach(candidates, lineup =>
         {
             var eye = lineup.Feet + new Vector3(0, 0, GrenadeTrajectory.EyeHeight(lineup.Type));
-            var hits = 0;
-            TrajectoryResult? baseResult = null;
-            foreach (var (dYaw, dPitch) in offsets)
+            var cache = new Dictionary<(int, int), TrajectoryResult>();
+
+            TrajectoryResult SimAt(int dYaw, int dPitch)
             {
-                var result = GrenadeTrajectory.SimulateExact(
-                    collider, new ThrowSpec(eye, lineup.YawDeg + dYaw, lineup.PitchDeg + dPitch, lineup.Type, lineup.Strength), constants);
-                baseResult ??= result;
-                if (result.Lost || result.FlightTime >= GrenadeTrajectory.MaxFlightSeconds - 0.01f)
+                if (!cache.TryGetValue((dYaw, dPitch), out var result))
                 {
-                    continue;
+                    result = GrenadeTrajectory.SimulateExact(collider, new ThrowSpec(
+                        eye, lineup.YawDeg + dYaw * StepDeg, lineup.PitchDeg + dPitch * StepDeg, lineup.Type, lineup.Strength), constants);
+                    cache[(dYaw, dPitch)] = result;
                 }
-                if (InZone(grid, zoneCrossings, result.RestPoint))
-                {
-                    hits++;
-                }
+                return result;
             }
-            var stability = (float)hits / offsets.Length;
+
+            bool Settles(TrajectoryResult r) =>
+                !r.Lost && r.FlightTime < GrenadeTrajectory.MaxFlightSeconds - 0.01f;
+
+            float StabilityAround(int cYaw, int cPitch)
+            {
+                var hits = 0;
+                foreach (var (dYaw, dPitch) in offsets)
+                {
+                    var result = SimAt(cYaw + dYaw, cPitch + dPitch);
+                    if (Settles(result) && InZone(grid, zoneCrossings, result.RestPoint))
+                    {
+                        hits++;
+                    }
+                }
+                return (float)hits / offsets.Length;
+            }
+
+            var (aimYaw, aimPitch) = (0, 0);
+            var stability = StabilityAround(0, 0);
             if (stability < minStability)
             {
-                return;
+                // The voxel sim that nominated this candidate drifts from the exact
+                // sim by tens of units at range, so the exact-sim in-zone window may
+                // sit a degree away. Re-aim to the searched offset whose exact rest
+                // lands in-zone closest to the zone centroid, then re-judge there.
+                var bestScore = float.MaxValue;
+                for (var dYaw = -AimReach; dYaw <= AimReach; dYaw++)
+                {
+                    for (var dPitch = -AimReach; dPitch <= AimReach; dPitch++)
+                    {
+                        var result = SimAt(dYaw, dPitch);
+                        if (!Settles(result) || !InZone(grid, zoneCrossings, result.RestPoint))
+                        {
+                            continue;
+                        }
+                        var score = Vector3.DistanceSquared(result.RestPoint, zoneCentroid);
+                        if (score < bestScore)
+                        {
+                            bestScore = score;
+                            (aimYaw, aimPitch) = (dYaw, dPitch);
+                        }
+                    }
+                }
+                if ((aimYaw, aimPitch) == (0, 0))
+                {
+                    return;
+                }
+                stability = StabilityAround(aimYaw, aimPitch);
+                if (stability < minStability)
+                {
+                    return;
+                }
             }
-            var best = baseResult!.Value;
+            var best = SimAt(aimYaw, aimPitch);
             verified.Add(lineup with
             {
-                RestPoint = InZone(grid, zoneCrossings, best.RestPoint) ? best.RestPoint : lineup.RestPoint,
+                YawDeg = Normalize(lineup.YawDeg + aimYaw * StepDeg),
+                PitchDeg = lineup.PitchDeg + aimPitch * StepDeg,
+                RestPoint = Settles(best) && InZone(grid, zoneCrossings, best.RestPoint) ? best.RestPoint : lineup.RestPoint,
                 Stability = stability,
             });
         });

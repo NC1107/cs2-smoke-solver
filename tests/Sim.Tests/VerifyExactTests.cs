@@ -135,6 +135,51 @@ public class VerifyExactTests
     }
 
     [Fact]
+    public void MisAimedCandidateWithinReachIsReAimedBackIntoTheZone()
+    {
+        var (grid, collider) = FlatScene;
+        var reference = Candidate();
+        var zone = ZoneFromExact(grid, collider, reference);
+        // 1.2 degrees of yaw moves the landing ~37u laterally at this range,
+        // outside the 3x3-cell zone, so the plain stability test scores 1/5 and
+        // rejects. The re-aim search reaches exactly 1.2 degrees; it must walk
+        // the candidate back into the zone instead of dropping it.
+        var misAimed = reference with { YawDeg = 1.2f };
+
+        var result = LineupSolver.VerifyExact(grid, collider, zone, [misAimed]);
+
+        var rescued = Assert.Single(result);
+        Assert.True(MathF.Abs(rescued.YawDeg) < 0.05f,
+            $"expected the re-aim to restore yaw ~0, got {rescued.YawDeg}");
+        Assert.True(rescued.Stability >= 0.8f,
+            $"re-aimed center should be stable, got {rescued.Stability}");
+        // The published rest must be the exact simulation of the published
+        // angles, inside the zone: what the lineup claims is what it does.
+        var republished = ExactRest(collider, rescued);
+        Assert.True(Vector3.Distance(rescued.RestPoint, republished) <= 1f,
+            $"rest {rescued.RestPoint} does not match the exact rest {republished} of the published angles");
+        var (rx, ry, rz) = grid.CellOf(rescued.RestPoint);
+        Assert.True(zone.ContainsKey(grid.Index(rx, ry, rz)),
+            $"re-aimed rest {rescued.RestPoint} is not a zone cell");
+    }
+
+    [Fact]
+    public void MisAimBeyondTheReAimReachStaysRejected()
+    {
+        var (grid, collider) = FlatScene;
+        var reference = Candidate();
+        var zone = ZoneFromExact(grid, collider, reference);
+        // 3 degrees off: the maximum 1.2-degree correction still leaves the rest
+        // ~55u outside the zone. The rescue is bounded, not an open-ended search
+        // that would relabel a different throw as this lineup.
+        var farOff = reference with { YawDeg = 3f };
+
+        var result = LineupSolver.VerifyExact(grid, collider, zone, [farOff]);
+
+        Assert.Empty(result);
+    }
+
+    [Fact]
     public void EqualStabilityRanksTheFewerBounceLineupFirst()
     {
         var (grid, collider) = FlatScene;
