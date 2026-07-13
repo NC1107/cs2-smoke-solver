@@ -14,8 +14,15 @@ let callbacks = {
 };
 
 function lineupSummaryHtml(l) {
+  // Aim reference badge: SKY = nothing to line the crosshair against (near
+  // unusable), flat = geometry but no silhouette, edge = a silhouette within
+  // X degrees of the crosshair (smaller = easier to align).
+  const ref = !l.aimRef ? ""
+    : l.aimRef.tier === "sky" ? `<span class="ref sky" title="aims into open sky - no visual reference">SKY</span>`
+    : l.aimRef.tier === "flat" ? `<span class="ref flat" title="aims at featureless surface - weak reference">flat</span>`
+    : `<span class="ref edge" title="silhouette ${l.aimRef.edgeDeg.toFixed(1)} deg from crosshair">${l.aimRef.edgeDeg.toFixed(1)}°</span>`;
   return `<b class="${clickClass(l.strength)}">${clickShort(l.strength)}</b><span>${typeShort[l.type]}</span>` +
-    `<span>${l.Bounces}b</span><span>${l.flightTime.toFixed(1)}s</span>` +
+    `<span>${l.Bounces}b</span><span>${l.flightTime.toFixed(1)}s</span>${ref}` +
     `<span class="pct">${(l.stability * 100).toFixed(0)}%</span>`;
 }
 

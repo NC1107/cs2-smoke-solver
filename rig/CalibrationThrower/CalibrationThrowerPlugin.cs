@@ -907,6 +907,21 @@ public class CalibrationThrowerPlugin : BasePlugin
         player.PrintToChat(Calib($"in position - {hint}"));
     }
 
+    [ConsoleCommand("css_shot", "Probe whether the server can trigger a client screenshot (lineup preview capture)")]
+    [CommandHelper(whoCanExecute: CommandUsage.CLIENT_ONLY)]
+    public void OnShotCommand(CCSPlayerController? player, CommandInfo command)
+    {
+        if (player == null) { return; }
+        // Whether `screenshot` carries the server-executable engine flag is
+        // undocumented for CS2; this probe answers it empirically. If a
+        // screenshot lands in game/csgo/screenshots/ on the CLIENT machine,
+        // the fully server-driven preview pipeline works; if nothing appears,
+        // the key-injection fallback (bind + ydotool) is the route.
+        player.ExecuteClientCommandFromServer("screenshot");
+        player.PrintToChat(Calib("screenshot command sent - check game/csgo/screenshots/ on your client"));
+        player.PrintToChat(Calib("nothing there? the engine blocks it; we fall back to a bound key"));
+    }
+
     [ConsoleCommand("css_lineup", "Find the best throw spot for a marker near your current position")]
     [CommandHelper(minArgs: 1, usage: "<marker>", whoCanExecute: CommandUsage.CLIENT_ONLY)]
     public void OnLineupCommand(CCSPlayerController? player, CommandInfo command)
@@ -990,6 +1005,7 @@ public class CalibrationThrowerPlugin : BasePlugin
         Reply(player, command, $" {ChatColors.Gold}!lineup <marker>{ChatColors.Default} - best throw spot near you: beam at feet + yellow aim cross in the sky");
         Reply(player, command, $" {ChatColors.Gold}!plineup <marker> [deep]{ChatColors.Default} - throw from your EXACT position onto the marker; deep = exhaustive 360 search");
         Reply(player, command, $" {ChatColors.Gold}!goto{ChatColors.Default} - teleport into the last !lineup spot with exact angles, then just click");
+        Reply(player, command, $" {ChatColors.Gold}!shot{ChatColors.Default} - probe server-triggered client screenshots (lineup preview capture)");
         Reply(player, command, $" during test runs, chat shows each throw: {ChatColors.Gold}#n/total type click bounces -> predict (x,y,z){ChatColors.Default}");
         Reply(player, command, $" then {ChatColors.Gold}landed (x,y,z){ChatColors.Default} when it settles - compare the two to judge the prediction");
     }

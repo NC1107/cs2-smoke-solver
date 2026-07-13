@@ -187,6 +187,7 @@
     font-size: 12px;
     max-height: calc(100% - 20px);
     overflow-y: auto;
+    overflow-x: hidden;
     display: grid;
     gap: 7px;
     padding: 9px 10px;
@@ -249,7 +250,7 @@
   .lineup-options { display: grid; gap: 4px; }
   .lineup-option {
     display: flex;
-    gap: 7px;
+    gap: 6px;
     align-items: baseline;
     width: 100%;
     text-align: left;
@@ -266,6 +267,11 @@
   .lineup-option:hover, .lineup-option.selected { border-color: var(--accent); }
   .lineup-option b { font-size: 12px; font-family: ui-sans-serif, system-ui, sans-serif; }
   .lineup-option .pct { margin-left: auto; color: var(--muted); }
+  .ref { font-size: 10px; border-radius: 3px; padding: 0 3px; white-space: nowrap; }
+  .lineup-option b, .lineup-option span:not(.pct) { white-space: nowrap; }
+  .ref.sky { background: var(--heat-none); color: var(--panel); font-weight: 700; }
+  .ref.flat { color: var(--muted); border: 1px solid var(--line); }
+  .ref.edge { color: var(--accent); border: 1px solid var(--accent); }
   footer {
     padding: 4px 12px;
     border-top: 1px solid var(--line);

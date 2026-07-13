@@ -125,7 +125,7 @@ public static class LineupApi
         var tol = query.TryGetProperty("tolerance", out var tolEl) ? tolEl.GetSingle() : 80f;
         // Bump when solver or sim behavior changes: cached answers from older code
         // must never be replayed as current results.
-        const int QueryVersion = 7;
+        const int QueryVersion = 8;
         var seed = $"v{QueryVersion}|{mesh.MapName}|{mesh.GameBuildId}|{JsonSerializer.Serialize(constants)}|{tx},{ty},{tz}|{origin}|{reach:F0}|{tol:F0}|{attrs}";
         var hash = System.Security.Cryptography.SHA1.HashData(Encoding.UTF8.GetBytes(seed));
         return Convert.ToHexString(hash)[..20].ToLowerInvariant();
@@ -172,6 +172,15 @@ public static class LineupApi
             .Select(l => ((int)MathF.Round(l.Feet.X), (int)MathF.Round(l.Feet.Y)))
             .ToHashSet();
 
+        // A throw aimed into featureless sky has nothing to line the crosshair
+        // against, so sky shots sink below every referenced lineup regardless
+        // of trajectory quality (stable sort keeps the physical order within
+        // each group). Full scoring is backlogged; this is the v1 penalty.
+        var aimRefs = solve.Lineups.ToDictionary(
+            l => l,
+            l => AimReference.Analyze(solve.Collider, l.Feet, l.Type, l.PitchDeg, l.YawDeg));
+        var ranked = solve.Lineups.OrderBy(l => aimRefs[l].IsSkyShot ? 1 : 0).ToList();
+
         return JsonSerializer.Serialize(new
         {
             target = new[] { solve.Target.X, solve.Target.Y, solve.Target.Z },
@@ -182,7 +191,7 @@ public static class LineupApi
             // or a sim gap).
             coverage = solve.Coverage
                 .Select(c => new[] { c[0], c[1], c[2], verifiedAt.Contains((c[0], c[1])) ? 1 : 0 }),
-            lineups = solve.Lineups.Take(hasOrigin ? 6 : 400).Select(l => new
+            lineups = ranked.Take(hasOrigin ? 6 : 400).Select(l => new
             {
                 feet = new[] { l.Feet.X, l.Feet.Y, l.Feet.Z },
                 yaw = l.YawDeg,
@@ -193,6 +202,12 @@ public static class LineupApi
                 l.Bounces,
                 flightTime = l.FlightTime,
                 stability = l.Stability,
+                aimRef = new
+                {
+                    tier = aimRefs[l].Tier,
+                    sky = aimRefs[l].SkyFraction,
+                    edgeDeg = float.IsFinite(aimRefs[l].NearestSilhouetteDeg) ? (float?)aimRefs[l].NearestSilhouetteDeg : null,
+                },
                 console = $"setpos {l.Feet.X:F0} {l.Feet.Y:F0} {l.Feet.Z + 1:F0}; setang {l.PitchDeg:F1} {l.YawDeg:F1} 0",
             }),
         });

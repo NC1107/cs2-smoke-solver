@@ -5,8 +5,27 @@ Each entry states the idea, why it matters, and what has to exist first.
 
 ## Lineup usability scoring
 
-**Status**: backlogged until simulation accuracy work is complete.
+**Status**: v1 of the aim-reference factor shipped 2026-07-13; the rest is open.
 **Origin**: Nick, 2026-07-09.
+
+### Progress (2026-07-13)
+
+Prerequisite cleared: simulation accuracy work completed (angular refinement + exact-sim re-aim, live-validated at 0.7u median).
+Shipped v1 of the aim-reference factor (`src/Solver/AimReference.cs`): a 9x9 ray cone (+-6 deg) around the aim direction measures sky fraction and nearest silhouette (hit/miss boundary or >25% depth jump between adjacent rays).
+Sky shots (>95% sky) sink below every referenced lineup in the API ordering, and each lineup card shows a badge: silhouette distance in degrees, `flat`, or `SKY`.
+Measured impact: 91 of 221 verified lineups at the B target (41%) were sky shots and now rank last.
+Next for this factor: tier the silhouette quality (enclosedness for the window case), and validate tiers against hand-labeled throws.
+
+### Screenshot previews (feeds this and the preview goal)
+
+Route 1: server-driven - the plugin's `!shot` command probes whether `screenshot` is accepted via `ExecuteClientCommandFromServer` (needs a connected client to test; command deployed 2026-07-13).
+If it works: rig walks top-N scored lineups with setpos/setang + screenshot, collects from `game/csgo/screenshots/` into `data/previews/`, viewer shows them on the card.
+Route 2 fallback: one-time client `bind f11 screenshot`, rig injects the key into the headed CS2 window (`ydotool` on Wayland, `xdotool` under XWayland).
+Route 3 fallback: three.js eye-view render from the GLB, headless screenshot - client-free but shows our mesh, not the real frame.
+
+### Rating system (future weight fitting)
+
+Users rate lineups (like/dislike) in the viewer; ratings become the fit target for the scoring weights, replacing hand-labeling over time.
 
 ### Problem
 
