@@ -271,6 +271,20 @@
   .lineup .row1 b { font-size: 12px; font-family: ui-sans-serif, system-ui, sans-serif; }
   .lineup .row1 .pct { margin-left: auto; color: var(--muted); }
   .lineup .cmd { margin-top: 4px; }
+  .lineup .preview-btn { margin-top: 4px; width: 100%; }
+  .preview-modal {
+    position: fixed; inset: 0; z-index: 55;
+    background: rgba(0, 0, 0, 0.75);
+    display: flex; align-items: center; justify-content: center;
+  }
+  .preview-modal[hidden] { display: none; }
+  .preview-modal-inner { position: relative; max-width: 92vw; max-height: 92vh; }
+  .preview-modal-inner img { max-width: 92vw; max-height: 92vh; display: block; border-radius: 6px; }
+  .preview-modal-inner #preview-close {
+    position: absolute; top: -14px; right: -14px;
+    width: 28px; height: 28px; padding: 0; border-radius: 50%;
+    line-height: 1; font-size: 16px;
+  }
   .list-note { color: var(--muted); font-size: 11px; }
   .lineup-options { display: grid; gap: 4px; }
   .lineup-option {

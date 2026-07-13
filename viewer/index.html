@@ -24,6 +24,7 @@
         <button id="search-all" class="btn" disabled>Search map</button>
         <button id="heat" class="btn" disabled>Heatmap</button>
         <button id="view3d" class="btn">3D</button>
+        <button id="textured3d" class="btn" disabled title="Load real map textures for the 3D view (~300MB, one-time)">Textured</button>
         <button id="clear" class="btn">Clear</button>
       </div>
     </details>
@@ -96,6 +97,13 @@ sv_autobunnyhopping 1; sv_enablebunnyhopping 1;
 give weapon_smokegrenade<button data-copy="cmd-setup" class="btn">copy</button></div>
     </details>
     <div id="lineup-list"></div>
+  </div>
+</div>
+
+<div id="preview-modal" class="preview-modal" hidden>
+  <div class="preview-modal-inner">
+    <button id="preview-close" class="btn" aria-label="Close preview">×</button>
+    <img id="preview-img" alt="First-person render of this lineup's throw position and aim">
   </div>
 </div>
 

@@ -5,7 +5,7 @@
 import { state, filtered, esc } from "./state.js";
 import { loadMapData, runQuery as postLineupQuery } from "./api.js";
 import { loadRadar, readColors, recolorRadar, draw, scheduleDraw, resize, resetView, initMap2d } from "./map2d.js";
-import { ensure3d, resetEnsure3d, current3d, sync3d, set3dCallbacks, applyTheme3d } from "./view3d.js";
+import { ensure3d, resetEnsure3d, current3d, sync3d, set3dCallbacks, applyTheme3d, capturePreview } from "./view3d.js";
 import { renderLineups, initPanel } from "./panel.js";
 
 (async () => {
@@ -33,6 +33,7 @@ import { renderLineups, initPanel } from "./panel.js";
   const stage3d = state.stage3d;
   const statusEl = state.statusEl;
   const heatBtn = document.getElementById("heat");
+  const texturedBtn = document.getElementById("textured3d");
   const keyEl = document.getElementById("key-dots");
 
   try {
@@ -170,7 +171,32 @@ import { renderLineups, initPanel } from "./panel.js";
     f.addEventListener("change", () => { state.selected = -1; renderLineups(); draw(); sync3d(); });
   }
 
-  initPanel({ onSetTarget: setTarget, onSelect: select });
+  const previewModal = document.getElementById("preview-modal");
+  const previewImg = document.getElementById("preview-img");
+  document.getElementById("preview-close").addEventListener("click", () => { previewModal.hidden = true; });
+  previewModal.addEventListener("click", e => { if (e.target === previewModal) { previewModal.hidden = true; } });
+
+  // Renders entirely client-side (capturePreview reuses the shared
+  // camera/canvas already in this page), so no server round-trip - just a
+  // one-time ~300MB texture load the first time any preview is requested.
+  async function showPreview(l, btn) {
+    const prevLabel = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = "rendering…";
+    statusEl.textContent = "rendering preview (loads real map textures, ~300MB one-time)…";
+    try {
+      previewImg.src = await capturePreview({ feet: l.feet, type: l.type, pitchDeg: l.pitch, yawDeg: l.yaw });
+      previewModal.hidden = false;
+      statusEl.textContent = "";
+    } catch (err) {
+      statusEl.textContent = `preview failed: ${err.message}`;
+    } finally {
+      btn.disabled = false;
+      btn.textContent = prevLabel;
+    }
+  }
+
+  initPanel({ onSetTarget: setTarget, onSelect: select, onPreview: showPreview });
   initMap2d({ onSetTarget: setTarget, onSelect: select, onRunQuery: runQuery });
   set3dCallbacks({ onSetTarget: setTarget, onSelect: select });
 
@@ -190,6 +216,7 @@ import { renderLineups, initPanel } from "./panel.js";
         statusEl.textContent = "3D: WASD fly (QE up/down, shift fast) · drag orbit · right-drag pan · scroll zoom · click terrain = set target · click marker = pin";
         t3.start();
         sync3d();
+        texturedBtn.disabled = false;
       } catch {
         resetEnsure3d();
         stage3d.style.display = "none";
@@ -200,7 +227,29 @@ import { renderLineups, initPanel } from "./panel.js";
       }
     } else if (current3d()) {
       current3d().stop();
+      texturedBtn.disabled = true;
       draw();
+    }
+  });
+
+  texturedBtn.addEventListener("click", async () => {
+    const t3 = current3d();
+    if (!t3) {
+      return;
+    }
+    const wantOn = !t3.isTextured;
+    texturedBtn.disabled = true;
+    statusEl.textContent = wantOn ? "loading real map textures (~300MB, one-time)…" : "";
+    try {
+      await t3.setTextured(wantOn);
+      texturedBtn.classList.toggle("primary", wantOn);
+      statusEl.textContent = wantOn
+        ? "textured: drag orbit · right-drag pan · scroll zoom · WASD fly"
+        : "3D: WASD fly (QE up/down, shift fast) · drag orbit · right-drag pan · scroll zoom · click terrain = set target · click marker = pin";
+    } catch (err) {
+      statusEl.textContent = `failed to load textures: ${err.message}`;
+    } finally {
+      texturedBtn.disabled = false;
     }
   });
 

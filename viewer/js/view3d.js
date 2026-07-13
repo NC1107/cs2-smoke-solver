@@ -197,16 +197,22 @@ async function init3d() {
   }
 
   let live = false;
+  // Mutable so the interactive "Textured" toggle can retarget the loop
+  // without re-registering keys/controls; loop() always reads the current
+  // value rather than closing over the flat scene permanently.
+  let activeScene = scene;
   function loop() {
     if (!live) { return; }
     fly();
     controls.update();
-    renderer.render(scene, camera);
+    renderer.render(activeScene, camera);
     requestAnimationFrame(loop);
   }
   three = {
     renderer, scene, camera, controls, markerGroup, targetGroup, resize3d,
     markerGeo, markerMats, targetGeo, targetMat, bloomGeo, bloomMat, lineMat,
+    get isLive() { return live; },
+    get isTextured() { return activeScene !== scene; },
     start() {
       if (live) { return; }
       live = true;
@@ -222,6 +228,20 @@ async function init3d() {
       window.removeEventListener("keydown", onKeyDown);
       window.removeEventListener("keyup", onKeyUp);
       window.removeEventListener("blur", onBlur);
+    },
+    // Switches the interactive (orbit + WASD) view between the flat
+    // collision mesh and the real-textured GLB. Markers/target follow
+    // whichever scene is now active so picking and the target dot keep
+    // working in both modes.
+    async setTextured(on) {
+      if (on === this.isTextured) { return; }
+      const dest = on ? await ensureTexturedScene() : scene;
+      const src = on ? scene : texturedScene;
+      src?.remove(markerGroup);
+      src?.remove(targetGroup);
+      dest.add(markerGroup);
+      dest.add(targetGroup);
+      activeScene = dest;
     },
   };
   return three;
@@ -254,11 +274,10 @@ function ensureCrosshair() {
   stage3d.appendChild(crosshairEl);
 }
 
-// Textured scene for preview rendering only: the interactive orbit view
-// stays on the flat, vertex-colored collision mesh (kept deliberately simple
-// per an earlier request). This is a separate GLB exported straight from the
-// game's VPK with real materials/UVs (data/de_dust2_textured.glb, built via
-// the exportgltf CLI command), loaded lazily since it is ~300 MB.
+// Textured scene, shared by lineup previews and the interactive view's
+// "Textured" toggle. A separate GLB exported straight from the game's VPK
+// with real materials/UVs (data/de_dust2_textured.glb, built via the
+// exportgltf CLI command), loaded lazily since it is ~300 MB.
 let texturedScene = null;
 let texturedScenePromise = null;
 export function ensureTexturedScene(url = "data/de_dust2_textured.glb") {
@@ -283,7 +302,16 @@ export function ensureTexturedScene(url = "data/de_dust2_textured.glb") {
     // both simpler and closer to what the game itself would show here.
     root.traverse(o => {
       if (o.isMesh && o.material) {
-        o.material = new THREE.MeshBasicMaterial({ map: o.material.map, color: o.material.color });
+        // A few meshes (flags, banners) carry no diffuse texture at all and
+        // rely on baked per-vertex color instead; without vertexColors those
+        // fall back to material.color, which is white by default and paints
+        // them as flat white triangles.
+        const hasVertexColor = !!o.geometry.getAttribute("color");
+        o.material = new THREE.MeshBasicMaterial({
+          map: o.material.map,
+          color: o.material.color,
+          vertexColors: !o.material.map && hasVertexColor,
+        });
       }
     });
 
@@ -344,6 +372,67 @@ export function renderPreview({ feet, type, pitchDeg, yawDeg, fovDesiredDeg = 90
   // matching where CS2 always draws it: it represents the aim direction the
   // camera is already looking along, not a 3D-projected world point.
   ensureCrosshair();
+}
+
+// Client-side lineup preview: everything renderPreview() needs already runs
+// in the user's own browser, so no server or headless automation is needed
+// to show one. Temporarily borrows the shared camera/canvas, snapshots it as
+// a PNG data URL, then restores whatever the user was looking at (position,
+// FOV, and the interactive loop if it was running) exactly as it was.
+//
+// The crosshair itself is an HTML overlay (ensureCrosshair()), not part of
+// the canvas's own pixels, so a page-level screenshot (the headless capture
+// path) picks it up for free but canvas.toDataURL() here would not - it is
+// redrawn with 2D primitives onto a copy of the frame instead.
+// Fixed 16:9 capture resolution: stage3d is usually display:none at this
+// point (no one has opened the 3D view), so its clientWidth/Height read 0
+// and resize3d() would leave the canvas at its tiny default size. A fixed
+// size also makes every preview the same shape regardless of the browser
+// window, rather than however wide the page happened to be.
+const PREVIEW_WIDTH = 1600, PREVIEW_HEIGHT = 900;
+
+export async function capturePreview({ feet, type, pitchDeg, yawDeg, fovDesiredDeg = 90 }) {
+  await ensure3d();
+  await ensureTexturedScene();
+  const wasLive = three.isLive;
+  const cam = three.camera;
+  const savedPos = cam.position.clone();
+  const savedQuat = cam.quaternion.clone();
+  const savedFov = cam.fov;
+  const savedAspect = cam.aspect;
+
+  three.renderer.setSize(PREVIEW_WIDTH, PREVIEW_HEIGHT, false);
+  cam.aspect = PREVIEW_WIDTH / PREVIEW_HEIGHT;
+  renderPreview({ feet, type, pitchDeg, yawDeg, fovDesiredDeg });
+  const src = three.renderer.domElement;
+  const out = document.createElement("canvas");
+  out.width = src.width;
+  out.height = src.height;
+  const ctx = out.getContext("2d");
+  ctx.drawImage(src, 0, 0);
+  const cx = out.width / 2, cy = out.height / 2, r = out.width / 120;
+  ctx.strokeStyle = "#00ff00";
+  ctx.lineWidth = Math.max(1, out.width / 900);
+  ctx.beginPath();
+  ctx.moveTo(cx - r, cy); ctx.lineTo(cx + r, cy);
+  ctx.moveTo(cx, cy - r); ctx.lineTo(cx, cy + r);
+  ctx.stroke();
+  const dataUrl = out.toDataURL("image/png");
+
+  cam.position.copy(savedPos);
+  cam.quaternion.copy(savedQuat);
+  cam.fov = savedFov;
+  cam.aspect = savedAspect;
+  cam.updateProjectionMatrix();
+  // Resyncs the canvas to stage3d's real size (0 if the interactive 3D view
+  // was never opened, in which case this is a harmless no-op - resize3d()
+  // itself guards on that and start() will size it again if 3D mode opens
+  // later).
+  three.resize3d();
+  if (wasLive) {
+    three.start();
+  }
+  return dataUrl;
 }
 
 // Re-applies palette-dependent colors after a prefers-color-scheme flip

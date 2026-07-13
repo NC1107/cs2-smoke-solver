@@ -11,6 +11,7 @@ const LIST_CAP = 50;
 let callbacks = {
   onSetTarget: () => {},
   onSelect: () => {},
+  onPreview: () => {},
 };
 
 function lineupSummaryHtml(l) {
@@ -69,11 +70,16 @@ export function renderLineups() {
     el.innerHTML =
       `<div class="row1">${lineupSummaryHtml(l)}</div>` +
       `<div style="margin:4px 0 2px">${esc(l.how)}</div>` +
-      `<div class="cmd" id="cmd-l${i}">${esc(l.console)}<button data-copy="cmd-l${i}" class="btn">copy</button></div>`;
+      `<div class="cmd" id="cmd-l${i}">${esc(l.console)}<button data-copy="cmd-l${i}" class="btn">copy</button></div>` +
+      `<button type="button" class="btn preview-btn">Preview (textured 3D)</button>`;
     // Card click toggles the selection off, matching marker behavior (L16).
     el.addEventListener("click", () => callbacks.onSelect(i));
     list.appendChild(el);
     wireCopyButtons(el);
+    el.querySelector(".preview-btn").addEventListener("click", e => {
+      e.stopPropagation();
+      callbacks.onPreview(l, e.currentTarget);
+    });
   }
 
   if (shown.length > 0) {
