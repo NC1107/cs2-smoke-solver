@@ -141,6 +141,31 @@
     white-space: nowrap;
   }
   .stage { position: relative; flex: 1; min-height: 320px; overflow: hidden; }
+  /* Headless lineup-preview capture: a clean full-viewport render with no
+     chrome, so an automated screenshot shows only what the player would see. */
+  body.preview-mode .toolbar,
+  body.preview-mode #controls,
+  body.preview-mode .key,
+  body.preview-mode .panel,
+  body.preview-mode footer { display: none; }
+  body.preview-mode .stage { position: fixed; inset: 0; }
+  .preview-crosshair {
+    display: none;
+    position: absolute;
+    left: 50%; top: 50%;
+    width: 0; height: 0;
+    pointer-events: none;
+    z-index: 40;
+  }
+  body.preview-mode .preview-crosshair { display: block; }
+  .preview-crosshair span {
+    position: absolute;
+    background: #00ff00;
+    box-shadow: 0 0 1px #000;
+  }
+  /* Two bars forming a "+", each centered on the viewport midpoint. */
+  .preview-crosshair span:first-child { left: -8px; top: -1px; width: 16px; height: 2px; }
+  .preview-crosshair span:last-child { left: -1px; top: -8px; width: 2px; height: 16px; }
   canvas { position: absolute; inset: 0; width: 100%; height: 100%; cursor: grab; }
   canvas.panning { cursor: grabbing; }
   canvas.picking { cursor: crosshair; }

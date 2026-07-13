@@ -227,6 +227,72 @@ async function init3d() {
   return three;
 }
 
+// Per-type eye height, matching GrenadeTrajectory.EyeHeight exactly so the
+// preview camera sits where the solver's own aim ray actually starts.
+const EYE_HEIGHT = { Crouch: 46.04, CrouchJumpThrow: 46.04 };
+const DEFAULT_EYE_HEIGHT = 64.06;
+
+// Source engine FOV is "Hor+": fov_desired is the horizontal FOV at a 4:3
+// reference aspect, and the vertical FOV this implies stays constant across
+// every other aspect ratio while the horizontal FOV widens. three.js's
+// PerspectiveCamera.fov is vertical, so deriving and holding *that* fixed
+// while letting camera.aspect drive the projection matrix reproduces the
+// same widening automatically - no per-aspect-ratio special-casing needed.
+function verticalFovFromDesired(fovDesiredDeg) {
+  const hHalf = fovDesiredDeg * Math.PI / 360;
+  return 2 * Math.atan(Math.tan(hHalf) / (4 / 3)) * 180 / Math.PI;
+}
+
+let crosshairEl = null;
+function ensureCrosshair() {
+  if (crosshairEl) {
+    return;
+  }
+  crosshairEl = document.createElement("div");
+  crosshairEl.className = "preview-crosshair";
+  crosshairEl.innerHTML = "<span></span><span></span>";
+  stage3d.appendChild(crosshairEl);
+}
+
+// Renders one first-person frame from a lineup's exact throw position and
+// angle - what the player would line their crosshair against, not the
+// orbiting overview camera. Used for headless preview capture (screenshots
+// are taken by the automation driving the browser, not by this function).
+// fovDesiredDeg matches the client's fov_desired convar (90 is the CS2/CS:GO
+// default); pass the player's actual setting if they have changed it.
+export function renderPreview({ feet, type, pitchDeg, yawDeg, fovDesiredDeg = 90 }) {
+  if (!three) {
+    throw new Error("renderPreview called before ensure3d()");
+  }
+  const { renderer, scene, camera, markerGroup, targetGroup } = three;
+  const eyeHeight = EYE_HEIGHT[type] ?? DEFAULT_EYE_HEIGHT;
+  const eye = new THREE.Vector3(feet[0], feet[1], feet[2] + eyeHeight);
+  const pr = pitchDeg * Math.PI / 180, yr = yawDeg * Math.PI / 180;
+  // Same convention as GrenadeTrajectory/AimReference: yaw around Z, pitch
+  // tilts toward +Z as it goes negative (throws aim "down" at negative pitch).
+  const dir = new THREE.Vector3(
+    Math.cos(pr) * Math.cos(yr), Math.cos(pr) * Math.sin(yr), -Math.sin(pr));
+
+  camera.fov = verticalFovFromDesired(fovDesiredDeg);
+  camera.position.copy(eye);
+  camera.lookAt(eye.clone().add(dir));
+  camera.updateProjectionMatrix();
+
+  // A clean shot of the world only: our own marker/target overlays would
+  // never appear in a real player's view.
+  const wasMarkerVisible = markerGroup.visible, wasTargetVisible = targetGroup.visible;
+  markerGroup.visible = false;
+  targetGroup.visible = false;
+  renderer.render(scene, camera);
+  markerGroup.visible = wasMarkerVisible;
+  targetGroup.visible = wasTargetVisible;
+
+  // The crosshair sits at the exact viewport center regardless of resolution,
+  // matching where CS2 always draws it: it represents the aim direction the
+  // camera is already looking along, not a 3D-projected world point.
+  ensureCrosshair();
+}
+
 // Re-applies palette-dependent colors after a prefers-color-scheme flip
 // (M45). The terrain's per-vertex height tint stays baked from init; a rare
 // theme flip does not justify rewriting the whole color attribute.

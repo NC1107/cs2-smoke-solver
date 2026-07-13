@@ -16,12 +16,21 @@ Sky shots (>95% sky) sink below every referenced lineup in the API ordering, and
 Measured impact: 91 of 221 verified lineups at the B target (41%) were sky shots and now rank last.
 Next for this factor: tier the silhouette quality (enclosedness for the window case), and validate tiers against hand-labeled throws.
 
-### Screenshot previews (feeds this and the preview goal)
+### Screenshot previews - resolved 2026-07-13, rendered rather than captured
 
-Route 1: server-driven - the plugin's `!shot` command probes whether `screenshot` is accepted via `ExecuteClientCommandFromServer` (needs a connected client to test; command deployed 2026-07-13).
-If it works: rig walks top-N scored lineups with setpos/setang + screenshot, collects from `game/csgo/screenshots/` into `data/previews/`, viewer shows them on the card.
-Route 2 fallback: one-time client `bind f11 screenshot`, rig injects the key into the headed CS2 window (`ydotool` on Wayland, `xdotool` under XWayland).
-Route 3 fallback: three.js eye-view render from the GLB, headless screenshot - client-free but shows our mesh, not the real frame.
+Live capture from the actual game client was tried and abandoned as a dead end, not just a fallback:
+- Route 1 (`ExecuteClientCommandFromServer("screenshot")` via the plugin's `!shot` command): produced nothing.
+  The engine's server-forced-command allowlist almost certainly excludes `screenshot`, the same way it excludes anything that could let a malicious server write to a client's disk.
+- Route 2 (client-side key injection - `xdotool` X11 XTest events, then `ydotool` via a real `/dev/uinput` virtual keyboard): both produced nothing for Steam's overlay F12 hotkey and for the engine's own console `screenshot` command (even once the right console-toggle key was found from the client's own `autoexec.cfg`, which rebinds it off the default backtick to apostrophe).
+  Physical key presses worked every time; every form of synthetic injection failed uniformly.
+  That pattern means CS2 and/or Steam's overlay filter out synthetic input at a layer beneath both X11 and kernel uinput - and the next step to defeat that (crafting a virtual device that more convincingly spoofs real hardware bus/vendor IDs) is the same technique underlying game macros and input cheats, so it was deliberately not pursued further.
+
+Route 3 shipped instead: headless render from the same collision mesh the solver reasons about.
+`viewer/js/view3d.js` exports `renderPreview({feet, type, pitchDeg, yawDeg})`, which points the existing three.js camera at the lineup's exact eye position/eye-height/aim direction (same convention as `GrenadeTrajectory`/`AimReference`) and renders one frame; a `body.preview-mode` CSS class hides all UI chrome for a clean full-viewport shot.
+`rig/render-previews.py` drives this end to end: solves a target via the running viewer's own API, skips sky-tier lineups, and for each remaining lineup drives a headless `google-chrome-stable` (via `chrome-devtools-axi`) through `ensure3d()` + `renderPreview()` + a screenshot, saving to `data/previews/<target>/`.
+Gotcha worth remembering: `chrome-devtools-axi` needs a *native* Chrome binary at the standard path for its own driver, not just something to attach to via `--remote-debugging-port` - a Flatpak-only Chrome install (`com.google.Chrome` via flathub) does not satisfy it even when reachable over CDP; install `google-chrome-stable` from Google's own RPM (`sudo dnf install -y https://dl.google.com/linux/direct/google-chrome-stable_current_x86_64.rpm`, since Fedora's repos don't carry it directly).
+Not photoreal (collision-shaded like the rest of the 3D viewer, not textured), but reliable, fast, and scales to any number of lineups without touching the live game.
+Next: decide whether the viewer should request/display these on lineup cards on demand, or whether pre-generating previews for a target's top-N stays a rig-triggered batch step.
 
 ### Rating system (future weight fitting)
 
