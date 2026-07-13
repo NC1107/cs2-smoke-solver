@@ -82,3 +82,9 @@ Weights will need playtesting; start by sorting the existing mid-doors result se
 - Simulation accuracy work finished (flight physics is engine-exact as of 2026-07-09; remaining work is map-fidelity tails and crouch eye-height validation).
 - Silhouette or reference-point extraction from map geometry (new capability, phase 1 of aim-reference scoring).
 - Measured bloom expansion timing from calibration captures (data already collected, analysis not yet done).
+
+## Deferred test coverage
+
+- LineupSolver: the `result.Lost || FlightTime >= MaxFlightSeconds` skip branch in `Solve`/`VerifyExact` has no test.
+  Constructing a deterministic lost or timed-out trajectory needs physics-tuned fixtures (an open-void throw with no ground in reach).
+  Flagged by the 2026-07-13 review loop as follow-up rather than blocking.
