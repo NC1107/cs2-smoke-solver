@@ -20,8 +20,7 @@ public class NavGroundZTests
 
         var z = LineupSolver.NavGroundZ(areas, 50, 50);
 
-        Assert.NotNull(z);
-        Assert.Equal(10f, z!.Value, 3);
+        Assert.Equal(10f, z);
     }
 
     [Fact]
@@ -53,12 +52,10 @@ public class NavGroundZTests
         Assert.Null(LineupSolver.NavGroundZ(lShape, 80, 80));
 
         var leftArm = LineupSolver.NavGroundZ(lShape, 20, 80);
-        Assert.NotNull(leftArm);
-        Assert.Equal(5f, leftArm!.Value, 3);
+        Assert.Equal(5f, leftArm);
 
         var bottomArm = LineupSolver.NavGroundZ(lShape, 80, 20);
-        Assert.NotNull(bottomArm);
-        Assert.Equal(5f, bottomArm!.Value, 3);
+        Assert.Equal(5f, bottomArm);
     }
 
     [Fact]
@@ -74,7 +71,6 @@ public class NavGroundZTests
 
         var z = LineupSolver.NavGroundZ(areas, 50, 50);
 
-        Assert.NotNull(z);
-        Assert.Equal(0f, z!.Value, 3);
+        Assert.Equal(0f, z);
     }
 }

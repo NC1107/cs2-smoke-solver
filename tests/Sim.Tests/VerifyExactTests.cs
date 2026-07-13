@@ -19,15 +19,14 @@ public class VerifyExactTests
     // A grounded standing throw over open flatground: gentle downward pitch aimed
     // at empty terrain, so the exact sphere cast settles cleanly and small angle
     // perturbations land right next to each other.
-    static Lineup Candidate(Vector3 restPoint) =>
-        new(new Vector3(500, 2048, 0), YawDeg: 0f, PitchDeg: -30f, ThrowType.Stand, restPoint,
+    static Lineup Candidate() =>
+        new(new Vector3(500, 2048, 0), YawDeg: 0f, PitchDeg: -30f, ThrowType.Stand, Vector3.Zero,
             Bounces: 1, FlightTime: 1f, RestCrossings: 3, Strength: 1f);
 
-    static ThrowSpec SpecOf(Lineup c) =>
-        new(c.Feet + new Vector3(0, 0, GrenadeTrajectory.EyeHeight(c.Type)), c.YawDeg, c.PitchDeg, c.Type, c.Strength);
-
     static Vector3 ExactRest(TriangleCollider collider, Lineup c) =>
-        GrenadeTrajectory.SimulateExact(collider, SpecOf(c)).RestPoint;
+        GrenadeTrajectory.SimulateExact(collider, new ThrowSpec(
+            c.Feet + new Vector3(0, 0, GrenadeTrajectory.EyeHeight(c.Type)),
+            c.YawDeg, c.PitchDeg, c.Type, c.Strength)).RestPoint;
 
     // The zone the verifier is asked about: the exact rest cell plus its 8 XY
     // neighbours across z-1..z+1, so the reference throw and its small nudges all
@@ -66,7 +65,7 @@ public class VerifyExactTests
     public void StableCandidateSurvivesWithAHighStabilityScore()
     {
         var (grid, collider) = FlatScene();
-        var candidate = Candidate(Vector3.Zero);
+        var candidate = Candidate();
         var zone = ZoneFromExact(grid, collider, candidate);
 
         var result = LineupSolver.VerifyExact(grid, collider, zone, [candidate]);
@@ -80,14 +79,13 @@ public class VerifyExactTests
     public void CandidateRestingOutsideTheZoneIsRejected()
     {
         var (grid, collider) = FlatScene();
-        var candidate = Candidate(Vector3.Zero);
+        var candidate = Candidate();
         // A single cell nowhere near the actual landing (y=3500 vs the throw's
         // y~2048), so no perturbation reaches it.
         var (fx, fy, fz) = grid.CellOf(new Vector3(3500, 3500, 2));
         var farZone = new Dictionary<int, int>
         {
             [grid.Index(fx, fy, fz)] = 3,
-            [grid.Index(fx, fy, fz + 1)] = 3,
         };
 
         var result = LineupSolver.VerifyExact(grid, collider, farZone, [candidate]);
@@ -99,7 +97,7 @@ public class VerifyExactTests
     public void StabilityBelowTheThresholdIsRejected()
     {
         var (grid, collider) = FlatScene();
-        var candidate = Candidate(Vector3.Zero);
+        var candidate = Candidate();
         var zone = ZoneFromExact(grid, collider, candidate);
 
         // Perfect stability tops out at 1.0, so a 1.1 floor rejects everything.
@@ -112,8 +110,7 @@ public class VerifyExactTests
     public void VerifiedRestPointIsResnappedFromTheExactSimulation()
     {
         var (grid, collider) = FlatScene();
-        var sentinel = Vector3.Zero;
-        var candidate = Candidate(sentinel);
+        var candidate = Candidate();
         var zone = ZoneFromExact(grid, collider, candidate);
         var reference = ExactRest(collider, candidate);
 
@@ -122,7 +119,7 @@ public class VerifyExactTests
         Assert.Single(result);
         Assert.True(Vector3.Distance(result[0].RestPoint, reference) <= 1f,
             $"rest {result[0].RestPoint} should match the exact rest {reference}");
-        Assert.True(Vector3.Distance(result[0].RestPoint, sentinel) > 1f,
+        Assert.True(Vector3.Distance(result[0].RestPoint, candidate.RestPoint) > 1f,
             "the placeholder rest point should have been replaced");
     }
 }
