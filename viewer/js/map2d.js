@@ -139,15 +139,16 @@ export function draw() {
     ctx.fill();
   }
   if (state.heatOn && state.result && state.result.coverage) {
-    // Coverage heat map, colorblind-safe (M14): blue fill where at least one
-    // throw reaches the target (brighter = more options), orange outline with
+    // Coverage heat map, colorblind-safe (M14): solid blue fill where a
+    // verified lineup stands, faint blue fill where only the coarse voxel sim
+    // reaches (its candidates failed exact verification), orange outline with
     // no fill where a standable origin was evaluated and nothing reaches it.
     // Outlined cells adjacent to filled regions are candidates for sim gaps.
     ctx.lineWidth = Math.min(1.5 / scale, HEAT_CELL / 6);
-    for (const [hx, hy, count] of state.result.coverage) {
+    for (const [hx, hy, count, verified] of state.result.coverage) {
       if (count > 0) {
         ctx.fillStyle = colors["heat-ok"];
-        ctx.globalAlpha = 0.25 + 0.5 * Math.min(count, 40) / 40;
+        ctx.globalAlpha = verified ? 0.55 + 0.4 * Math.min(count, 40) / 40 : 0.18;
         ctx.fillRect(hx - HEAT_CELL / 2, -hy - HEAT_CELL / 2, HEAT_CELL, HEAT_CELL);
       } else {
         ctx.strokeStyle = colors["heat-none"];

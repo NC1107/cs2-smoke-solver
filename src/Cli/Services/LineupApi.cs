@@ -125,7 +125,7 @@ public static class LineupApi
         var tol = query.TryGetProperty("tolerance", out var tolEl) ? tolEl.GetSingle() : 80f;
         // Bump when solver or sim behavior changes: cached answers from older code
         // must never be replayed as current results.
-        const int QueryVersion = 6;
+        const int QueryVersion = 7;
         var seed = $"v{QueryVersion}|{mesh.MapName}|{mesh.GameBuildId}|{JsonSerializer.Serialize(constants)}|{tx},{ty},{tz}|{origin}|{reach:F0}|{tol:F0}|{attrs}";
         var hash = System.Security.Cryptography.SHA1.HashData(Encoding.UTF8.GetBytes(seed));
         return Convert.ToHexString(hash)[..20].ToLowerInvariant();
@@ -162,14 +162,23 @@ public static class LineupApi
 
         var solve = SolveForTarget(mesh, attributeFilter, navAreas, target, hasTargetZ, originClick, originReach, tolerance, constants);
 
+        // Raw voxel-stage counts overstate throwability (many candidates die in
+        // exact-sim verification), so each cell also says whether a verified
+        // lineup actually stands there. The viewer renders the two differently.
+        var verifiedAt = solve.Lineups
+            .Select(l => ((int)MathF.Round(l.Feet.X), (int)MathF.Round(l.Feet.Y)))
+            .ToHashSet();
+
         return JsonSerializer.Serialize(new
         {
             target = new[] { solve.Target.X, solve.Target.Y, solve.Target.Z },
             origins = solve.OriginCount,
-            // Per evaluated origin: [x, y, raw option count]. Zero-count cells are
-            // the interesting ones - places a player can stand where no simulated
-            // throw reaches the target (either truly impossible or a sim gap).
-            coverage = solve.Coverage,
+            // Per evaluated origin: [x, y, raw option count, verified lineup here].
+            // Zero-count cells are the interesting ones - places a player can stand
+            // where no simulated throw reaches the target (either truly impossible
+            // or a sim gap).
+            coverage = solve.Coverage
+                .Select(c => new[] { c[0], c[1], c[2], verifiedAt.Contains((c[0], c[1])) ? 1 : 0 }),
             lineups = solve.Lineups.Take(hasOrigin ? 6 : 400).Select(l => new
             {
                 feet = new[] { l.Feet.X, l.Feet.Y, l.Feet.Z },
