@@ -254,6 +254,56 @@ function ensureCrosshair() {
   stage3d.appendChild(crosshairEl);
 }
 
+// Textured scene for preview rendering only: the interactive orbit view
+// stays on the flat, vertex-colored collision mesh (kept deliberately simple
+// per an earlier request). This is a separate GLB exported straight from the
+// game's VPK with real materials/UVs (data/de_dust2_textured.glb, built via
+// the exportgltf CLI command), loaded lazily since it is ~300 MB.
+let texturedScene = null;
+let texturedScenePromise = null;
+export function ensureTexturedScene(url = "data/de_dust2_textured.glb") {
+  texturedScenePromise ??= (async () => {
+    await loadScript("viewer/lib/GLTFLoader.js");
+    const gltf = await new Promise((resolve, reject) => {
+      new THREE.GLTFLoader().load(url, resolve, undefined, reject);
+    });
+    const root = gltf.scene;
+    // VRF exports in meters, Y-up; the collision mesh (and every solver
+    // coordinate) is Hammer units, Z-up, so rotate and rescale the whole
+    // hierarchy once at the root rather than touching individual meshes.
+    root.rotation.x = Math.PI / 2;
+    root.scale.setScalar(1 / 0.0254);
+
+    // The exporter can't classify roughness/metalness channels for this game
+    // build's shader format (a version-support gap in the VRF library), so
+    // those materials fall back to shiny PBR defaults and blow out to white
+    // under direct light. Force a matte, non-metallic response wherever a
+    // roughness map never got attached, rather than fighting it with light
+    // intensity - the actual bug is in the material, not the lighting.
+    root.traverse(o => {
+      if (o.isMesh && o.material && !o.material.roughnessMap) {
+        o.material.roughness = 1;
+        o.material.metalness = 0;
+      }
+    });
+
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(state.colors.surface);
+    scene.add(root);
+    // Modest, neutral lighting: real textures already carry their own
+    // albedo detail, so avoid the earlier over-bright wash-out by keeping
+    // both lights well under full intensity.
+    scene.add(new THREE.HemisphereLight(0xffffff, 0x3a3630, 0.7));
+    const sun = new THREE.DirectionalLight(0xffffff, 0.55);
+    sun.position.set(0.4, 0.25, 1);
+    scene.add(sun);
+
+    texturedScene = scene;
+    return scene;
+  })();
+  return texturedScenePromise;
+}
+
 // Renders one first-person frame from a lineup's exact throw position and
 // angle - what the player would line their crosshair against, not the
 // orbiting overview camera. Used for headless preview capture (screenshots
@@ -264,7 +314,17 @@ export function renderPreview({ feet, type, pitchDeg, yawDeg, fovDesiredDeg = 90
   if (!three) {
     throw new Error("renderPreview called before ensure3d()");
   }
-  const { renderer, scene, camera, markerGroup, targetGroup } = three;
+  // The interactive view's own requestAnimationFrame loop (started by
+  // three.start(), e.g. from clicking the 3D button) keeps re-rendering the
+  // flat scene every frame with whatever camera state currently exists -
+  // it will silently clobber this function's render within milliseconds if
+  // left running, overwriting it before a screenshot can ever see it.
+  three.stop();
+  const { renderer, camera, markerGroup, targetGroup } = three;
+  // Prefer the real-textured scene once ensureTexturedScene() has resolved;
+  // fall back to the flat collision mesh otherwise so this still works
+  // stand-alone (e.g. tests, or a map with no textured export yet).
+  const scene = texturedScene ?? three.scene;
   const eyeHeight = EYE_HEIGHT[type] ?? DEFAULT_EYE_HEIGHT;
   const eye = new THREE.Vector3(feet[0], feet[1], feet[2] + eyeHeight);
   const pr = pitchDeg * Math.PI / 180, yr = yawDeg * Math.PI / 180;

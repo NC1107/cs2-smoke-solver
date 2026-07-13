@@ -25,10 +25,10 @@ import urllib.request
 VIEWER = "http://127.0.0.1:8137"
 
 
-def run_axi(*args: str) -> str:
+def run_axi(*args: str, timeout: float = 60) -> str:
     result = subprocess.run(
         ["npx", "-y", "chrome-devtools-axi", *args],
-        capture_output=True, text=True, timeout=60)
+        capture_output=True, text=True, timeout=timeout)
     return result.stdout
 
 
@@ -76,6 +76,18 @@ def main() -> int:
     )
     run_axi("eval", setup)
 
+    # The textured GLB is ~300 MB (real materials/UVs exported straight from
+    # the VPK), so give it a generous timeout; renderPreview() falls back to
+    # the flat collision mesh automatically if this rejects.
+    print("loading textured scene (~300MB, one-time)...", file=sys.stderr)
+    texture_result = run_axi(
+        "eval",
+        "async () => { const {ensureTexturedScene} = await import('/viewer/js/view3d.js'); "
+        "try { await ensureTexturedScene(); return 'loaded'; } "
+        "catch (e) { return 'failed: ' + e.message; } }",
+        timeout=180)
+    print(f"  {texture_result.strip()}", file=sys.stderr)
+
     slug = f"{target[0]:.0f}_{target[1]:.0f}"
     outdir = os.path.join(args.out, slug)
     os.makedirs(outdir, exist_ok=True)
@@ -86,7 +98,11 @@ def main() -> int:
             f"renderPreview({{feet:{json.dumps(l['feet'])}, type:{json.dumps(l['type'])}, "
             f"pitchDeg:{l['pitch']}, yawDeg:{l['yaw']}, fovDesiredDeg:{args.fov}}}); return 'rendered'; }}"
         )
-        run_axi("eval", call)
+        # Each new camera angle can expose materials three.js has not yet
+        # compiled shaders for (715 distinct materials in the textured
+        # scene), so the first few renders can be markedly slower than a
+        # cached one; the flat-mesh fallback never needed this headroom.
+        run_axi("eval", call, timeout=120)
         path = os.path.join(outdir, f"{i:02d}_{l['type']}_{l['aimRef']['tier']}.png")
         run_axi("screenshot", path)
         print(f"  {path}", file=sys.stderr)
