@@ -9,7 +9,11 @@ public class LineupSolveTests
     static readonly Vector3 SolveMin = new(0, 0, 0);
     static readonly Vector3 SolveMax = new(2048, 2048, 256);
 
-    static VoxelGrid Ground2048()
+    // Immutable after voxelization, so every fact in this class reads one shared
+    // ground grid instead of rebuilding it per test.
+    static readonly VoxelGrid Ground2048 = BuildGround2048();
+
+    static VoxelGrid BuildGround2048()
     {
         var mesh = SyntheticMeshes.FromQuads([SyntheticMeshes.Ground(0, 2048, 0)]);
         return VoxelGrid.Build(mesh, 16f, new Vector3(0, 0, -16), new Vector3(2048, 2048, 256));
@@ -47,7 +51,7 @@ public class LineupSolveTests
     [Fact]
     public void EmptyZoneReturnsImmediatelyWithoutSimulating()
     {
-        var grid = Ground2048();
+        var grid = Ground2048;
 
         var result = LineupSolver.Solve(
             grid, new Dictionary<int, int>(), SolveMin, SolveMax, [ThrowType.Stand],
@@ -59,12 +63,12 @@ public class LineupSolveTests
     [Fact]
     public void LineupsRestInsideTheZoneAndCarryTheirCellsCrossingCount()
     {
-        var grid = Ground2048();
+        var grid = Ground2048;
         var zone = Zone(grid, 400, 1100, 800, 1250, 3);
 
         var result = LineupSolver.Solve(
             grid, zone, SolveMin, SolveMax, [ThrowType.Stand],
-            origins: [new Vector3(256, 1024, 0)]);
+            yawStepDeg: 6f, pitchStepDeg: 6f, origins: [new Vector3(256, 1024, 0)]);
 
         Assert.NotEmpty(result);
         foreach (var lineup in result)
@@ -79,13 +83,14 @@ public class LineupSolveTests
     [Fact]
     public void ResultsAreOrderedByBouncesThenCrossingsThenFlightTime()
     {
-        var grid = Ground2048();
+        var grid = Ground2048;
         // Crossings climb with x so lineups from different origins earn different
         // scores, exercising the crossing tie-break in the ranking.
         var zone = Zone(grid, 1000, 1600, 800, 1250, x => x < 1200 ? 1 : x < 1400 ? 5 : 9);
 
         var result = LineupSolver.Solve(
             grid, zone, SolveMin, SolveMax, [ThrowType.Stand],
+            yawStepDeg: 6f, pitchStepDeg: 6f,
             origins: [new Vector3(256, 1024, 0), new Vector3(512, 1024, 0), new Vector3(768, 1024, 0)]);
 
         Assert.True(result.Count >= 2, $"expected several lineups to rank, got {result.Count}");
@@ -100,7 +105,7 @@ public class LineupSolveTests
     [Fact]
     public void CoverageRecordsBothProductiveAndHopelessOrigins()
     {
-        var grid = Ground2048();
+        var grid = Ground2048;
         var zone = Zone(grid, 150, 450, 150, 450, 3);
         var near = new Vector3(700, 300, 0);
         // Farther than any Stand throw can carry (distance ~2100u > 2000u range),
@@ -121,7 +126,7 @@ public class LineupSolveTests
     [Fact]
     public void OriginBeyondEveryThrowRangeProducesNoLineups()
     {
-        var grid = Ground2048();
+        var grid = Ground2048;
         var zone = Zone(grid, 16, 112, 16, 160, 3);
         var near = new Vector3(564, 64, 0);
         // The far origin is beyond any physically possible throw distance.
@@ -138,17 +143,38 @@ public class LineupSolveTests
     [Fact]
     public void OriginsInTheSameBucketCollapseToOneLineup()
     {
-        var grid = Ground2048();
+        var grid = Ground2048;
         var zone = Zone(grid, 400, 1100, 800, 1250, 3);
         // Both origins collapse to one lineup via per-bucket winner selection.
         var origin1 = new Vector3(256, 1024, 0);
         var origin2 = new Vector3(280, 1024, 0);
         var result = LineupSolver.Solve(
             grid, zone, SolveMin, SolveMax, [ThrowType.Stand],
-            origins: [origin1, origin2]);
+            yawStepDeg: 6f, pitchStepDeg: 6f, origins: [origin1, origin2]);
 
         var lineup = Assert.Single(result);
         Assert.True(lineup.Feet == origin1 || lineup.Feet == origin2,
             $"lineup.Feet {lineup.Feet} should be one of the two origins");
+    }
+
+    [Fact]
+    public void BucketWinnerKeepsFewestBouncesThenRichestReachableBand()
+    {
+        var grid = Ground2048;
+        // A single origin: every lineup it produces collapses into one 64u bucket,
+        // so the survivor is decided entirely by Better(). The zone bands crossings
+        // by x (1 / 5 / 9), and the origin can reach band 9. Better() must keep the
+        // fewest-bounce throw and, among those, the richest band. Inverting either
+        // comparison changes the survivor here (bounces 4->5, crossings 9->5), so
+        // the exact values pin both branches of the comparator.
+        var zone = Zone(grid, 1000, 1600, 800, 1250, x => x < 1200 ? 1 : x < 1400 ? 5 : 9);
+
+        var result = LineupSolver.Solve(
+            grid, zone, SolveMin, SolveMax, [ThrowType.Stand],
+            yawStepDeg: 6f, pitchStepDeg: 6f, origins: [new Vector3(256, 1024, 0)]);
+
+        var lineup = Assert.Single(result);
+        Assert.Equal(4, lineup.Bounces);
+        Assert.Equal(9, lineup.RestCrossings);
     }
 }

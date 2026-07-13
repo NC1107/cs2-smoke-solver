@@ -27,7 +27,11 @@ public class OriginsFromNavAreasTests
     public void SquareAreaSamplesOriginsInsideBoundsSnappedToGround()
     {
         var grid = FlatGround();
-        var area = Square(100, 100, 500, 500, 0);
+        // Author the area 24u above true ground - inside SnapToGround's downward
+        // scan. A working snap pulls every origin down onto the voxel ground (one
+        // voxel, ~16u), well below the authored 24u; a no-op snap would leave them
+        // stranded at 24u and fail the bound below.
+        var area = Square(100, 100, 500, 500, 24);
 
         var origins = LineupSolver.OriginsFromNavAreas(grid, [area], BoundsMin, BoundsMax, 32f);
 
@@ -36,8 +40,8 @@ public class OriginsFromNavAreasTests
         {
             Assert.True(o.X >= 100 && o.X <= 500 && o.Y >= 100 && o.Y <= 500,
                 $"origin {o} falls outside the area footprint");
-            Assert.True(MathF.Abs(o.Z) <= grid.VoxelSize + 0.5f,
-                $"origin z={o.Z} should snap within one voxel of the z=0 ground");
+            Assert.True(o.Z <= grid.VoxelSize + 0.5f,
+                $"origin z={o.Z} should snap onto the voxel ground, not stay at the authored 24u");
         }
     }
 
@@ -62,10 +66,28 @@ public class OriginsFromNavAreasTests
         var grid = FlatGround();
         var beyondMaxX = Square(2000, 100, 2100, 500, 0);
         var aboveMaxZ = Square(100, 100, 500, 500, 500);
+        // Inside the XY footprint but its plane sits below BoundsMin.Z, so the
+        // avgZ < min.Z guard must reject it just like the too-high area.
+        var belowMinZ = Square(100, 100, 500, 500, BoundsMin.Z - 10);
 
         var result = LineupSolver.OriginsFromNavAreas(
-            grid, [beyondMaxX, aboveMaxZ], BoundsMin, BoundsMax, 32f);
+            grid, [beyondMaxX, aboveMaxZ, belowMinZ], BoundsMin, BoundsMax, 32f);
 
         Assert.Empty(result);
+    }
+
+    [Fact]
+    public void FallbackCentroidOutsideBoundsContributesNothing()
+    {
+        var grid = FlatGround();
+        // A tiny patch straddling BoundsMin.X=0: its AABB overlaps the region and
+        // no 32u sample lands inside, so the code falls back to the centroid. But
+        // the centroid x is -4, outside the bounds, so the fallback's own guard
+        // must reject it - dropping the guard would emit an out-of-bounds origin.
+        var straddling = Square(-12, 100, 4, 116, 0);
+
+        var origins = LineupSolver.OriginsFromNavAreas(grid, [straddling], BoundsMin, BoundsMax, 32f);
+
+        Assert.Empty(origins);
     }
 }

@@ -8,7 +8,12 @@ public class VerifyExactTests
     static readonly Vector3 RegionMin = new(0, 0, -64);
     static readonly Vector3 RegionMax = new(4096, 4096, 1200);
 
-    static (VoxelGrid Grid, TriangleCollider Collider) FlatScene()
+    // The flatground grid and collider are immutable after construction, so the
+    // whole class shares one build rather than voxelizing a 258x258x81 grid per
+    // test; xunit's per-class parallelism only reads them.
+    static readonly (VoxelGrid Grid, TriangleCollider Collider) FlatScene = BuildFlatScene();
+
+    static (VoxelGrid Grid, TriangleCollider Collider) BuildFlatScene()
     {
         var mesh = SyntheticMeshes.FromQuads([SyntheticMeshes.Ground(0, 4096, 0)]);
         var grid = VoxelGrid.Build(mesh, 16f, RegionMin, RegionMax);
@@ -54,7 +59,7 @@ public class VerifyExactTests
     [Fact]
     public void NoCandidatesYieldsNoLineups()
     {
-        var (grid, collider) = FlatScene();
+        var (grid, collider) = FlatScene;
 
         var result = LineupSolver.VerifyExact(grid, collider, new Dictionary<int, int>(), []);
 
@@ -64,7 +69,7 @@ public class VerifyExactTests
     [Fact]
     public void StableCandidateSurvivesWithAHighStabilityScore()
     {
-        var (grid, collider) = FlatScene();
+        var (grid, collider) = FlatScene;
         var candidate = Candidate();
         var zone = ZoneFromExact(grid, collider, candidate);
 
@@ -73,12 +78,18 @@ public class VerifyExactTests
         Assert.Single(result);
         Assert.True(result[0].Stability >= 0.4f,
             $"expected the flatground throw to be stable, got {result[0].Stability}");
+
+        // This fixture scores exactly 0.8 (4 of 5 nudges stay in-zone). The gate
+        // is strict less-than, so a candidate whose stability equals the floor
+        // must survive; a <= gate would drop it here.
+        var atBoundary = LineupSolver.VerifyExact(grid, collider, zone, [candidate], minStability: 0.8f);
+        Assert.Single(atBoundary);
     }
 
     [Fact]
     public void CandidateRestingOutsideTheZoneIsRejected()
     {
-        var (grid, collider) = FlatScene();
+        var (grid, collider) = FlatScene;
         var candidate = Candidate();
         // A single cell nowhere near the actual landing (y=3500 vs the throw's
         // y~2048), so no perturbation reaches it.
@@ -96,7 +107,7 @@ public class VerifyExactTests
     [Fact]
     public void StabilityBelowTheThresholdIsRejected()
     {
-        var (grid, collider) = FlatScene();
+        var (grid, collider) = FlatScene;
         var candidate = Candidate();
         var zone = ZoneFromExact(grid, collider, candidate);
 
@@ -109,7 +120,7 @@ public class VerifyExactTests
     [Fact]
     public void VerifiedRestPointIsResnappedFromTheExactSimulation()
     {
-        var (grid, collider) = FlatScene();
+        var (grid, collider) = FlatScene;
         var candidate = Candidate();
         var zone = ZoneFromExact(grid, collider, candidate);
         var reference = ExactRest(collider, candidate);
@@ -121,5 +132,27 @@ public class VerifyExactTests
             $"rest {result[0].RestPoint} should match the exact rest {reference}");
         Assert.True(Vector3.Distance(result[0].RestPoint, candidate.RestPoint) > 1f,
             "the placeholder rest point should have been replaced");
+    }
+
+    [Fact]
+    public void EqualStabilityRanksTheFewerBounceLineupFirst()
+    {
+        var (grid, collider) = FlatScene;
+        var candidate = Candidate();
+        var zone = ZoneFromExact(grid, collider, candidate);
+        // Two candidates from the SAME throw spec: identical exact simulation, so
+        // identical stability. Only the pass-through Bounces differs, isolating
+        // the ThenBy(Bounces) tie-break under a stability tie. Fed worst-first so
+        // the result order can only come from the sort, not the input order.
+        var manyBounces = candidate with { Bounces = 5 };
+        var fewBounces = candidate with { Bounces = 1 };
+
+        var result = LineupSolver.VerifyExact(grid, collider, zone, [manyBounces, fewBounces]);
+
+        Assert.Equal(2, result.Count);
+        Assert.Equal(result[1].Stability, result[0].Stability);
+        Assert.True(result[0].Stability >= result[1].Stability);
+        Assert.Equal(1, result[0].Bounces);
+        Assert.Equal(5, result[1].Bounces);
     }
 }
