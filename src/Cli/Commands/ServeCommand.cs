@@ -144,27 +144,81 @@ public static class ServeCommand
                 // changes the key, so stale answers cannot leak through.
                 var cacheKey = QueryCacheKey(mesh, serveConstants, body.RootElement, attrs);
                 var cachePath = Path.Combine("data", "cache", cacheKey + ".json");
-                string response;
-                if (File.Exists(cachePath))
+
+                // Progress streams as NDJSON so the viewer can paint each evaluated
+                // origin live: phase lines, then batches of checked [x, y, hits]
+                // cells, then a final result line. Cache files keep the bare result
+                // JSON, so cached replies are just that single last line.
+                context.Response.ContentType = "application/x-ndjson";
+                var clientGone = false;
+                async Task WriteLine(string line)
                 {
-                    response = await File.ReadAllTextAsync(cachePath, context.RequestAborted);
-                }
-                else
-                {
-                    await SolveGate.WaitAsync(context.RequestAborted);
+                    if (clientGone)
+                    {
+                        return;
+                    }
                     try
                     {
-                        response = RunTargetQuery(mesh, attributeFilter, navAreas, body.RootElement, serveConstants);
+                        await context.Response.WriteAsync(line + "\n", CancellationToken.None);
+                        await context.Response.Body.FlushAsync(CancellationToken.None);
                     }
-                    finally
+                    catch
                     {
-                        SolveGate.Release();
+                        // The solve keeps running so its result still lands in the
+                        // cache; a reload after cancel then answers instantly.
+                        clientGone = true;
+                    }
+                }
+
+                if (File.Exists(cachePath))
+                {
+                    var cached = await File.ReadAllTextAsync(cachePath, context.RequestAborted);
+                    await WriteLine("{\"result\":" + cached + "}");
+                    return;
+                }
+
+                await SolveGate.WaitAsync(context.RequestAborted);
+                try
+                {
+                    var events = new System.Collections.Concurrent.ConcurrentQueue<(string Kind, int[] Data)>();
+                    var solveTask = Task.Run(() => RunTargetQuery(
+                        mesh, attributeFilter, navAreas, body.RootElement, serveConstants,
+                        onPhase: (phase, count) => events.Enqueue((phase, [count])),
+                        onOrigin: (feet, hits) => events.Enqueue(("origin", [(int)MathF.Round(feet.X), (int)MathF.Round(feet.Y), hits])),
+                        onCandidate: (feet, ok) => events.Enqueue(("cand", [(int)MathF.Round(feet.X), (int)MathF.Round(feet.Y), ok ? 1 : 0]))));
+                    while (!solveTask.IsCompleted)
+                    {
+                        await Task.WhenAny(solveTask, Task.Delay(100));
+                        foreach (var line in DrainProgress(events))
+                        {
+                            await WriteLine(line);
+                        }
+                    }
+                    string response;
+                    try
+                    {
+                        response = await solveTask;
+                    }
+                    catch (Exception e)
+                    {
+                        // The 200 header is already on the wire, so failures must
+                        // travel in-band as an error line.
+                        Console.Error.WriteLine($"lineup solve failed: {e.Message}");
+                        await WriteLine("{\"error\":\"solver failure - check server log\"}");
+                        return;
                     }
                     Directory.CreateDirectory(Path.GetDirectoryName(cachePath)!);
                     await File.WriteAllTextAsync(cachePath, response);
+                    foreach (var line in DrainProgress(events))
+                    {
+                        await WriteLine(line);
+                    }
+                    await WriteLine("{\"result\":" + response + "}");
                 }
-                context.Response.ContentType = "application/json";
-                await context.Response.WriteAsync(response);
+                finally
+                {
+                    SolveGate.Release();
+                }
             }
         });
 
@@ -186,6 +240,42 @@ public static class ServeCommand
         // returns here instead of throwing.
         app.WaitForShutdown();
         return 0;
+    }
+
+    // Consecutive origin events collapse into one checked-batch line per drain
+    // (~100ms), keeping the stream at a handful of lines per second regardless
+    // of how fast the parallel sweep completes origins.
+    static List<string> DrainProgress(System.Collections.Concurrent.ConcurrentQueue<(string Kind, int[] Data)> events)
+    {
+        var lines = new List<string>();
+        var batch = new List<int[]>();
+        string? batchKind = null;
+        void FlushBatch()
+        {
+            if (batch.Count > 0)
+            {
+                var field = batchKind == "origin" ? "checked" : "verified";
+                lines.Add($"{{\"{field}\":" + JsonSerializer.Serialize(batch) + "}");
+                batch = [];
+            }
+        }
+        while (events.TryDequeue(out var e))
+        {
+            if (e.Kind is "origin" or "cand")
+            {
+                if (batchKind != e.Kind)
+                {
+                    FlushBatch();
+                    batchKind = e.Kind;
+                }
+                batch.Add(e.Data);
+                continue;
+            }
+            FlushBatch();
+            lines.Add($"{{\"phase\":\"{e.Kind}\",\"count\":{e.Data[0]}}}");
+        }
+        FlushBatch();
+        return lines;
     }
 
     static Task WriteApiError(HttpContext context, int status, string message)

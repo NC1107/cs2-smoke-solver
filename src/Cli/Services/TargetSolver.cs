@@ -38,10 +38,14 @@ public static class TargetSolver
         Vector2? originClickOpt,
         float originReach,
         float tolerance,
-        ThrowConstants constants)
+        ThrowConstants constants,
+        Action<string, int>? onPhase = null,
+        Action<Vector3, int>? onOrigin = null,
+        Action<Vector3, bool>? onCandidate = null)
     {
         var hasOrigin = originClickOpt.HasValue;
         var originClick = originClickOpt ?? new Vector2(target.X, target.Y);
+        onPhase?.Invoke("prepare", 0);
 
         var (meshMin, meshMax) = mesh.ComputeBounds();
         var voxelSize = 16f;
@@ -111,12 +115,14 @@ public static class TargetSolver
         // the tolerance sphere.
         var (yawStep, pitchStep) = hasOrigin ? (1f, 1f) : (3f, 4f);
         var coverage = new System.Collections.Concurrent.ConcurrentDictionary<(int X, int Y), int>();
+        onPhase?.Invoke("sweep", origins.Count);
         var candidates = LineupSolver.Solve(
             grid, zoneCrossings, min, max,
             [ThrowType.Stand, ThrowType.Crouch, ThrowType.JumpThrow, ThrowType.CrouchJumpThrow, ThrowType.RunJumpThrow],
-            yawStep, pitchStep, origins: origins, constants: constants, coverage: coverage);
+            yawStep, pitchStep, origins: origins, constants: constants, coverage: coverage, onOrigin: onOrigin);
         var collider = new TriangleCollider(mesh, min, max, mesh.GrenadeSolidFilter());
-        var lineups = LineupSolver.VerifyExact(grid, collider, zoneCrossings, candidates, constants: constants);
+        onPhase?.Invoke("verify", candidates.Count);
+        var lineups = LineupSolver.VerifyExact(grid, collider, zoneCrossings, candidates, constants: constants, onCandidate: onCandidate);
 
         return new TargetSolve(
             target,

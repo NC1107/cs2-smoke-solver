@@ -8,16 +8,10 @@
 </head>
 <body>
 
-<div id="solving-overlay" role="dialog" aria-modal="true" aria-busy="true" aria-label="Calculating lineups">
-  <div class="box">
-    <div class="spin" aria-hidden="true"></div>
-    <div>calculating lineups…<br><span class="overlay-sub">simulating throws across the map</span></div>
-    <button id="solve-cancel" class="btn">Cancel</button>
-  </div>
-</div>
 <div class="toolbar">
   <span class="brand" id="brand">Smoke Solver</span>
   <span id="status" role="status" aria-live="polite"></span>
+  <button id="solve-cancel" class="btn" hidden>Cancel</button>
   <span id="readout"></span>
 </div>
 

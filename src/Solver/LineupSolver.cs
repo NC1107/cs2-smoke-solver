@@ -51,7 +51,8 @@ public static class LineupSolver
         float pitchStepDeg = 2f,
         IReadOnlyList<Vector3>? origins = null,
         ThrowConstants? constants = null,
-        ConcurrentDictionary<(int X, int Y), int>? coverage = null)
+        ConcurrentDictionary<(int X, int Y), int>? coverage = null,
+        Action<Vector3, int>? onOrigin = null)
     {
         if (zoneCrossings.Count == 0)
         {
@@ -158,6 +159,8 @@ public static class LineupSolver
             // Per-origin option count, including zeroes: the heat map view uses
             // "evaluated but impossible" cells to expose sim or geometry gaps.
             coverage?[((int)MathF.Round(feet.X), (int)MathF.Round(feet.Y))] = hits;
+            // Fires from parallel workers; subscribers must be thread-safe.
+            onOrigin?.Invoke(feet, hits);
         });
 
         return [.. best.Values.OrderBy(l => l.Bounces).ThenByDescending(l => l.RestCrossings).ThenBy(l => l.FlightTime)];
@@ -175,7 +178,8 @@ public static class LineupSolver
         IReadOnlyDictionary<int, int> zoneCrossings,
         IEnumerable<Lineup> candidates,
         float minStability = 0.4f,
-        ThrowConstants? constants = null)
+        ThrowConstants? constants = null,
+        Action<Vector3, bool>? onCandidate = null)
     {
         // One perturbation step; also the re-aim lattice pitch, so the rescue
         // search and the stability probes share simulations.
@@ -252,11 +256,13 @@ public static class LineupSolver
                 }
                 if ((aimYaw, aimPitch) == (0, 0))
                 {
+                    onCandidate?.Invoke(lineup.Feet, false);
                     return;
                 }
                 stability = StabilityAround(aimYaw, aimPitch);
                 if (stability < minStability)
                 {
+                    onCandidate?.Invoke(lineup.Feet, false);
                     return;
                 }
             }
@@ -268,6 +274,8 @@ public static class LineupSolver
                 RestPoint = Settles(best) && InZone(grid, zoneCrossings, best.RestPoint) ? best.RestPoint : lineup.RestPoint,
                 Stability = stability,
             });
+            // Fires from parallel workers; subscribers must be thread-safe.
+            onCandidate?.Invoke(lineup.Feet, true);
         });
         return
         [

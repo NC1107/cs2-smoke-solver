@@ -140,7 +140,10 @@ public static class LineupApi
         Func<byte, bool>? attributeFilter,
         List<NavAreaJson> navAreas,
         JsonElement query,
-        ThrowConstants constants)
+        ThrowConstants constants,
+        Action<string, int>? onPhase = null,
+        Action<Vector3, int>? onOrigin = null,
+        Action<Vector3, bool>? onCandidate = null)
     {
         var targetEl = query.GetProperty("target");
         var target = new Vector3(targetEl[0].GetSingle(), targetEl[1].GetSingle(), 0);
@@ -160,7 +163,7 @@ public static class LineupApi
             : 3100f;
         var tolerance = query.TryGetProperty("tolerance", out var tolEl) ? tolEl.GetSingle() : 80f;
 
-        var solve = SolveForTarget(mesh, attributeFilter, navAreas, target, hasTargetZ, originClick, originReach, tolerance, constants);
+        var solve = SolveForTarget(mesh, attributeFilter, navAreas, target, hasTargetZ, originClick, originReach, tolerance, constants, onPhase, onOrigin, onCandidate);
 
         // Raw voxel-stage counts overstate throwability (many candidates die in
         // exact-sim verification), so each cell also says whether a verified

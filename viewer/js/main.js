@@ -4,7 +4,7 @@
 
 import { state, filtered, esc } from "./state.js";
 import { loadMapData, runQuery as postLineupQuery } from "./api.js";
-import { loadRadar, readColors, recolorRadar, draw, resize, resetView, initMap2d } from "./map2d.js";
+import { loadRadar, readColors, recolorRadar, draw, scheduleDraw, resize, resetView, initMap2d } from "./map2d.js";
 import { ensure3d, resetEnsure3d, current3d, sync3d, set3dCallbacks, applyTheme3d } from "./view3d.js";
 import { renderLineups, initPanel } from "./panel.js";
 
@@ -56,20 +56,44 @@ import { renderLineups, initPanel } from "./panel.js";
     keyEl.classList.toggle("heat", on);
   }
 
-  const solvingOverlay = document.getElementById("solving-overlay");
   const cancelBtn = document.getElementById("solve-cancel");
   let solveController = null;
   cancelBtn.addEventListener("click", () => solveController?.abort());
 
+  // Progress lines stream in every ~100ms; painting each batch as dots shows
+  // both sweep speed and which standable origins were actually evaluated.
+  function onSolveProgress(msg) {
+    const p = state.progress;
+    if (!p) {
+      return;
+    }
+    if (msg.phase === "prepare") {
+      statusEl.textContent = "preparing voxel grid…";
+    } else if (msg.phase === "sweep") {
+      p.phase = "sweep";
+      p.total = msg.count;
+    } else if (msg.phase === "verify") {
+      p.phase = "verify";
+      p.candidates = msg.count;
+      statusEl.textContent = `verifying 0 / ${msg.count} candidates against the exact sim…`;
+    } else if (msg.checked) {
+      p.checked.push(...msg.checked);
+      statusEl.textContent = `checked ${p.checked.length}${p.total ? ` / ${p.total}` : ""} positions…`;
+    } else if (msg.verified) {
+      p.verified.push(...msg.verified);
+      statusEl.textContent = `verifying ${p.verified.length} / ${p.candidates ?? "?"} candidates against the exact sim…`;
+    }
+    scheduleDraw();
+  }
+
   async function runQuery(body) {
     state.busy = true;
+    state.progress = { phase: "sweep", total: 0, candidates: 0, checked: [], verified: [] };
     statusEl.textContent = "solving…";
     solveController = new AbortController();
-    const prevFocus = document.activeElement;
-    solvingOverlay.classList.add("on");
-    cancelBtn.focus();
+    cancelBtn.hidden = false;
     try {
-      const { error, data } = await postLineupQuery(body, solveController.signal);
+      const { error, data } = await postLineupQuery(body, solveController.signal, onSolveProgress);
       if (error) {
         statusEl.textContent = error;
         return;
@@ -89,11 +113,9 @@ import { renderLineups, initPanel } from "./panel.js";
       statusEl.textContent = err.name === "AbortError" ? "cancelled" : `error: ${err.message}`;
     } finally {
       state.busy = false;
+      state.progress = null;
       solveController = null;
-      solvingOverlay.classList.remove("on");
-      if (prevFocus instanceof HTMLElement && document.contains(prevFocus)) {
-        prevFocus.focus();
-      }
+      cancelBtn.hidden = true;
       draw();
     }
   }
@@ -140,7 +162,7 @@ import { renderLineups, initPanel } from "./panel.js";
   heatBtn.addEventListener("click", () => {
     setHeat(!state.heatOn);
     statusEl.textContent = state.heatOn
-      ? "heatmap: blue fill = reachable (brighter = more options), orange outline = standable but NO throw reaches"
+      ? "heatmap: solid blue = verified lineup, faint blue = sim reaches but unverified, orange outline = standable but NO throw reaches"
       : `${filtered().length} lineups - click a marker or use the list`;
     draw();
   });
