@@ -29,11 +29,6 @@ namespace SmokeSolver.Cli;
 
 public static class BestLineupCommand
 {
-    // End-to-end accuracy pipeline: solve a target, throw every lineup's exact
-    // initial conditions on the live rig server via the CalibrationThrower request
-    // file, match the captured real rest points back to predictions, and grade.
-    // This validates flight physics + map geometry (initial conditions are
-    // injected, so player release derivation is exercised only in the sim).
     // Nearest practical lineup for a target, ranked by walking distance from the
     // player's current position (movement-type penalties keep "walk 50u further"
     // preferable to "hit a run-jump-throw"). Emits one JSON object for the watcher.

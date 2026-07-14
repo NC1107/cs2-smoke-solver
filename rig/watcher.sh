@@ -48,7 +48,6 @@ claim() {
   mv "$src" "$dst" 2>/dev/null && echo "$dst"
 }
 
-# Print one requested JSON field per line from a file.
 fields() {
   local file="$1"; shift
   python3 - "$file" "$@" << 'PYEOF'

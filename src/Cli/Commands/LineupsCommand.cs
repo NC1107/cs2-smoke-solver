@@ -108,7 +108,6 @@ public static class LineupsCommand
             zoneCrossings[grid.Index(x, y, z)] = cell.MinCrossings;
         }
 
-        // Reachability is non-negotiable: origins come from the nav mesh.
         var navAreasPath = options.GetValueOrDefault(
             "nav",
             Path.Combine(Path.GetDirectoryName(Path.GetFullPath(Require(options, "geo"))) ?? ".", $"{mesh.MapName}.navareas.json"));

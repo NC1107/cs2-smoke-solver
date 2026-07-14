@@ -35,8 +35,6 @@ public sealed class TriangleCollider
         var cellCount = _nx * _ny * _nz;
         _cellStart = new int[cellCount + 1];
 
-        // Two passes build the CSR directly: count entries per cell, prefix-sum
-        // into offsets, then place triangle ids.
         void ForEachCoveredCell(int t, Action<int> visit)
         {
             var (a, b, c) = (Vertex(_indices[t]), Vertex(_indices[t + 1]), Vertex(_indices[t + 2]));

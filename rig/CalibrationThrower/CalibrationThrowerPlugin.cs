@@ -117,7 +117,10 @@ public class CalibrationThrowerPlugin : BasePlugin
                 _showTestSmokes = settings.TryGetProperty("showTestSmokes", out var sEl) && sEl.GetBoolean();
             }
         }
-        catch (Exception) { }
+        catch (Exception ex)
+        {
+            Server.PrintToConsole($"[CalibrationThrower] failed to load settings.json: {ex.Message}");
+        }
         Server.PrintToConsole($"[CalibrationThrower] watching {RequestPath}, writing to {OutputPath}");
         AddTimer(6.0f, RunSignatureSelfTest);
         if (hotReload)
@@ -442,7 +445,6 @@ public class CalibrationThrowerPlugin : BasePlugin
     // fall back to team T (2) and a zero owner handle when nobody's connected.
     const int FallbackTeamNum = (int)CsTeam.Terrorist;
 
-    // Items-schema definition index for the smoke grenade (weapon_smokegrenade).
     const int SmokeGrenadeItemDef = 45;
 
     bool ThrowSynthetic(Vector pos, Vector vel)

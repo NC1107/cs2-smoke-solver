@@ -7,7 +7,7 @@ public class SmokeFloodFillTests
 {
     static VoxelGrid OpenRoomWithWall()
     {
-        // Ground at z=0 with a wall across y=128, an opening nowhere: smoke on one side must stay there.
+        // Ground at z=0 with a wall across y=256, an opening nowhere: smoke on one side must stay there.
         var mesh = SyntheticMeshes.FromQuads([
             SyntheticMeshes.Ground(0, 512, 0),
             SyntheticMeshes.WallY(0, 512, 256, 0, 256),

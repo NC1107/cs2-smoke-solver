@@ -71,9 +71,6 @@ public static class AimReference
             }
         }
 
-        // Nearest silhouette: the closest ray pair (by angular distance of the
-        // nearer ray to the crosshair) whose depths disagree - one hitting sky
-        // while its neighbor hits geometry, or a large relative depth jump.
         var nearest = float.PositiveInfinity;
         for (var i = 0; i < RaysPerAxis; i++)
         {

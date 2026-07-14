@@ -67,7 +67,6 @@ static class TriBoxOverlap
 
     static bool AxisTestX(Vector3 edge, Vector3 va, Vector3 vb, Vector3 half)
     {
-        // Cross product axis (1,0,0) x edge.
         var p0 = edge.Z * va.Y - edge.Y * va.Z;
         var p1 = edge.Z * vb.Y - edge.Y * vb.Z;
         var rad = MathF.Abs(edge.Z) * half.Y + MathF.Abs(edge.Y) * half.Z;
