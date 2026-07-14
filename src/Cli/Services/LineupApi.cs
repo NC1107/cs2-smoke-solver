@@ -59,6 +59,30 @@ public static class LineupApi
         return ms.ToArray();
     }
 
+    /// <summary>
+    /// The path a lineup's grenade actually flies, for drawing. Runs the same
+    /// exact-collider integrator that verified the lineup in the first place -
+    /// so this is the throw's real arc and its real bounces, not a curve fitted
+    /// between the throw spot and where it came to rest.
+    /// </summary>
+    public static byte[] TrajectoryPayload(TriangleCollider collider, ThrowSpec spec, ThrowConstants constants)
+    {
+        var ticks = new List<(Vector3 Position, Vector3 Velocity)>();
+        var (position, velocity) = GrenadeTrajectory.DeriveInitial(spec, constants);
+        var result = GrenadeTrajectory.SimulateExactRaw(collider, position, velocity, constants, tickTrace: ticks);
+
+        var json = new StringBuilder("{\"points\":[");
+        for (var i = 0; i < ticks.Count; i++)
+        {
+            var p = ticks[i].Position;
+            json.Append(i == 0 ? "" : ",")
+                .Append(CultureInfo.InvariantCulture, $"[{p.X:F1},{p.Y:F1},{p.Z:F1}]");
+        }
+        json.Append(CultureInfo.InvariantCulture,
+            $"],\"bounces\":{result.Bounces},\"flightTime\":{result.FlightTime:F3},\"lost\":{(result.Lost ? "true" : "false")}}}");
+        return Encoding.UTF8.GetBytes(json.ToString());
+    }
+
     // Malformed or absurd queries must fail fast with a 400: a NaN or out-of-map
     // coordinate otherwise flows into a minutes-long map-wide solve and a fresh
     // cache file per distinct body.

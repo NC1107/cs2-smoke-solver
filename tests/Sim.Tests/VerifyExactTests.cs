@@ -28,10 +28,37 @@ public class VerifyExactTests
         new(new Vector3(500, 2048, 0), YawDeg: 0f, PitchDeg: -30f, ThrowType.Stand, Vector3.Zero,
             Bounces: 1, FlightTime: 1f, RestCrossings: 3, Strength: 1f);
 
+    static ThrowSpec SpecOf(Lineup c) =>
+        new(c.Feet + new Vector3(0, 0, GrenadeTrajectory.EyeHeight(c.Type)),
+            c.YawDeg, c.PitchDeg, c.Type, c.Strength);
+
     static Vector3 ExactRest(TriangleCollider collider, Lineup c) =>
-        GrenadeTrajectory.SimulateExact(collider, new ThrowSpec(
-            c.Feet + new Vector3(0, 0, GrenadeTrajectory.EyeHeight(c.Type)),
-            c.YawDeg, c.PitchDeg, c.Type, c.Strength)).RestPoint;
+        GrenadeTrajectory.SimulateExact(collider, SpecOf(c)).RestPoint;
+
+    // A zone wide enough to hold several different throws' landing spots at once,
+    // for the cases that need two genuinely different throws to both verify.
+    static Dictionary<int, int> ZoneAround(VoxelGrid grid, TriangleCollider collider, Lineup[] cs, int radius)
+    {
+        var zone = new Dictionary<int, int>();
+        foreach (var c in cs)
+        {
+            var (x, y, z) = grid.CellOf(ExactRest(collider, c));
+            for (var dx = -radius; dx <= radius; dx++)
+            {
+                for (var dy = -radius; dy <= radius; dy++)
+                {
+                    for (var dz = -radius; dz <= radius; dz++)
+                    {
+                        if (grid.InBounds(x + dx, y + dy, z + dz))
+                        {
+                            zone[grid.Index(x + dx, y + dy, z + dz)] = 3;
+                        }
+                    }
+                }
+            }
+        }
+        return zone;
+    }
 
     // The zone the verifier is asked about: the exact rest cell plus its 8 XY
     // neighbours across z-1..z+1, so the reference throw and its small nudges all
@@ -183,21 +210,46 @@ public class VerifyExactTests
     public void EqualStabilityRanksTheFewerBounceLineupFirst()
     {
         var (grid, collider) = FlatScene;
-        var candidate = Candidate();
-        var zone = ZoneFromExact(grid, collider, candidate);
-        // Two candidates from the SAME throw spec: identical exact simulation, so
-        // identical stability. Only the pass-through Bounces differs, isolating
-        // the ThenBy(Bounces) tie-break under a stability tie. Fed worst-first so
-        // the result order can only come from the sort, not the input order.
-        var manyBounces = candidate with { Bounces = 5 };
-        var fewBounces = candidate with { Bounces = 1 };
+        // Bounces is now read back off the exact simulation rather than passed
+        // through from the caller, so the tie-break can no longer be isolated by
+        // injecting two bounce counts onto one throw - the two throws have to
+        // genuinely differ. Over flatground a steep lob settles in one bounce
+        // fewer than a shallower one.
+        var fewBounces = Candidate() with { PitchDeg = -70f };
+        var manyBounces = Candidate() with { PitchDeg = -60f };
+        // Wide enough to hold both landing spots, so both verify and both stay
+        // in-zone under the aim perturbations stability samples. That ties their
+        // stability, leaving bounce count as the only thing the sort can separate
+        // them by. Fed worst-first so the order can only come from the sort.
+        var zone = ZoneAround(grid, collider, [fewBounces, manyBounces], radius: 6);
 
         var result = LineupSolver.VerifyExact(grid, collider, zone, [manyBounces, fewBounces]);
 
         Assert.Equal(2, result.Count);
         Assert.Equal(result[1].Stability, result[0].Stability);
-        Assert.True(result[0].Stability >= result[1].Stability);
-        Assert.Equal(1, result[0].Bounces);
+        Assert.Equal(4, result[0].Bounces);
         Assert.Equal(5, result[1].Bounces);
+    }
+
+    [Fact]
+    public void BouncesAndFlightTimeAreTakenFromTheExactSimNotTheCoarseSweep()
+    {
+        var (grid, collider) = FlatScene;
+        // Candidate() carries the placeholder Bounces/FlightTime a coarse voxel
+        // sweep would have produced. The verified lineup describes the exact
+        // simulation's throw - its aim and its landing spot both come from there -
+        // so its bounce count and flight time have to describe that same throw,
+        // not the approximation that merely nominated it. They used to pass
+        // straight through, which both mislabelled the lineup and meant the bounce
+        // and flight-time filters were sifting on the wrong numbers.
+        var candidate = Candidate();
+        var zone = ZoneFromExact(grid, collider, candidate);
+
+        var lineup = Assert.Single(LineupSolver.VerifyExact(grid, collider, zone, [candidate]));
+
+        var exact = GrenadeTrajectory.SimulateExact(collider, SpecOf(lineup));
+        Assert.Equal(exact.Bounces, lineup.Bounces);
+        Assert.Equal(exact.FlightTime, lineup.FlightTime, 3);
+        Assert.NotEqual(candidate.Bounces, lineup.Bounces);
     }
 }

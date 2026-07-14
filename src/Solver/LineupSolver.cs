@@ -267,11 +267,20 @@ public static class LineupSolver
                 }
             }
             var best = SimAt(aimYaw, aimPitch);
+            // Bounces and FlightTime used to be left at the values the coarse
+            // voxel sweep produced while the rest point was taken from the exact
+            // sim, so a lineup could report 4 bounces and 4.4s while the throw it
+            // actually describes takes 5 and 4.6s - visible now that the viewer
+            // draws the real path, and quietly wrong before that, because the
+            // bounce and flight-time filters were sifting on the approximation.
+            var settled = Settles(best) && InZone(grid, zoneCrossings, best.RestPoint);
             verified.Add(lineup with
             {
                 YawDeg = Normalize(lineup.YawDeg + aimYaw * StepDeg),
                 PitchDeg = lineup.PitchDeg + aimPitch * StepDeg,
-                RestPoint = Settles(best) && InZone(grid, zoneCrossings, best.RestPoint) ? best.RestPoint : lineup.RestPoint,
+                RestPoint = settled ? best.RestPoint : lineup.RestPoint,
+                Bounces = settled ? best.Bounces : lineup.Bounces,
+                FlightTime = settled ? best.FlightTime : lineup.FlightTime,
                 Stability = stability,
             });
             // Fires from parallel workers; subscribers must be thread-safe.

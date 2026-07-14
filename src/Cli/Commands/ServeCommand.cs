@@ -59,6 +59,16 @@ public static class ServeCommand
         // sees either null (and serves gzip) or the finished blob, never a partial
         // one.
         public volatile byte[]? MeshPayloadBrotli;
+
+        // Built on the first trajectory request for this map and kept: it indexes
+        // the mesh arrays rather than copying them, so the cost is the cell index
+        // alone, and rebuilding it per click would put a grid build over millions
+        // of triangles in front of the user every time they pick a lineup.
+        public Lazy<TriangleCollider> Collider { get; } = new(() =>
+        {
+            var (min, max) = Mesh.ComputeBounds();
+            return new TriangleCollider(Mesh, min, max, Mesh.GrenadeSolidFilter());
+        }, LazyThreadSafetyMode.ExecutionAndPublication);
     }
 
     public static int Run(Dictionary<string, string> options)
@@ -175,6 +185,35 @@ public static class ServeCommand
                 return Results.Bytes(entry.MeshPayloadGzip, "application/octet-stream");
             }
             return Results.Bytes(entry.MeshPayload, "application/octet-stream");
+        });
+
+        // The flight path of one lineup, fetched when it is selected rather than
+        // shipped with every result: a map-wide solve returns hundreds of lineups
+        // and only ever one is drawn.
+        app.MapGet("/api/trajectory", (HttpContext context, string? map,
+            float x, float y, float z, string? type, float pitch, float yaw, float strength) =>
+        {
+            if (map == null || !maps.TryGetValue(map, out var entry))
+            {
+                return Results.NotFound();
+            }
+            if (!Enum.TryParse<ThrowType>(type, ignoreCase: true, out var throwType))
+            {
+                return Results.BadRequest($"unknown throw type '{type}'");
+            }
+            if (!float.IsFinite(x) || !float.IsFinite(y) || !float.IsFinite(z) ||
+                !float.IsFinite(pitch) || !float.IsFinite(yaw) || !float.IsFinite(strength))
+            {
+                return Results.BadRequest("non-finite throw parameter");
+            }
+            var eye = new Vector3(x, y, z + GrenadeTrajectory.EyeHeight(throwType));
+            var spec = new ThrowSpec(eye, yaw, pitch, throwType, strength);
+            var payload = TrajectoryPayload(entry.Collider.Value, spec, entry.Constants);
+            // Deterministic for a given throw on a given build, so it never needs
+            // recomputing for a lineup the viewer has already drawn.
+            context.Response.Headers.ETag = entry.BuildETag;
+            context.Response.Headers.CacheControl = "public, max-age=604800";
+            return Results.Bytes(payload, "application/json");
         });
 
         app.MapPost("/api/lineup", async (HttpContext context) =>

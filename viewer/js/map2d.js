@@ -196,10 +196,19 @@ export function draw() {
     if (isSelected) {
       ctx.strokeStyle = clickColor;
       ctx.lineWidth = 1.5 / scale;
-      ctx.setLineDash([8 / scale, 6 / scale]);
       ctx.beginPath();
-      ctx.moveTo(l.feet[0], -l.feet[1]);
-      ctx.lineTo(l.rest[0], -l.rest[1]);
+      if (l._path) {
+        // The grenade's real ground track. Solid, because it is the actual path
+        // rather than the "it ends up over there" hint the dashed line was.
+        ctx.moveTo(l._path[0][0], -l._path[0][1]);
+        for (const p of l._path) {
+          ctx.lineTo(p[0], -p[1]);
+        }
+      } else {
+        ctx.setLineDash([8 / scale, 6 / scale]);
+        ctx.moveTo(l.feet[0], -l.feet[1]);
+        ctx.lineTo(l.rest[0], -l.rest[1]);
+      }
       ctx.stroke();
       ctx.setLineDash([]);
       ctx.fillStyle = clickColor;

@@ -90,6 +90,11 @@ async function init3d() {
 
   const renderer = new THREE.WebGLRenderer({ antialias: true });
   renderer.setPixelRatio(window.devicePixelRatio);
+  // Focusable so the fly keys have somewhere to live. Clicking a 3D control
+  // leaves focus on that button, and onKeyDown deliberately ignores keys aimed
+  // at a button - which is why WASD went dead after pressing Top-down until you
+  // clicked the view again.
+  renderer.domElement.tabIndex = 0;
   stage3d.appendChild(renderer.domElement);
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(colors.surface);
@@ -286,26 +291,53 @@ async function init3d() {
   };
   const onKeyUp = e => keys.delete(e.code);
   const onBlur = () => keys.clear();
-  // Reused across frames; fly() runs every frame while keys are held.
-  const fwd = new THREE.Vector3(), right = new THREE.Vector3(), move = new THREE.Vector3();
-  function fly() {
-    if (keys.size === 0) { return; }
-    const speed = (keys.has("ShiftLeft") || keys.has("ShiftRight")) ? 48 : 12;
+
+  // Units per second, not per frame. The old code added a fixed step straight to
+  // the position every frame, which made the camera travel 2.4x further on a
+  // 144Hz monitor than a 60Hz one for the same key press.
+  const SPEED = 430;
+  const FAST_SPEED = 1500;
+  // Rate the velocity closes on the speed the keys are asking for. Instant
+  // velocity is what made this feel like it teleported rather than flew.
+  const RESPONSIVENESS = 11;
+  const STOPPED = 1;
+
+  // Reused across frames; fly() runs every frame while the camera still has
+  // velocity, which outlasts the key press now that it eases to a stop.
+  const fwd = new THREE.Vector3(), right = new THREE.Vector3();
+  const wanted = new THREE.Vector3(), velocity = new THREE.Vector3();
+  let lastFrame = 0;
+  function fly(now) {
+    const dt = Math.min((now - lastFrame) / 1000, 0.1);
+    lastFrame = now;
+    if (keys.size === 0 && velocity.lengthSq() < STOPPED) {
+      velocity.set(0, 0, 0);
+      return;
+    }
     camera.getWorldDirection(fwd);
     fwd.z = 0;
     if (fwd.lengthSq() < 1e-6) { fwd.set(0, 1, 0); }
     fwd.normalize();
     right.set(fwd.y, -fwd.x, 0);
-    move.set(0, 0, 0);
-    if (keys.has("KeyW")) { move.add(fwd); }
-    if (keys.has("KeyS")) { move.sub(fwd); }
-    if (keys.has("KeyD")) { move.add(right); }
-    if (keys.has("KeyA")) { move.sub(right); }
-    if (keys.has("KeyE") || keys.has("Space")) { move.z += 1; }
-    if (keys.has("KeyQ") || keys.has("KeyC") || keys.has("ControlLeft") || keys.has("ControlRight")) { move.z -= 1; }
-    if (move.lengthSq() === 0) { return; }
-    move.normalize().multiplyScalar(speed);
-    camera.position.add(move);
+    wanted.set(0, 0, 0);
+    if (keys.has("KeyW")) { wanted.add(fwd); }
+    if (keys.has("KeyS")) { wanted.sub(fwd); }
+    if (keys.has("KeyD")) { wanted.add(right); }
+    if (keys.has("KeyA")) { wanted.sub(right); }
+    if (keys.has("KeyE") || keys.has("Space")) { wanted.z += 1; }
+    if (keys.has("KeyQ") || keys.has("KeyC") || keys.has("ControlLeft") || keys.has("ControlRight")) { wanted.z -= 1; }
+    if (wanted.lengthSq() > 0) {
+      const fast = keys.has("ShiftLeft") || keys.has("ShiftRight");
+      wanted.normalize().multiplyScalar(fast ? FAST_SPEED : SPEED);
+    }
+    // Frame-rate independent exponential approach: the fraction of the remaining
+    // gap closed depends on elapsed time, not on how many frames elapsed.
+    velocity.lerp(wanted, 1 - Math.exp(-RESPONSIVENESS * dt));
+    if (velocity.lengthSq() < STOPPED) {
+      velocity.set(0, 0, 0);
+      return;
+    }
+    camera.position.addScaledVector(velocity, dt);
     dirty = true;
   }
 
@@ -321,9 +353,9 @@ async function init3d() {
   // without re-registering keys/controls; loop() always reads the current
   // value rather than closing over the flat scene permanently.
   let activeScene = scene;
-  function loop() {
+  function loop(now = performance.now()) {
     if (!live) { return; }
-    fly();
+    fly(now);
     if (dirty) {
       renderer.render(activeScene, camera);
       dirty = false;
@@ -375,6 +407,10 @@ async function init3d() {
     // doesn't go through camera movement still needs its one frame drawn.
     requestRender() {
       dirty = true;
+    },
+    // Hands keyboard control back to the view after a control was clicked.
+    focusStage() {
+      renderer.domElement.focus({ preventScroll: true });
     },
     // Drops the free camera directly into a lineup's exact throw position
     // and aim - "go stand there" rather than a single static preview frame,
@@ -749,8 +785,13 @@ export function sync3d() {
     }
     if (state.selected >= 0) {
       const l = state.result.lineups[state.selected];
-      const pts = [new THREE.Vector3(l.feet[0], l.feet[1], l.feet[2] + 20),
-                   new THREE.Vector3(l.rest[0], l.rest[1], l.rest[2] + 4)];
+      // The simulated arc once it has been fetched; until then a straight line
+      // from the throw spot to where it lands, so selecting a lineup shows
+      // something immediately rather than nothing.
+      const pts = l._path
+        ? l._path.map(p => new THREE.Vector3(p[0], p[1], p[2]))
+        : [new THREE.Vector3(l.feet[0], l.feet[1], l.feet[2] + 20),
+           new THREE.Vector3(l.rest[0], l.rest[1], l.rest[2] + 4)];
       const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), lineMat);
       line.userData.ownedGeometry = true;
       markerGroup.add(line);

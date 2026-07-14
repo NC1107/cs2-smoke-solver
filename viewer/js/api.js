@@ -69,6 +69,21 @@ export async function runQuery(body, signal, onProgress) {
   return { data: result };
 }
 
+// The grenade's real flight path, simulated server-side by the same exact
+// integrator that verified the lineup. Cached on the lineup by the caller, since
+// a throw's arc is fixed for a given map build.
+export async function fetchTrajectory(map, l) {
+  const q = new URLSearchParams({
+    map, x: l.feet[0], y: l.feet[1], z: l.feet[2],
+    type: l.type, pitch: l.pitch, yaw: l.yaw, strength: l.strength,
+  });
+  const res = await fetch(`/api/trajectory?${q}`);
+  if (!res.ok) {
+    throw new Error(`trajectory HTTP ${res.status}`);
+  }
+  return res.json();
+}
+
 export async function fetchMesh(map) {
   const res = await fetch(`/api/mesh?map=${encodeURIComponent(map)}`);
   if (!res.ok) {

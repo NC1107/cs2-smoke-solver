@@ -3,7 +3,7 @@
 // here (setTarget, select, runQuery) via the init*/set*Callbacks hooks.
 
 import { state, filtered, esc } from "./state.js";
-import { loadMapList, loadMapData, runQuery as postLineupQuery } from "./api.js";
+import { loadMapList, loadMapData, runQuery as postLineupQuery, fetchTrajectory } from "./api.js";
 import { loadRadar, readColors, recolorRadar, draw, scheduleDraw, resize, resetView, initMap2d } from "./map2d.js";
 import { ensure3d, resetEnsure3d, resetEnsureTexturedScene, teardown3d, current3d, sync3d, set3dCallbacks, applyTheme3d, capturePreview } from "./view3d.js";
 import { renderLineups, initPanel, revealSelected } from "./panel.js";
@@ -43,11 +43,32 @@ import { renderLineups, initPanel, revealSelected } from "./panel.js";
   let solveController = null;
   cancelBtn.addEventListener("click", () => solveController?.abort());
 
+  // Fetched once per lineup and cached on it: a throw's arc is fixed for a given
+  // map build, and only the selected one is ever drawn. A failure here is not
+  // worth interrupting anyone over - the straight throw-spot-to-landing line is
+  // still drawn, it just does not curve.
+  async function loadPath(l) {
+    if (l._path || l._pathFailed) {
+      return;
+    }
+    try {
+      l._path = (await fetchTrajectory(state.currentMap, l)).points;
+    } catch {
+      l._pathFailed = true;
+      return;
+    }
+    if (state.result?.lineups[state.selected] === l) {
+      draw();
+      sync3d();
+    }
+  }
+
   function select(i) {
     state.selected = i === state.selected ? -1 : i;
     renderLineups();
     if (state.selected >= 0) {
       revealSelected();
+      loadPath(state.result.lineups[state.selected]);
     }
     draw();
     sync3d();
@@ -433,6 +454,7 @@ import { renderLineups, initPanel, revealSelected } from "./panel.js";
       }
       t3.start();
       sync3d();
+      t3.focusStage();
       return t3;
     } catch {
       resetEnsure3d();
@@ -465,7 +487,14 @@ import { renderLineups, initPanel, revealSelected } from "./panel.js";
   const HINT_3D = "3D: WASD fly (QE up/down, shift fast) · drag to look · right-drag pan · scroll zoom · click terrain = set target";
 
   topDownBtn.addEventListener("click", () => {
-    current3d()?.topDown();
+    const t3 = current3d();
+    if (!t3) {
+      return;
+    }
+    t3.topDown();
+    // Otherwise focus stays on the button, and the fly keys - which ignore
+    // anything typed at a button - stay dead until the view is clicked.
+    t3.focusStage();
     statusEl.textContent = "looking straight down at the map";
   });
 
@@ -503,6 +532,7 @@ import { renderLineups, initPanel, revealSelected } from "./panel.js";
       statusEl.textContent = `failed to load textures: ${err.message}`;
     } finally {
       texturedBtn.disabled = false;
+      t3.focusStage();
     }
   });
 
