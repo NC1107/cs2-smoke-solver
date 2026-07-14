@@ -24,3 +24,27 @@ jobs:
 
       - name: Test
         run: dotnet test tests/Sim.Tests/SmokeSolver.Sim.Tests.csproj -c Release --no-build
+
+  publish-image:
+    needs: build-and-test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: |
+            ghcr.io/nc1107/cs2-smoke-solver:latest
+            ghcr.io/nc1107/cs2-smoke-solver:${{ github.sha }}
