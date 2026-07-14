@@ -42,32 +42,47 @@ public static class ServeCommand
     // Lineup query bodies are a handful of numbers; anything bigger is abuse.
     const int MaxLineupBodyBytes = 4096;
 
+    // One mesh/nav/payload set per discovered map, fixed for the process
+    // lifetime just like the old single-map fields were - just keyed by map
+    // name now so the viewer can switch maps without restarting the server.
+    record MapEntry(
+        CollisionMesh Mesh, Func<byte, bool>? AttributeFilter, List<NavAreaJson>? NavAreas,
+        ThrowConstants Constants, byte[] MeshPayload, string BuildETag);
+
     public static int Run(Dictionary<string, string> options)
     {
         var port = int.Parse(options.GetValueOrDefault("port", "8137"), CultureInfo.InvariantCulture);
         var root = Path.GetFullPath(options.GetValueOrDefault("root", "."));
-
-        // With --geo and --nav the server also answers interactive lineup queries.
-        CollisionMesh? mesh = null;
-        Func<byte, bool>? attributeFilter = null;
-        List<NavAreaJson>? navAreas = null;
-        var serveConstants = ThrowConstants.Default;
-        if (options.ContainsKey("geo"))
-        {
-            (mesh, _, _, attributeFilter) = LoadCommon(options);
-            serveConstants = LoadConstants(options);
-            if (options.TryGetValue("nav", out var navPath))
-            {
-                navAreas = JsonSerializer.Deserialize<List<NavAreaJson>>(File.ReadAllText(navPath));
-            }
-            Console.WriteLine($"lineup API enabled for {mesh.MapName} ({navAreas?.Count ?? 0} nav areas)");
-        }
         var attrs = options.GetValueOrDefault("attrs", "");
 
-        // Mesh and filter are fixed for the process lifetime, so the binary
-        // payload is built exactly once here and captured by the handler.
-        var meshPayload = mesh != null ? MeshPayload(mesh, attributeFilter) : null;
-        var buildETag = mesh != null ? $"\"{mesh.GameBuildId}\"" : null;
+        // Every extracted map (`extract --map <name>`) leaves a self-describing
+        // data/<name>.s2geo behind (MapName/GameBuildId are baked into the
+        // file itself - see CollisionMesh.Load), so the full map list is just
+        // whatever is sitting in data/, no separate registry to keep in sync.
+        var maps = new Dictionary<string, MapEntry>(StringComparer.OrdinalIgnoreCase);
+        var dataDir = Path.Combine(root, "data");
+        if (Directory.Exists(dataDir))
+        {
+            foreach (var geoPath in Directory.EnumerateFiles(dataDir, "*.s2geo").OrderBy(p => p, StringComparer.Ordinal))
+            {
+                var mapOptions = new Dictionary<string, string>(options) { ["geo"] = geoPath };
+                var (mesh, _, _, attributeFilter) = LoadCommon(mapOptions);
+                var constants = LoadConstants(mapOptions);
+                List<NavAreaJson>? navAreas = null;
+                var navPath = Path.Combine(dataDir, $"{mesh.MapName}.navareas.json");
+                if (File.Exists(navPath))
+                {
+                    navAreas = JsonSerializer.Deserialize<List<NavAreaJson>>(File.ReadAllText(navPath));
+                }
+                var payload = MeshPayload(mesh, attributeFilter);
+                maps[mesh.MapName] = new MapEntry(mesh, attributeFilter, navAreas, constants, payload, $"\"{mesh.GameBuildId}\"");
+                Console.WriteLine($"map loaded: {mesh.MapName} ({navAreas?.Count ?? 0} nav areas)");
+            }
+        }
+        if (maps.Count == 0)
+        {
+            Console.WriteLine("no maps found under data/*.s2geo - run `extract --map <name>` first; static file serving still works");
+        }
 
         var builder = WebApplication.CreateSlimBuilder();
         // Keep CLI output as quiet as the old server: warnings and errors only.
@@ -80,27 +95,31 @@ public static class ServeCommand
         builder.WebHost.ConfigureKestrel(kestrel => kestrel.ListenLocalhost(port));
         using var app = builder.Build();
 
-        app.MapGet("/api/mesh", (HttpContext context) =>
+        app.MapGet("/api/maps", () => Results.Json(maps
+            .OrderBy(kv => kv.Key, StringComparer.Ordinal)
+            .Select(kv => new { map = kv.Key, hasLineups = kv.Value.NavAreas != null })));
+
+        app.MapGet("/api/mesh", (HttpContext context, string? map) =>
         {
-            if (meshPayload == null || buildETag == null)
+            if (map == null || !maps.TryGetValue(map, out var entry))
             {
                 return Results.NotFound();
             }
-            context.Response.Headers.ETag = buildETag;
-            if (context.Request.Headers.IfNoneMatch.ToString().Contains(buildETag, StringComparison.Ordinal))
+            context.Response.Headers.ETag = entry.BuildETag;
+            if (context.Request.Headers.IfNoneMatch.ToString().Contains(entry.BuildETag, StringComparison.Ordinal))
             {
                 return Results.StatusCode(StatusCodes.Status304NotModified);
             }
-            return Results.Bytes(meshPayload, "application/octet-stream");
+            return Results.Bytes(entry.MeshPayload, "application/octet-stream");
         });
 
         app.MapPost("/api/lineup", async (HttpContext context) =>
         {
-            if (mesh == null || navAreas == null)
+            if (maps.Count == 0)
             {
                 context.Response.StatusCode = StatusCodes.Status503ServiceUnavailable;
                 context.Response.ContentType = "application/json";
-                await context.Response.WriteAsync("{\"error\":\"start serve with --geo, --nav (and --attrs) to enable lineup queries\"}");
+                await context.Response.WriteAsync("{\"error\":\"no maps extracted yet - run extract --map <name> first\"}");
                 return;
             }
             if (context.Request.ContentLength is > MaxLineupBodyBytes)
@@ -133,6 +152,14 @@ public static class ServeCommand
             }
             using (body)
             {
+                if (!body.RootElement.TryGetProperty("map", out var mapEl) || mapEl.ValueKind != JsonValueKind.String ||
+                    !maps.TryGetValue(mapEl.GetString() ?? "", out var entry) || entry.NavAreas == null)
+                {
+                    await WriteApiError(context, StatusCodes.Status400BadRequest, "'map' must name a map with nav data (see /api/maps)");
+                    return;
+                }
+                var (mesh, attributeFilter, navAreas, serveConstants) = (entry.Mesh, entry.AttributeFilter, entry.NavAreas, entry.Constants);
+
                 if (ValidateLineupQuery(body.RootElement, mesh) is { } validationError)
                 {
                     await WriteApiError(context, StatusCodes.Status400BadRequest, validationError);
@@ -222,9 +249,9 @@ public static class ServeCommand
             }
         });
 
-        app.MapGet("/", (HttpContext context) => ServeStatic(context, root, "viewer/index.html", buildETag));
-        app.MapGet("/viewer/{**rest}", (HttpContext context, string? rest) => ServeStatic(context, root, "viewer/" + (rest ?? ""), buildETag));
-        app.MapGet("/data/{**rest}", (HttpContext context, string? rest) => ServeStatic(context, root, "data/" + (rest ?? ""), buildETag));
+        app.MapGet("/", (HttpContext context) => ServeStatic(context, root, "viewer/index.html"));
+        app.MapGet("/viewer/{**rest}", (HttpContext context, string? rest) => ServeStatic(context, root, "viewer/" + (rest ?? "")));
+        app.MapGet("/data/{**rest}", (HttpContext context, string? rest) => ServeStatic(context, root, "data/" + (rest ?? "")));
 
         try
         {
@@ -285,7 +312,7 @@ public static class ServeCommand
         return context.Response.WriteAsync(JsonSerializer.Serialize(new { error = message }));
     }
 
-    static IResult ServeStatic(HttpContext context, string root, string relative, string? buildETag)
+    static IResult ServeStatic(HttpContext context, string root, string relative)
     {
         // Kestrel already collapses dot segments, but canonicalize and check
         // anyway: nothing outside the viewer/ and data/ subtrees is servable.
@@ -309,16 +336,20 @@ public static class ServeCommand
             _ => "application/octet-stream",
         };
 
-        // index.html and data JSON revalidate on every load (ETag keyed to the
-        // game build so a re-extract busts them), vendored libs are stable for
-        // a day, and the rest of viewer/ revalidates because those files change
-        // during development.
+        // index.html and data/*.json both revalidate on every load, keyed to
+        // their own content+mtime - it used to share one game-build ETag
+        // across every map's data file, which meant editing index.html
+        // without changing the map build (i.e. every routine viewer edit)
+        // left browsers serving a stale cached copy indefinitely, and now
+        // that multiple maps' JSON coexist under data/ there is no single
+        // "the" build id to share anyway. Vendored libs are stable for a
+        // day, and the rest of viewer/ revalidates because those files
+        // change during development.
         string? etag = null;
-        if (relative == "viewer/index.html" ||
-            (relative.StartsWith("data/", StringComparison.Ordinal) && contentType == "application/json"))
+        if (relative == "viewer/index.html" || (relative.StartsWith("data/", StringComparison.Ordinal) && contentType == "application/json"))
         {
             context.Response.Headers.CacheControl = "no-cache";
-            etag = buildETag ?? FileETag(full);
+            etag = FileETag(full);
         }
         else if (relative.StartsWith("viewer/lib/", StringComparison.Ordinal))
         {
