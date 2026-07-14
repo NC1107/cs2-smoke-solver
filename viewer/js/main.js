@@ -6,7 +6,7 @@ import { state, filtered, esc } from "./state.js";
 import { loadMapList, loadMapData, runQuery as postLineupQuery } from "./api.js";
 import { loadRadar, readColors, recolorRadar, draw, scheduleDraw, resize, resetView, initMap2d } from "./map2d.js";
 import { ensure3d, resetEnsure3d, resetEnsureTexturedScene, teardown3d, current3d, sync3d, set3dCallbacks, applyTheme3d, capturePreview } from "./view3d.js";
-import { renderLineups, initPanel } from "./panel.js";
+import { renderLineups, initPanel, revealSelected } from "./panel.js";
 
 (async () => {
   // Map switching means a failed load is no longer necessarily terminal (the
@@ -30,8 +30,12 @@ import { renderLineups, initPanel } from "./panel.js";
   const canvas = state.canvas;
   const stage3d = state.stage3d;
   const statusEl = state.statusEl;
+  const pickBtn = document.getElementById("pick");
+  const searchBtn = document.getElementById("search-all");
   const heatBtn = document.getElementById("heat");
+  const view3dBtn = document.getElementById("view3d");
   const texturedBtn = document.getElementById("textured3d");
+  const clearBtn = document.getElementById("clear");
   const keyEl = document.getElementById("key-dots");
   const mapSelect = document.getElementById("map-select");
   const cancelBtn = document.getElementById("solve-cancel");
@@ -41,15 +45,53 @@ import { renderLineups, initPanel } from "./panel.js";
   function select(i) {
     state.selected = i === state.selected ? -1 : i;
     renderLineups();
+    if (state.selected >= 0) {
+      revealSelected();
+    }
     draw();
     sync3d();
+  }
+
+  // Every control's state is a pure function of what the user has actually done,
+  // so it is derived in one place rather than patched from each handler - which
+  // is how "Target" ended up looking permanently pressed. A control that cannot
+  // do anything yet is absent, not greyed out, so the card reads as a sequence.
+  function syncControls() {
+    const hasTarget = !!state.target;
+    const in3d = stage3d.style.display !== "none";
+
+    // Exactly one control is ever the filled primary: whatever the next step in
+    // the sequence is. Pick a target, then search from it, then the tool has
+    // nothing to urge and everything goes quiet.
+    pickBtn.textContent = state.picking ? "Click the map…" : hasTarget ? "Re-target" : "Target";
+    pickBtn.classList.toggle("armed", state.picking);
+    pickBtn.classList.toggle("primary", !state.picking && !hasTarget);
+
+    searchBtn.hidden = !hasTarget;
+    searchBtn.disabled = state.busy;
+    searchBtn.classList.toggle("primary", hasTarget && !state.result && !state.busy);
+    clearBtn.hidden = !hasTarget;
+
+    heatBtn.hidden = !state.result?.coverage;
+    heatBtn.classList.toggle("active", state.heatOn);
+
+    view3dBtn.classList.toggle("active", in3d);
+    texturedBtn.hidden = !in3d;
+
+    // Nothing to explain until there are markers on the map to explain.
+    keyEl.hidden = !hasTarget;
+    keyEl.classList.toggle("heat", state.heatOn);
+
+    // A collapsed filters card silently hiding active filters would be a trap:
+    // the result count would look wrong with no visible cause.
+    const active = Object.values(state.filters).filter(f => f.value).length;
+    document.getElementById("filter-count").textContent = active ? `(${active})` : "";
   }
 
   // Heat mode swaps the map key from marker shapes to coverage colors (L23).
   function setHeat(on) {
     state.heatOn = on;
-    heatBtn.classList.toggle("primary", on);
-    keyEl.classList.toggle("heat", on);
+    syncControls();
   }
 
   // A different map is entirely different geometry/nav/lineups, so this is a
@@ -62,18 +104,16 @@ import { renderLineups, initPanel } from "./panel.js";
     teardown3d();
     stage3d.style.display = "none";
     canvas.style.display = "block";
-    document.getElementById("view3d").classList.remove("primary");
-    texturedBtn.disabled = true;
-    texturedBtn.classList.remove("primary");
+    texturedBtn.classList.remove("active");
     state.currentMap = name;
+    localStorage.setItem("smokesolver.lastMap", name);
     state.picking = false;
     state.target = null;
     state.result = null;
     state.selected = -1;
-    setHeat(false);
+    state.heatOn = false;
     canvas.classList.remove("picking");
-    document.getElementById("search-all").disabled = true;
-    heatBtn.disabled = true;
+    syncControls();
 
     try {
       state.mapData = await loadMapData(name);
@@ -109,14 +149,54 @@ import { renderLineups, initPanel } from "./panel.js";
     return;
   }
   mapSelect.innerHTML = mapList.map(m => `<option value="${esc(m.map)}">${esc(m.map)}</option>`).join("");
-  const urlMap = new URLSearchParams(location.search).get("map");
-  const initialMap = mapList.some(m => m.map === urlMap) ? urlMap : mapList[0].map;
-  mapSelect.value = initialMap;
   mapSelect.addEventListener("change", () => loadMap(mapSelect.value));
-
   readColors();
-  if (!(await loadMap(initialMap))) {
-    return;
+
+  // Land somewhere deliberate: an explicit ?map= wins, otherwise the map picked
+  // last visit, and only a genuinely first-time visitor gets the intro. Skipping
+  // it for returning users is the point - it is onboarding, not a gate.
+  const LAST_MAP_KEY = "smokesolver.lastMap";
+  const known = name => mapList.some(m => m.map === name);
+  const urlMap = new URLSearchParams(location.search).get("map");
+  const savedMap = localStorage.getItem(LAST_MAP_KEY);
+  const initialMap = known(urlMap) ? urlMap : known(savedMap) ? savedMap : null;
+
+  const intro = document.getElementById("intro");
+  const introMapStep = document.getElementById("intro-map");
+  const introFilterStep = document.getElementById("intro-filters");
+  const filtersCard = document.getElementById("card-filters");
+
+  function closeIntro(openFilters) {
+    intro.hidden = true;
+    filtersCard.open = openFilters;
+    statusEl.textContent = "click Target, then click the map";
+  }
+
+  document.getElementById("intro-map-grid").innerHTML = mapList
+    .map(m => `<button type="button" class="map-pick" data-map="${esc(m.map)}">${esc(m.map.replace(/^de_/, ""))}` +
+      `<small>${m.hasLineups ? "lineups ready" : "no nav mesh"}</small></button>`)
+    .join("");
+  for (const b of document.querySelectorAll(".map-pick")) {
+    b.addEventListener("click", async () => {
+      if (!(await loadMap(b.dataset.map))) {
+        intro.hidden = true;
+        return;
+      }
+      mapSelect.value = b.dataset.map;
+      introMapStep.hidden = true;
+      introFilterStep.hidden = false;
+    });
+  }
+  document.getElementById("intro-explore").addEventListener("click", () => closeIntro(false));
+  document.getElementById("intro-setfilters").addEventListener("click", () => closeIntro(true));
+
+  if (initialMap) {
+    mapSelect.value = initialMap;
+    if (!(await loadMap(initialMap))) {
+      return;
+    }
+  } else {
+    intro.hidden = false;
   }
 
   // Progress lines stream in every ~100ms; painting each batch as dots shows
@@ -137,7 +217,10 @@ import { renderLineups, initPanel } from "./panel.js";
       statusEl.textContent = `verifying 0 / ${msg.count} candidates against the exact sim…`;
     } else if (msg.checked) {
       p.checked.push(...msg.checked);
-      statusEl.textContent = `checked ${p.checked.length}${p.total ? ` / ${p.total}` : ""} positions…`;
+      // Naming what is being counted matters: the total is every spot a player
+      // can stand within throw range of the target, not the whole map, which is
+      // why it lands near the same figure regardless of how big the map is.
+      statusEl.textContent = `checked ${p.checked.length}${p.total ? ` / ${p.total}` : ""} stand spots in throw range…`;
     } else if (msg.verified) {
       p.verified.push(...msg.verified);
       statusEl.textContent = `verifying ${p.verified.length} / ${p.candidates ?? "?"} candidates against the exact sim…`;
@@ -159,13 +242,12 @@ import { renderLineups, initPanel } from "./panel.js";
       }
       const next = data;
       if (next.lineups.length === 0) {
-        statusEl.textContent = `none from there (${next.origins} spots); try another`;
+        statusEl.textContent = `no throw reaches there from any of the ${next.origins} stand spots in range - try another target`;
         return;
       }
       next.lineups.forEach((l, i) => { l._idx = i; });
       state.result = next;
       state.selected = -1;
-      heatBtn.disabled = !next.coverage;
       renderLineups();
       sync3d();
     } catch (err) {
@@ -175,6 +257,7 @@ import { renderLineups, initPanel } from "./panel.js";
       state.progress = null;
       solveController = null;
       cancelBtn.hidden = true;
+      syncControls();
       draw();
     }
   }
@@ -184,49 +267,54 @@ import { renderLineups, initPanel } from "./panel.js";
     state.picking = false;
     state.result = null;
     state.selected = -1;
-    setHeat(false);
+    state.heatOn = false;
     canvas.classList.remove("picking");
-    document.getElementById("search-all").disabled = false;
-    heatBtn.disabled = true;
     statusEl.textContent = note;
+    syncControls();
     renderLineups();
     draw();
     sync3d();
   }
 
-  document.getElementById("pick").addEventListener("click", () => {
-    state.picking = true;
-    canvas.classList.add("picking");
-    statusEl.textContent = "click target";
+  pickBtn.addEventListener("click", () => {
+    state.picking = !state.picking;
+    canvas.classList.toggle("picking", state.picking);
+    statusEl.textContent = state.picking ? "click the map to place your smoke target" : "";
+    syncControls();
   });
-  document.getElementById("search-all").addEventListener("click", () => {
+  searchBtn.addEventListener("click", () => {
     if (state.target && !state.busy) {
       statusEl.textContent = "searching map…";
       runQuery({ target: state.target });
     }
   });
-  document.getElementById("clear").addEventListener("click", () => {
+  clearBtn.addEventListener("click", () => {
     state.picking = false;
     state.target = null;
     state.result = null;
     state.selected = -1;
-    setHeat(false);
+    state.heatOn = false;
     canvas.classList.remove("picking");
-    document.getElementById("search-all").disabled = true;
-    heatBtn.disabled = true;
     statusEl.textContent = "";
+    syncControls();
     renderLineups();
     draw();
   });
   heatBtn.addEventListener("click", () => {
     setHeat(!state.heatOn);
     statusEl.textContent = state.heatOn
-      ? "heatmap: solid blue = verified lineup, faint blue = sim reaches but unverified, orange outline = standable but NO throw reaches"
+      ? "heatmap: where a throw reaches, and where nothing does - see legend"
       : `${filtered().length} lineups - click a marker or use the list`;
     draw();
   });
   for (const f of Object.values(state.filters)) {
-    f.addEventListener("change", () => { state.selected = -1; renderLineups(); draw(); sync3d(); });
+    f.addEventListener("change", () => {
+      state.selected = -1;
+      syncControls();
+      renderLineups();
+      draw();
+      sync3d();
+    });
   }
 
   const previewModal = document.getElementById("preview-modal");
@@ -301,7 +389,7 @@ import { renderLineups, initPanel } from "./panel.js";
   async function openView3d() {
     stage3d.style.display = "block";
     canvas.style.display = "none";
-    document.getElementById("view3d").classList.add("primary");
+    syncControls();
     statusEl.textContent = "loading 3D mesh…";
     try {
       const t3 = await ensure3d();
@@ -311,13 +399,12 @@ import { renderLineups, initPanel } from "./panel.js";
       }
       t3.start();
       sync3d();
-      texturedBtn.disabled = false;
       return t3;
     } catch {
       resetEnsure3d();
       stage3d.style.display = "none";
       canvas.style.display = "block";
-      document.getElementById("view3d").classList.remove("primary");
+      syncControls();
       statusEl.textContent = "3D unavailable: serve needs --geo";
       draw();
       return null;
@@ -341,19 +428,20 @@ import { renderLineups, initPanel } from "./panel.js";
   initMap2d({ onSetTarget: setTarget, onSelect: select, onRunQuery: runQuery });
   set3dCallbacks({ onSetTarget: setTarget, onSelect: select });
 
-  document.getElementById("view3d").addEventListener("click", async () => {
+  const HINT_3D = "3D: WASD fly (QE up/down, shift fast) · drag to look · right-drag pan · scroll zoom · click terrain = set target";
+
+  view3dBtn.addEventListener("click", async () => {
     if (stage3d.style.display !== "none") {
       current3d()?.stop();
       stage3d.style.display = "none";
       canvas.style.display = "block";
-      document.getElementById("view3d").classList.remove("primary");
-      texturedBtn.disabled = true;
+      syncControls();
       draw();
       return;
     }
     const t3 = await openView3d();
     if (t3) {
-      statusEl.textContent = "3D: WASD fly (QE up/down, shift fast) · drag to look · right-drag pan · scroll zoom · click terrain = set target · click marker = pin";
+      statusEl.textContent = HINT_3D;
     }
   });
 
@@ -367,10 +455,10 @@ import { renderLineups, initPanel } from "./panel.js";
     statusEl.textContent = wantOn ? "loading real map textures (one-time, size varies by map)…" : "";
     try {
       await t3.setTextured(wantOn);
-      texturedBtn.classList.toggle("primary", wantOn);
+      texturedBtn.classList.toggle("active", wantOn);
       statusEl.textContent = wantOn
         ? "textured: drag to look · right-drag pan · scroll zoom · WASD fly"
-        : "3D: WASD fly (QE up/down, shift fast) · drag to look · right-drag pan · scroll zoom · click terrain = set target · click marker = pin";
+        : HINT_3D;
     } catch (err) {
       resetEnsureTexturedScene();
       statusEl.textContent = `failed to load textures: ${err.message}`;
@@ -393,13 +481,12 @@ import { renderLineups, initPanel } from "./panel.js";
       "change", () => { resize(); current3d()?.resize3d(); watchDpr(); }, { once: true });
   })();
 
-  // Below the breakpoint the control cards collapse to <details>; CSS cannot
-  // force a closed details open again at desktop width, so sync it here.
+  // Below the breakpoint the actions card collapses to a <details>; CSS cannot
+  // force a closed details open again at desktop width, so sync it here. Filters
+  // are excluded on purpose - that one is the user's to open and close.
   const compactMq = matchMedia("(max-width: 640px)");
   const syncCompactControls = () => {
-    for (const d of document.querySelectorAll("#controls details")) {
-      d.open = !compactMq.matches;
-    }
+    document.getElementById("card-view").open = !compactMq.matches;
   };
   syncCompactControls();
   compactMq.addEventListener("change", syncCompactControls);

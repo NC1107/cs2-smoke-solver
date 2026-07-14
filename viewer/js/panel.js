@@ -66,81 +66,100 @@ export function renderLineups() {
   const shown = filtered();
   statusEl.textContent = `${shown.length} lineups - click a marker or use the list`;
 
-  if (state.selected >= 0) {
-    const l = state.result.lineups[state.selected];
-    const i = state.selected;
-    const el = document.createElement("div");
-    el.className = "lineup selected";
-    el.innerHTML =
-      `<div class="row1">${lineupSummaryHtml(l)}</div>` +
-      `<div style="margin:4px 0 2px">${esc(l.how)}</div>` +
-      `<div class="cmd" id="cmd-l${i}">${esc(l.console)}<button data-copy="cmd-l${i}" class="btn">copy</button></div>` +
-      `<div class="preview-thumb" title="rendering preview…"></div>` +
-      `<div class="lineup-actions">` +
-      `<button type="button" class="btn goto-btn" title="move the free 3D camera into this lineup's exact throw spot">Go to</button>` +
-      `<button type="button" class="btn fav-btn">${l._favorite ? "★ favorited" : "☆ favorite"}</button>` +
-      `<button type="button" class="btn remove-btn">Remove</button>` +
-      `</div>`;
-    // Card click toggles the selection off, matching marker behavior (L16).
-    el.addEventListener("click", () => callbacks.onSelect(i));
-    list.appendChild(el);
-    wireCopyButtons(el);
-
-    // Auto-renders (cached on the lineup itself) so sifting through the list
-    // shows a preview immediately rather than requiring an extra click per
-    // lineup; clicking the thumbnail once loaded enlarges it in the modal.
-    callbacks.onPreview(l, el.querySelector(".preview-thumb"));
-
-    el.querySelector(".goto-btn").addEventListener("click", e => {
-      e.stopPropagation();
-      callbacks.onGoTo(l);
-    });
-    el.querySelector(".fav-btn").addEventListener("click", e => {
-      e.stopPropagation();
-      callbacks.onFavorite(l);
-    });
-    el.querySelector(".remove-btn").addEventListener("click", e => {
-      e.stopPropagation();
-      callbacks.onRemove(l);
-    });
+  if (shown.length === 0) {
+    return;
   }
 
-  if (shown.length > 0) {
-    const note = document.createElement("div");
-    note.className = "list-note";
-    note.textContent = shown.length > LIST_CAP
-      ? `top ${LIST_CAP} of ${shown.length} results`
-      : `${shown.length} result${shown.length === 1 ? "" : "s"}`;
-    list.appendChild(note);
+  const note = document.createElement("div");
+  note.className = "list-note";
+  note.textContent = shown.length > LIST_CAP
+    ? `top ${LIST_CAP} of ${shown.length} results`
+    : `${shown.length} result${shown.length === 1 ? "" : "s"}`;
+  list.appendChild(note);
 
-    const box = document.createElement("div");
-    box.className = "lineup-options";
-    box.setAttribute("role", "group");
-    box.setAttribute("aria-label", `lineup results, ${note.textContent}`);
-    for (const l of shown.slice(0, LIST_CAP)) {
-      const b = document.createElement("button");
-      b.type = "button";
-      b.className = "lineup-option" + (l._idx === state.selected ? " selected" : "");
-      b.dataset.idx = l._idx;
-      b.setAttribute("aria-pressed", String(l._idx === state.selected));
-      b.tabIndex = -1;
-      b.innerHTML = lineupSummaryHtml(l);
-      b.addEventListener("click", () => callbacks.onSelect(l._idx));
-      box.appendChild(b);
-    }
-    box.addEventListener("keydown", onListKeydown);
-    const home = box.querySelector(".selected") ?? box.firstElementChild;
+  const box = document.createElement("div");
+  box.className = "lineup-options";
+  box.setAttribute("role", "group");
+  box.setAttribute("aria-label", `lineup results, ${note.textContent}`);
+  for (const l of shown.slice(0, LIST_CAP)) {
+    // The selected lineup expands where it sits. Rendering its detail card at
+    // the top of the panel instead meant that picking the 40th result put the
+    // preview image somewhere far above the scroll position, out of sight.
+    box.appendChild(l._idx === state.selected ? detailCard(l) : optionButton(l));
+  }
+  box.addEventListener("keydown", onListKeydown);
+  const home = box.querySelector(".lineup-option") ?? box.firstElementChild;
+  if (home.classList.contains("lineup-option")) {
     home.tabIndex = 0;
-    list.appendChild(box);
+  }
+  list.appendChild(box);
 
-    // Selecting re-renders the list; keep keyboard focus on the same lineup.
-    if (focusIdx !== undefined) {
-      const again = box.querySelector(`[data-idx="${focusIdx}"]`) ?? home;
+  // Selecting re-renders the list; keep keyboard focus on the same lineup.
+  if (focusIdx !== undefined) {
+    const again = box.querySelector(`.lineup-option[data-idx="${focusIdx}"]`);
+    if (again) {
       home.tabIndex = -1;
       again.tabIndex = 0;
       again.focus();
     }
   }
+}
+
+function optionButton(l) {
+  const b = document.createElement("button");
+  b.type = "button";
+  b.className = "lineup-option";
+  b.dataset.idx = l._idx;
+  b.setAttribute("aria-pressed", "false");
+  b.tabIndex = -1;
+  b.innerHTML = lineupSummaryHtml(l);
+  b.addEventListener("click", () => callbacks.onSelect(l._idx));
+  return b;
+}
+
+function detailCard(l) {
+  const i = l._idx;
+  const el = document.createElement("div");
+  el.className = "lineup selected";
+  el.innerHTML =
+    `<div class="row1">${lineupSummaryHtml(l)}</div>` +
+    `<div style="margin:4px 0 2px">${esc(l.how)}</div>` +
+    `<div class="cmd" id="cmd-l${i}">${esc(l.console)}<button data-copy="cmd-l${i}" class="btn">copy</button></div>` +
+    `<div class="preview-thumb" title="rendering preview…"></div>` +
+    `<div class="lineup-actions">` +
+    `<button type="button" class="btn goto-btn" title="move the free 3D camera into this lineup's exact throw spot">Go to</button>` +
+    `<button type="button" class="btn fav-btn">${l._favorite ? "★ favorited" : "☆ favorite"}</button>` +
+    `<button type="button" class="btn remove-btn">Remove</button>` +
+    `</div>`;
+  // Card click toggles the selection off, matching marker behavior (L16).
+  el.addEventListener("click", () => callbacks.onSelect(i));
+  wireCopyButtons(el);
+
+  // Auto-renders (cached on the lineup itself) so sifting through the list
+  // shows a preview immediately rather than requiring an extra click per
+  // lineup; clicking the thumbnail once loaded enlarges it in the modal.
+  callbacks.onPreview(l, el.querySelector(".preview-thumb"));
+
+  el.querySelector(".goto-btn").addEventListener("click", e => {
+    e.stopPropagation();
+    callbacks.onGoTo(l);
+  });
+  el.querySelector(".fav-btn").addEventListener("click", e => {
+    e.stopPropagation();
+    callbacks.onFavorite(l);
+  });
+  el.querySelector(".remove-btn").addEventListener("click", e => {
+    e.stopPropagation();
+    callbacks.onRemove(l);
+  });
+  return el;
+}
+
+// Selecting from the map (rather than the list) can expand a card that is
+// scrolled out of view; bring it in without yanking the panel around.
+export function revealSelected() {
+  document.querySelector("#lineup-list .lineup.selected")
+    ?.scrollIntoView({ block: "nearest", behavior: "smooth" });
 }
 
 function setTargetFromGetpos() {

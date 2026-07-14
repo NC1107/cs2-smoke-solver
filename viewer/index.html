@@ -23,15 +23,15 @@
       <summary>actions</summary>
       <div class="card-body">
         <button id="pick" class="btn primary">Target</button>
-        <button id="search-all" class="btn" disabled>Search map</button>
-        <button id="heat" class="btn" disabled>Heatmap</button>
+        <button id="search-all" class="btn" hidden>Search map</button>
+        <button id="heat" class="btn" hidden>Heatmap</button>
         <button id="view3d" class="btn">3D</button>
-        <button id="textured3d" class="btn" disabled title="Load real map textures for the 3D view (one-time, size varies by map)">Textured</button>
-        <button id="clear" class="btn">Clear</button>
+        <button id="textured3d" class="btn" hidden title="Load real map textures for the 3D view (one-time, size varies by map)">Textured</button>
+        <button id="clear" class="btn" hidden>Clear</button>
       </div>
     </details>
-    <details class="card" id="card-filters" open>
-      <summary>filters</summary>
+    <details class="card" id="card-filters">
+      <summary>filters <span class="filter-count" id="filter-count"></span></summary>
       <div class="card-body">
         <select id="f-type" title="movement" aria-label="Movement type">
           <option value="">any movement</option>
@@ -80,11 +80,21 @@
   <canvas id="map" aria-label="Top-down map; click to set a smoke target and throw origins"></canvas>
   <div id="stage3d" style="position:absolute; inset:0; display:none"></div>
   <div id="tip"></div>
-  <div class="key" id="key-dots">
-    <span class="key-group" id="key-markers"><span><span class="cross">●</span> target</span><span><span class="dot left"></span> left</span><span><span class="dot mid"></span> mid (L+R)</span><span><span class="dot right"></span> right</span><span class="shape">● stand&ensp;○ jump&ensp;■ crouch&ensp;□ cr+jump&ensp;▲ run+jump</span></span>
-    <span class="key-group" id="key-heat"><span><span class="swatch ok"></span> verified lineup</span><span><span class="swatch raw"></span> sim reaches, unverified</span><span><span class="swatch none"></span> standable, no throw reaches</span></span>
-    <span id="key-count"></span>
-  </div>
+  <details class="key" id="key-dots" hidden>
+    <summary>legend <span id="key-count"></span></summary>
+    <div class="key-body">
+      <div class="key-group" id="key-markers">
+        <div class="key-row"><span class="key-label">click</span><span><span class="dot left"></span> left</span><span><span class="dot mid"></span> mid (L+R)</span><span><span class="dot right"></span> right</span></div>
+        <div class="key-row"><span class="key-label">movement</span><span class="shape">● stand&ensp;○ jump&ensp;■ crouch&ensp;□ cr+jump&ensp;▲ run+jump</span></div>
+        <div class="key-row"><span class="key-label">target</span><span><span class="cross">●</span> where the smoke lands</span></div>
+      </div>
+      <div class="key-group" id="key-heat">
+        <div class="key-row"><span class="swatch ok"></span> verified lineup</div>
+        <div class="key-row"><span class="swatch raw"></span> sim reaches, unverified</div>
+        <div class="key-row"><span class="swatch none"></span> standable, no throw reaches</div>
+      </div>
+    </div>
+  </details>
   <div class="panel" id="panel">
     <div class="paste">
       <input id="getpos-in" placeholder="paste getpos → target" aria-label="Paste getpos output to set target">
@@ -99,6 +109,24 @@ sv_autobunnyhopping 1; sv_enablebunnyhopping 1;
 give weapon_smokegrenade<button data-copy="cmd-setup" class="btn">copy</button></div>
     </details>
     <div id="lineup-list"></div>
+  </div>
+</div>
+
+<div id="intro" class="intro" hidden>
+  <div class="intro-card" role="dialog" aria-modal="true" aria-labelledby="intro-title">
+    <div class="intro-step" id="intro-map">
+      <h1 id="intro-title">Pick a map</h1>
+      <p>Then click anywhere on it to set a smoke target, and this will find every spot you can throw it from.</p>
+      <div class="intro-step map-grid" id="intro-map-grid"></div>
+    </div>
+    <div class="intro-step" id="intro-filters" hidden>
+      <h1>Ready</h1>
+      <p>You can narrow results to a specific throw (jump-throws only, one bounce, and so on), or just start clicking and see what comes back.</p>
+      <div class="intro-step intro-choices">
+        <button id="intro-explore" class="btn primary">Just explore</button>
+        <button id="intro-setfilters" class="btn">Set filters first</button>
+      </div>
+    </div>
   </div>
 </div>
 

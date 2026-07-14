@@ -1,14 +1,26 @@
+  /* Cool graphite rather than the warm tan this started as: the terrain is a
+     basemap, so it stays desaturated and lets the marker colors carry all the
+     saturation, the way a map app keeps its streets gray and its pins loud.
+
+     Two constraints hold this palette together, and both were violated before:
+     --accent must differ from --click-left (the 3D view draws the trajectory
+     line in --accent right next to a landing dot in --click-left, and they were
+     the same hex), and --target must differ from --heat-none (map2d draws the
+     target ring on top of the heatmap, and both were oranges ~5 hue degrees
+     apart). --heat-ok/--heat-none stay blue/orange because that pair survives
+     every common form of colorblindness; --target is pulled to yellow, which is
+     safe next to orange only because it is also separated in lightness. */
   :root {
-    --surface: #F5F1E8;
-    --panel: #FFFDF8;
-    --ink: #2A241C;
-    --muted: #6A5F4D; /* 5.5:1 on --surface, 6.2:1 on --panel (WCAG AA) */
-    --line: #DDD5C4;
-    --terrain-lo: #EAE3D4;
-    --terrain-hi: #4E4436;
-    --accent: #0891B2;
-    --target: #B45309;
-    --click-left: #0891B2;
+    --surface: #E7EBEE;
+    --panel: #F7F9FA;
+    --ink: #12161B;
+    --muted: #566270; /* 5.2:1 on --surface, 5.9:1 on --panel (WCAG AA) */
+    --line: #D2D8DE;
+    --terrain-lo: #E1E5E9;
+    --terrain-hi: #46505B;
+    --accent: #0369A1;
+    --target: #92660A;
+    --click-left: #0F766E;
     --click-mid: #7C3AED;
     --click-right: #DB2777;
     --heat-ok: #2563EB;
@@ -19,16 +31,16 @@
   }
   @media (prefers-color-scheme: dark) {
     :root {
-      --surface: #16130F;
-      --panel: #211D16;
-      --ink: #E9E2D4;
-      --muted: #9C917C;
-      --line: #3A342A;
-      --terrain-lo: #1E1A14;
-      --terrain-hi: #C2B291;
-      --accent: #0891B2;
-      --target: #D97706;
-      --click-left: #22B8D4;
+      --surface: #0B0E12;
+      --panel: #12161C;
+      --ink: #E7ECF1;
+      --muted: #8993A1; /* 6.2:1 on --surface, 5.8:1 on --panel (WCAG AA) */
+      --line: #232A32;
+      --terrain-lo: #14181D;
+      --terrain-hi: #B7C1CB;
+      --accent: #38BDF8;
+      --target: #EAB308;
+      --click-left: #2DD4BF;
       --click-mid: #A78BFA;
       --click-right: #F472B6;
       --heat-ok: #60A5FA;
@@ -78,8 +90,31 @@
     cursor: pointer;
   }
   .btn:hover { border-color: var(--muted); }
-  .btn.primary { border-color: var(--accent); color: var(--accent); font-weight: 600; }
+  /* Filled reads as "press me", outlined reads as "already on" - so the one
+     action waiting to be taken is filled, and a mode you are currently *inside*
+     is outlined. They used to be the same rule, which is why Target looked
+     permanently pre-selected. */
+  .btn.primary {
+    background: var(--accent);
+    color: var(--panel);
+    border-color: var(--accent);
+    font-weight: 600;
+  }
+  .btn.primary:hover { border-color: var(--accent); filter: brightness(1.08); }
+  .btn.armed {
+    background: transparent;
+    border-color: var(--accent);
+    color: var(--accent);
+    font-weight: 600;
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent);
+  }
+  /* "on" for a toggle (3D, Textured, Heatmap) - held, not urging. */
+  .btn.active { border-color: var(--accent); color: var(--accent); font-weight: 600; }
   .btn:disabled { opacity: 0.45; cursor: default; }
+  /* Actions that cannot do anything yet are hidden rather than greyed: three
+     dead buttons next to three live ones reads as a broken tool, not as a
+     sequence. They appear as their preconditions are met. */
+  .btn[hidden] { display: none; }
   #controls {
     position: absolute;
     left: 10px;
@@ -102,6 +137,15 @@
     color: var(--muted);
     font-size: 11.5px;
     user-select: none;
+  }
+  /* Filters are the one card that stays collapsible on desktop: there is nothing
+     to filter until a search has returned something, so it starts closed and has
+     to be openable. The actions card has no summary to click, so it must not. */
+  #card-filters > summary { display: list-item; }
+  #card-filters[open] > .card-body { margin-top: 6px; }
+  #card-filters .filter-count {
+    color: var(--accent);
+    font-weight: 600;
   }
   #controls .card-body {
     display: flex;
@@ -182,25 +226,39 @@
   canvas.picking { cursor: crosshair; }
   #stage3d canvas { cursor: grab; }
   #stage3d canvas.looking, #stage3d canvas.panning { cursor: grabbing; }
+  /* The legend explains markers, so it stays out of the way until there are
+     markers to explain, and then folds away again behind its own summary. */
   .key {
     position: absolute;
     left: 10px;
     bottom: 10px;
-    display: flex;
-    gap: 12px;
-    align-items: center;
-    flex-wrap: wrap;
     font-size: 11px;
     color: var(--muted);
-    background: color-mix(in srgb, var(--panel) 88%, transparent);
+    background: color-mix(in srgb, var(--panel) 92%, transparent);
     border: 1px solid var(--line);
     border-radius: 5px;
-    padding: 4px 10px;
+    max-width: min(420px, calc(100% - 20px));
   }
-  .key .key-group { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+  .key[hidden] { display: none; }
+  .key > summary {
+    cursor: pointer;
+    user-select: none;
+    padding: 4px 10px;
+    list-style: none;
+  }
+  .key > summary::-webkit-details-marker { display: none; }
+  .key > summary::before { content: "?"; display: inline-flex; align-items: center; justify-content: center;
+    width: 13px; height: 13px; margin-right: 6px; vertical-align: -2px;
+    border: 1px solid var(--line); border-radius: 50%; font-size: 9px; font-weight: 700; }
+  .key[open] > summary { border-bottom: 1px solid var(--line); }
+  .key-body { padding: 7px 10px; display: grid; gap: 5px; }
+  /* Two independent variables (color = click, shape = movement) read as two
+     labeled rows; as one nine-item strip they read as noise. */
+  .key-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  .key-row > .key-label { color: var(--ink); font-weight: 600; min-width: 58px; }
   #key-heat { display: none; }
   .key.heat #key-markers { display: none; }
-  .key.heat #key-heat { display: flex; }
+  .key.heat #key-heat { display: grid; gap: 5px; }
   .key .swatch { width: 10px; height: 10px; display: inline-block; vertical-align: -1px; }
   .key .swatch.ok { background: var(--heat-ok); opacity: 0.75; }
   .key .swatch.raw { background: var(--heat-ok); opacity: 0.18; outline: 1px solid var(--line); }
@@ -318,6 +376,52 @@
     width: 28px; height: 28px; padding: 0; border-radius: 50%;
     line-height: 1; font-size: 16px;
   }
+  /* First run: one decision on screen at a time (pick a map, then choose whether
+     to bother with filters) instead of the whole control surface at once. */
+  .intro {
+    position: fixed; inset: 0; z-index: 60;
+    background: color-mix(in srgb, var(--surface) 82%, transparent);
+    backdrop-filter: blur(3px);
+    display: flex; align-items: center; justify-content: center;
+    padding: 20px;
+  }
+  .intro[hidden] { display: none; }
+  .intro-card {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 22px 24px;
+    width: min(560px, 100%);
+    box-shadow: 0 18px 50px rgba(0, 0, 0, 0.35);
+  }
+  .intro h1 { margin: 0; font-size: 17px; letter-spacing: -0.01em; }
+  .intro p { margin: 5px 0 0; color: var(--muted); font-size: 12.5px; }
+  .intro-step { margin-top: 16px; }
+  .intro-step[hidden] { display: none; }
+  .map-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(118px, 1fr));
+    gap: 7px;
+  }
+  .map-pick {
+    font: inherit;
+    font-size: 12.5px;
+    font-weight: 600;
+    color: var(--ink);
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 11px 10px;
+    cursor: pointer;
+    text-align: left;
+    display: grid;
+    gap: 2px;
+  }
+  .map-pick:hover { border-color: var(--accent); color: var(--accent); }
+  .map-pick small { color: var(--muted); font-weight: 400; font-size: 10.5px; }
+  .map-pick:hover small { color: var(--muted); }
+  .intro-choices { display: flex; gap: 8px; flex-wrap: wrap; }
+  .intro-choices .btn { --btn-pad: 7px 14px; --btn-font-size: 12.5px; }
   .list-note { color: var(--muted); font-size: 11px; }
   .lineup-options { display: grid; gap: 4px; }
   .lineup-option {

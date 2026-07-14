@@ -104,6 +104,11 @@ export function scheduleDraw() {
 }
 
 export function draw() {
+  // The map picker now runs before any map is chosen, so a resize can land here
+  // with nothing loaded yet.
+  if (!state.mapData) {
+    return;
+  }
   const colors = state.colors;
   const w = canvas.clientWidth, h = canvas.clientHeight;
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
