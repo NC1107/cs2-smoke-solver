@@ -3,6 +3,12 @@ bin/
 obj/
 *.user
 
+# Deployment secrets (see .env.example for the expected keys)
+.env
+
+# Node deps for rig/ scripts (npm install, not committed)
+rig/node_modules/
+
 # Game install + steamcmd (74 GB, managed by steamcmd - never stage)
 rig/server/
 rig/steamcmd/
@@ -12,11 +18,16 @@ data/*.s2geo
 data/*.glb
 data/*.png
 data/*.bin
-data/viewer-map.json
+data/*.nav
+data/*.entities.json
+data/*.navareas.json
+data/*.viewer-map.json
 data/cache/
-data/navareas*
-data/de_dust2*
 data/previews/
+
+# Python bytecode (rig/ calibration scripts)
+__pycache__/
+*.pyc
 
 # High-volume capture telemetry (rotated, regenerable from live runs)
 data/calib/captures*.jsonl
