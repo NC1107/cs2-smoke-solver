@@ -115,6 +115,7 @@ async function init3d() {
     const cp = Math.cos(pitch);
     lookDir.set(cp * Math.cos(yaw), cp * Math.sin(yaw), -Math.sin(pitch));
     camera.lookAt(lookAt.copy(camera.position).add(lookDir));
+    dirty = true;
   }
 
   const geo = new THREE.BufferGeometry();
@@ -207,6 +208,7 @@ async function init3d() {
       panRight.set(Math.sin(yaw), -Math.cos(yaw), 0);
       camera.position.addScaledVector(panRight, dx * PAN_SENSITIVITY);
       camera.position.addScaledVector(panUp, dy * PAN_SENSITIVITY);
+      dirty = true;
     }
   });
   renderer.domElement.addEventListener("pointerup", e => {
@@ -235,6 +237,7 @@ async function init3d() {
     e.preventDefault();
     camera.getWorldDirection(dollyDir);
     camera.position.addScaledVector(dollyDir, -e.deltaY * DOLLY_SENSITIVITY);
+    dirty = true;
   }, { passive: false });
 
   function resize3d() {
@@ -247,6 +250,7 @@ async function init3d() {
     renderer.setSize(w2, h2);
     camera.aspect = w2 / h2;
     camera.updateProjectionMatrix();
+    dirty = true;
   }
   window.addEventListener("resize", resize3d);
 
@@ -298,9 +302,17 @@ async function init3d() {
     if (move.lengthSq() === 0) { return; }
     move.normalize().multiplyScalar(speed);
     camera.position.add(move);
+    dirty = true;
   }
 
   let live = false;
+  // The loop used to call renderer.render() unconditionally every frame for
+  // as long as the 3D view was open, even sitting perfectly still - a real
+  // cost, confirmed in a profiler capture showing continuous renderBufferDirect
+  // traffic across an entire idle timeline. Now it only renders when
+  // something actually moved or changed; every camera/scene mutation above
+  // and below sets this back to true.
+  let dirty = true;
   // Mutable so the interactive "Textured" toggle can retarget the loop
   // without re-registering keys/controls; loop() always reads the current
   // value rather than closing over the flat scene permanently.
@@ -308,7 +320,10 @@ async function init3d() {
   function loop() {
     if (!live) { return; }
     fly();
-    renderer.render(activeScene, camera);
+    if (dirty) {
+      renderer.render(activeScene, camera);
+      dirty = false;
+    }
     requestAnimationFrame(loop);
   }
   three = {
@@ -319,6 +334,10 @@ async function init3d() {
     start() {
       if (live) { return; }
       live = true;
+      // resize3d() also sets dirty, but only if the stage already has a
+      // size - it can still be display:none mid-transition right here, so
+      // set it directly too rather than relying on that as the only path.
+      dirty = true;
       window.addEventListener("keydown", onKeyDown);
       window.addEventListener("keyup", onKeyUp);
       window.addEventListener("blur", onBlur);
@@ -345,6 +364,12 @@ async function init3d() {
       dest.add(markerGroup);
       dest.add(targetGroup);
       activeScene = dest;
+      dirty = true;
+    },
+    // Any external state change (target/lineup selection, theme flip) that
+    // doesn't go through camera movement still needs its one frame drawn.
+    requestRender() {
+      dirty = true;
     },
     // Drops the free camera directly into a lineup's exact throw position
     // and aim - "go stand there" rather than a single static preview frame,
@@ -661,6 +686,7 @@ export function applyTheme3d() {
   three.targetMat.color.set(colors.target);
   three.bloomMat.color.set(colors.target);
   three.lineMat.color.set(colors.accent);
+  three.requestRender();
 }
 
 // Children share geometries/materials owned by init3d; only geometries
@@ -709,4 +735,5 @@ export function sync3d() {
       markerGroup.add(line);
     }
   }
+  three.requestRender();
 }
