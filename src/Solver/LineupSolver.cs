@@ -52,7 +52,8 @@ public static class LineupSolver
         IReadOnlyList<Vector3>? origins = null,
         ThrowConstants? constants = null,
         ConcurrentDictionary<(int X, int Y), int>? coverage = null,
-        Action<Vector3, int>? onOrigin = null)
+        Action<Vector3, int>? onOrigin = null,
+        TriangleCollider? collider = null)
     {
         if (zoneCrossings.Count == 0)
         {
@@ -73,7 +74,7 @@ public static class LineupSolver
             zoneRadius = MathF.Max(zoneRadius, Vector3.Distance(grid.CellCenter(cell), zoneCentroid));
         }
 
-        origins ??= FindStandableOrigins(grid, originMin, originMax);
+        origins ??= FindStandableOrigins(grid, originMin, originMax, collider);
         var best = new ConcurrentDictionary<(int, int), Lineup>();
 
         Parallel.ForEach(origins, Cpu.Bound, feet =>
@@ -345,7 +346,8 @@ public static class LineupSolver
         IReadOnlyList<float[][]> areaCorners,
         Vector3 min,
         Vector3 max,
-        float sampleStep = 32f)
+        float sampleStep = 32f,
+        TriangleCollider? collider = null)
     {
         var origins = new List<Vector3>();
         foreach (var corners in areaCorners)
@@ -372,7 +374,7 @@ public static class LineupSolver
                     {
                         continue;
                     }
-                    origins.Add(SnapToGround(grid, new Vector3(x, y, avgZ)));
+                    origins.Add(SnapToGround(grid, collider, new Vector3(x, y, avgZ)));
                 }
             }
             // Tiny areas can miss every grid sample; keep their centroid so narrow
@@ -383,7 +385,7 @@ public static class LineupSolver
                 var cy = corners.Average(c => c[1]);
                 if (cx >= min.X && cx <= max.X && cy >= min.Y && cy <= max.Y)
                 {
-                    origins.Add(SnapToGround(grid, new Vector3(cx, cy, avgZ)));
+                    origins.Add(SnapToGround(grid, collider, new Vector3(cx, cy, avgZ)));
                 }
             }
         }
@@ -427,7 +429,7 @@ public static class LineupSolver
         return inside;
     }
 
-    static Vector3 SnapToGround(VoxelGrid grid, Vector3 p)
+    static Vector3 SnapToGround(VoxelGrid grid, TriangleCollider? collider, Vector3 p)
     {
         var (x, y, z) = grid.CellOf(p + new Vector3(0, 0, 40));
         if (!grid.InBounds(x, y, Math.Clamp(z, 1, grid.Nz - 1)))
@@ -440,17 +442,46 @@ public static class LineupSolver
             if (!grid.IsSolid(grid.Index(x, y, k)) && grid.IsSolid(grid.Index(x, y, k - 1)))
             {
                 var center = grid.CellCenter(x, y, k);
-                return new Vector3(p.X, p.Y, center.Z - grid.VoxelSize / 2);
+                return OnSurface(grid, collider, new Vector3(p.X, p.Y, center.Z - grid.VoxelSize / 2));
             }
         }
         return p;
+    }
+
+    // A player can stand on anything up to Source's 45.57 degree slope limit.
+    const float StandableNormalZ = 0.7f;
+
+    /// <summary>
+    /// Drops a voxel-derived foot position onto the collision surface underneath it.
+    /// </summary>
+    // The grid only knows its own 16u cells, so the closest it can put a floor is
+    // the cell boundary above it - up to a whole voxel too high. Everywhere else
+    // that is close enough, but an origin is a promise: it goes out to the player
+    // as a setpos, and the game then drops them onto the real floor. Simulating
+    // the throw from the cell boundary therefore models a release up to 16u higher
+    // than the one they can actually make, which carries the grenade further and
+    // higher than it goes in game - measured 8u too high on a mirage lineup that
+    // the sim landed and the player could not.
+    static Vector3 OnSurface(VoxelGrid grid, TriangleCollider? collider, Vector3 feet)
+    {
+        if (collider == null)
+        {
+            return feet;
+        }
+        // The cell above the floor is empty by construction, so the first thing a
+        // downward ray from its top can hit is the floor itself.
+        var from = feet with { Z = feet.Z + grid.VoxelSize };
+        var to = feet with { Z = feet.Z - grid.VoxelSize };
+        return collider.FirstHit(from, to) is { } hit && hit.Normal.Z >= StandableNormalZ
+            ? feet with { Z = float.Lerp(from.Z, to.Z, hit.T) }
+            : feet;
     }
 
     /// <summary>
     /// Feet positions a player can stand at: a free cell over solid ground with
     /// head room, sampled every second column to keep the sweep tractable.
     /// </summary>
-    static List<Vector3> FindStandableOrigins(VoxelGrid grid, Vector3 min, Vector3 max)
+    static List<Vector3> FindStandableOrigins(VoxelGrid grid, Vector3 min, Vector3 max, TriangleCollider? collider = null)
     {
         var origins = new List<Vector3>();
         var (x0, y0, z0) = grid.CellOf(min);
@@ -486,7 +517,7 @@ public static class LineupSolver
                         continue;
                     }
                     var center = grid.CellCenter(x, y, z);
-                    origins.Add(new Vector3(center.X, center.Y, center.Z - grid.VoxelSize / 2));
+                    origins.Add(OnSurface(grid, collider, new Vector3(center.X, center.Y, center.Z - grid.VoxelSize / 2)));
                     z += 4;
                 }
             }

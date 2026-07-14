@@ -100,12 +100,17 @@ public static class TargetSolver
             Console.Error.WriteLine($"target ({target.X:F0},{target.Y:F0},{target.Z:F0}) has no reachable landing cells (inside solid, or tolerance too small)");
         }
 
+        // Built before the origins, not after: they are snapped onto its triangles
+        // so that the spot a lineup names is the spot the player actually stands on.
+        var collider = new TriangleCollider(mesh, min, max, mesh.GrenadeSolidFilter());
+
         var origins = LineupSolver.OriginsFromNavAreas(
                 grid,
                 [.. navAreas.Select(a => a.Corners)],
                 new Vector3(originClick.X - originReach, originClick.Y - originReach, meshMin.Z),
                 new Vector3(originClick.X + originReach, originClick.Y + originReach, max.Z),
-                sampleStep: 24f)
+                sampleStep: 24f,
+                collider: collider)
             .Where(o => Vector2.Distance(new Vector2(o.X, o.Y), originClick) <= originReach)
             .ToList();
 
@@ -119,8 +124,8 @@ public static class TargetSolver
         var candidates = LineupSolver.Solve(
             grid, zoneCrossings, min, max,
             [ThrowType.Stand, ThrowType.Crouch, ThrowType.JumpThrow, ThrowType.CrouchJumpThrow, ThrowType.RunJumpThrow],
-            yawStep, pitchStep, origins: origins, constants: constants, coverage: coverage, onOrigin: onOrigin);
-        var collider = new TriangleCollider(mesh, min, max, mesh.GrenadeSolidFilter());
+            yawStep, pitchStep, origins: origins, constants: constants, coverage: coverage, onOrigin: onOrigin,
+            collider: collider);
         onPhase?.Invoke("verify", candidates.Count);
         var lineups = LineupSolver.VerifyExact(grid, collider, zoneCrossings, candidates, constants: constants, onCandidate: onCandidate);
 
