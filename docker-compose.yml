@@ -1,3 +1,8 @@
+networks:
+  traefik_proxy:
+    external: true
+    name: traefik_proxy
+
 services:
   smokesolver:
     build:
@@ -10,17 +15,21 @@ services:
       - ./data:/app/data
     restart: unless-stopped
     networks:
-      - proxy
+      - traefik_proxy
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 1G
+        reservations:
+          cpus: '0.1'
+          memory: 128M
     labels:
-      - traefik.enable=true
-      - traefik.docker.network=proxy
-      - traefik.http.routers.smokesolver.rule=Host(`${SMOKESOLVER_DOMAIN}`)
-      - traefik.http.routers.smokesolver.entrypoints=websecure
-      - traefik.http.routers.smokesolver.tls.certresolver=${TRAEFIK_CERTRESOLVER}
-      - traefik.http.services.smokesolver.loadbalancer.server.port=8137
-      - traefik.http.services.smokesolver.loadbalancer.healthcheck.path=/api/maps
-      - traefik.http.services.smokesolver.loadbalancer.healthcheck.interval=30s
-
-networks:
-  proxy:
-    external: true
+      - "traefik.enable=true"
+      - "traefik.http.routers.smokesolver.rule=Host(`smoke.${DOMAIN:-npc-server.top}`)"
+      - "traefik.http.routers.smokesolver.entrypoints=websecure"
+      - "traefik.http.routers.smokesolver.tls.certresolver=cloudflare"
+      - "traefik.http.routers.smokesolver.middlewares=secureHeaders@file"
+      - "traefik.http.services.smokesolver.loadbalancer.server.port=8137"
+      - "traefik.docker.network=traefik_proxy"
+      - "com.docker.compose.project=cs2-smoke-solver"
