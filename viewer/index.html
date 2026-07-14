@@ -27,13 +27,15 @@
         <button id="heat" class="btn" hidden>Heatmap</button>
         <button id="view3d" class="btn">3D</button>
         <button id="textured3d" class="btn" hidden title="Load real map textures for the 3D view (one-time, size varies by map)">Textured</button>
+        <button id="topdown" class="btn" hidden title="Look straight down at the whole map">Top-down</button>
         <button id="clear" class="btn" hidden>Clear</button>
       </div>
     </details>
     <details class="card" id="card-filters">
       <summary>filters <span class="filter-count" id="filter-count"></span></summary>
-      <div class="card-body">
-        <select id="f-type" title="movement" aria-label="Movement type">
+      <div class="card-body" id="filter-body">
+        <select id="f-type" aria-label="Movement type"
+                data-label="Movement" data-desc="What you're doing as you throw. Standing still is the easiest to repeat; jump-throws travel furthest.">
           <option value="">any movement</option>
           <option value="Stand">stand</option>
           <option value="Crouch">crouch</option>
@@ -41,31 +43,36 @@
           <option value="CrouchJumpThrow">crouch+jump</option>
           <option value="RunJumpThrow">run+jump</option>
         </select>
-        <select id="f-strength" title="mouse buttons" aria-label="Mouse buttons">
+        <select id="f-strength" aria-label="Mouse buttons"
+                data-label="Throw power" data-desc="Which mouse buttons you hold. Left is a full-power throw, right is a soft lob, both together is half power.">
           <option value="">any click</option>
           <option value="1">left</option>
           <option value="0.5">mid (L+R)</option>
           <option value="0">right</option>
         </select>
-        <select id="f-bounces" title="max bounces" aria-label="Maximum bounces">
+        <select id="f-bounces" aria-label="Maximum bounces"
+                data-label="Bounces" data-desc="How many surfaces the grenade hits on the way. Fewer bounces are far more forgiving if your aim is slightly off.">
           <option value="">any bounces</option>
           <option value="1">≤1 bounce</option>
           <option value="2">≤2 bounces</option>
           <option value="3">≤3 bounces</option>
         </select>
-        <select id="f-flight" title="max flight seconds" aria-label="Maximum flight time">
+        <select id="f-flight" aria-label="Maximum flight time"
+                data-label="Flight time" data-desc="How long the smoke is in the air. Shorter means it blooms sooner after you throw.">
           <option value="">any flight</option>
           <option value="3">≤3s flight</option>
           <option value="4">≤4s flight</option>
           <option value="6">≤6s flight</option>
         </select>
-        <select id="f-stability" title="min stability" aria-label="Minimum stability">
+        <select id="f-stability" aria-label="Minimum stability"
+                data-label="Reliability" data-desc="How much the landing spot moves when your aim is a little off. 100% still lands on target even with a shaky crosshair.">
           <option value="">any stability</option>
           <option value="0.6">≥60% stable</option>
           <option value="0.8">≥80% stable</option>
           <option value="1">100% stable</option>
         </select>
-        <select id="f-precision" title="landing distance from target (1u ≈ 1.9cm)" aria-label="Landing precision, distance from target">
+        <select id="f-precision" aria-label="Landing precision, distance from target"
+                data-label="Accuracy" data-desc="How close the smoke settles to the exact spot you picked. 1 unit is about 2cm, so anything under 32u is a direct hit in practice.">
           <option value="">any precision</option>
           <option value="32">≤32u</option>
           <option value="16">≤16u</option>
@@ -108,6 +115,9 @@ sv_infinite_ammo 1; sv_grenade_trajectory 1;
 sv_autobunnyhopping 1; sv_enablebunnyhopping 1;
 give weapon_smokegrenade<button data-copy="cmd-setup" class="btn">copy</button></div>
     </details>
+    <div id="preview-pane" hidden>
+      <div class="preview-thumb" id="preview-thumb"></div>
+    </div>
     <div id="lineup-list"></div>
   </div>
 </div>
@@ -120,11 +130,12 @@ give weapon_smokegrenade<button data-copy="cmd-setup" class="btn">copy</button><
       <div class="intro-step map-grid" id="intro-map-grid"></div>
     </div>
     <div class="intro-step" id="intro-filters" hidden>
-      <h1>Ready</h1>
-      <p>You can narrow results to a specific throw (jump-throws only, one bounce, and so on), or just start clicking and see what comes back.</p>
-      <div class="intro-step intro-choices">
-        <button id="intro-explore" class="btn primary">Just explore</button>
-        <button id="intro-setfilters" class="btn">Set filters first</button>
+      <h1>Narrow it down</h1>
+      <p>A single spot on the map usually has hundreds of ways to smoke it. These decide which ones you're shown - leave any of them on "any" and you'll see everything. You can change them later.</p>
+      <div class="filter-rows" id="intro-filter-rows"></div>
+      <div class="intro-choices">
+        <button id="intro-done" class="btn primary">Show me the map</button>
+        <button id="intro-back" class="btn">Back</button>
       </div>
     </div>
   </div>

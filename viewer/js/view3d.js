@@ -93,7 +93,11 @@ async function init3d() {
   stage3d.appendChild(renderer.domElement);
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(colors.surface);
-  const camera = new THREE.PerspectiveCamera(55, 1, 10, 40000);
+  // The same FOV the game renders at, not an arbitrary one. A lineup is aimed by
+  // eye, against whatever the crosshair happens to sit on, so a view that is
+  // more zoomed-in than CS2's puts that geometry somewhere else relative to the
+  // crosshair and the lineup cannot be copied off the screen.
+  const camera = new THREE.PerspectiveCamera(verticalFovFromDesired(90), 1, 10, 40000);
   camera.up.set(0, 0, 1);
   const cx = (RX0 + RX1) / 2, cy = (RY0 + RY1) / 2;
   camera.position.set(cx, cy - 3800, 3600);
@@ -334,6 +338,7 @@ async function init3d() {
     start() {
       if (live) { return; }
       live = true;
+      ensureCrosshair();
       // resize3d() also sets dirty, but only if the stage already has a
       // size - it can still be display:none mid-transition right here, so
       // set it directly too rather than relying on that as the only path.
@@ -382,6 +387,22 @@ async function init3d() {
       camera.position.set(feet[0], feet[1], feet[2] + eyeHeight);
       yaw = yawDeg * Math.PI / 180;
       pitch = pitchDeg * Math.PI / 180;
+      applyLook();
+    },
+    // Straight down over the middle of the map, pulled back far enough that the
+    // whole radar footprint fits the narrower of the two view angles.
+    topDown() {
+      const halfFovY = camera.fov * Math.PI / 360;
+      const halfFovX = Math.atan(Math.tan(halfFovY) * camera.aspect);
+      const height = Math.max(
+        (RY1 - RY0) / 2 / Math.tan(halfFovY),
+        (RX1 - RX0) / 2 / Math.tan(halfFovX));
+      camera.position.set(cx, cy, height * 1.05);
+      // Positive pitch looks down (lookDir.z = -sin(pitch)). applyLook() clamps
+      // to 89 degrees, which is what keeps the view matrix from degenerating
+      // when the look direction lines up with camera.up.
+      yaw = -Math.PI / 2;
+      pitch = Math.PI / 2;
       applyLook();
     },
   };

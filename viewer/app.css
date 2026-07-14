@@ -212,7 +212,11 @@
     pointer-events: none;
     z-index: 40;
   }
-  body.preview-mode .preview-crosshair { display: block; }
+  /* The fly camera aims where its center points, which is exactly the angle a
+     lineup is defined by - so once you "Go to" one, the crosshair is the thing
+     you actually line up against the geometry, the same as in game. */
+  body.preview-mode .preview-crosshair,
+  body.crosshair-3d .preview-crosshair { display: block; }
   .preview-crosshair span {
     position: absolute;
     background: #00ff00;
@@ -272,6 +276,9 @@
   :is(.lineup .row1, .lineup-option) b.left { color: var(--click-left); }
   :is(.lineup .row1, .lineup-option) b.mid { color: var(--click-mid); }
   :is(.lineup .row1, .lineup-option) b.right { color: var(--click-right); }
+  /* Only the results scroll. The preview sits above them in the fixed part of
+     the panel, so hunting down the list never scrolls the picture you are
+     comparing against out of sight. */
   .panel {
     position: absolute;
     right: 10px;
@@ -282,12 +289,23 @@
     border-radius: 6px;
     font-size: 12px;
     max-height: calc(100% - 20px);
-    overflow-y: auto;
-    overflow-x: hidden;
-    display: grid;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
     gap: 7px;
     padding: 9px 10px;
   }
+  #preview-pane[hidden] { display: none; }
+  #preview-pane {
+    /* Drag the corner if the render is too small to read. */
+    resize: vertical;
+    overflow: hidden;
+    min-height: 110px;
+    height: 172px;
+    display: flex;
+  }
+  #preview-pane .preview-thumb { margin-top: 0; flex: 1; aspect-ratio: auto; }
+  #lineup-list { flex: 1; overflow-y: auto; overflow-x: hidden; }
   .paste { display: flex; gap: 5px; }
   .paste input {
     flex: 1;
@@ -322,7 +340,7 @@
     --btn-radius: 3px;
     color: var(--muted);
   }
-  #lineup-list { display: grid; gap: 6px; }
+  #lineup-list { display: grid; gap: 6px; align-content: start; }
   #lineup-list:empty { display: none; }
   .lineup {
     border: 1px solid var(--line);
@@ -420,6 +438,33 @@
   .map-pick:hover { border-color: var(--accent); color: var(--accent); }
   .map-pick small { color: var(--muted); font-weight: 400; font-size: 10.5px; }
   .map-pick:hover small { color: var(--muted); }
+  .map-pick .thumb {
+    /* Alpha-only silhouettes (see rig/make-map-thumbs.mjs), so one asset serves
+       both themes - dark shape on the light card, inverted on the dark one. */
+    height: 74px;
+    margin-bottom: 5px;
+    background: currentColor;
+    -webkit-mask: var(--thumb) center / contain no-repeat;
+    mask: var(--thumb) center / contain no-repeat;
+    opacity: 0.8;
+  }
+  .map-pick:hover .thumb { opacity: 1; }
+  .filter-rows { display: grid; gap: 11px; margin: 14px 0 16px; max-height: 46vh; overflow-y: auto; }
+  .filter-row { display: grid; grid-template-columns: 130px 1fr; gap: 10px; align-items: start; }
+  .filter-row select {
+    font: inherit;
+    font-size: 12px;
+    color: var(--ink);
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    padding: 5px 7px;
+    width: 100%;
+    cursor: pointer;
+  }
+  .filter-row .filter-text { font-size: 11.5px; }
+  .filter-row .filter-text b { display: block; font-size: 12px; margin-bottom: 1px; }
+  .filter-row .filter-text span { color: var(--muted); }
   .intro-choices { display: flex; gap: 8px; flex-wrap: wrap; }
   .intro-choices .btn { --btn-pad: 7px 14px; --btn-font-size: 12.5px; }
   .list-note { color: var(--muted); font-size: 11px; }

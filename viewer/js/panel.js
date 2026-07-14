@@ -66,6 +66,15 @@ export function renderLineups() {
   const shown = filtered();
   statusEl.textContent = `${shown.length} lineups - click a marker or use the list`;
 
+  // The preview lives in the panel's fixed header, outside the scrolling list,
+  // so hunting down the results never scrolls the render you are comparing
+  // against off screen.
+  const pane = document.getElementById("preview-pane");
+  pane.hidden = state.selected < 0;
+  if (state.selected >= 0) {
+    callbacks.onPreview(state.result.lineups[state.selected], document.getElementById("preview-thumb"));
+  }
+
   if (shown.length === 0) {
     return;
   }
@@ -125,7 +134,6 @@ function detailCard(l) {
     `<div class="row1">${lineupSummaryHtml(l)}</div>` +
     `<div style="margin:4px 0 2px">${esc(l.how)}</div>` +
     `<div class="cmd" id="cmd-l${i}">${esc(l.console)}<button data-copy="cmd-l${i}" class="btn">copy</button></div>` +
-    `<div class="preview-thumb" title="rendering preview…"></div>` +
     `<div class="lineup-actions">` +
     `<button type="button" class="btn goto-btn" title="move the free 3D camera into this lineup's exact throw spot">Go to</button>` +
     `<button type="button" class="btn fav-btn">${l._favorite ? "★ favorited" : "☆ favorite"}</button>` +
@@ -134,11 +142,6 @@ function detailCard(l) {
   // Card click toggles the selection off, matching marker behavior (L16).
   el.addEventListener("click", () => callbacks.onSelect(i));
   wireCopyButtons(el);
-
-  // Auto-renders (cached on the lineup itself) so sifting through the list
-  // shows a preview immediately rather than requiring an extra click per
-  // lineup; clicking the thumbnail once loaded enlarges it in the modal.
-  callbacks.onPreview(l, el.querySelector(".preview-thumb"));
 
   el.querySelector(".goto-btn").addEventListener("click", e => {
     e.stopPropagation();

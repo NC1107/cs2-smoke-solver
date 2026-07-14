@@ -35,6 +35,7 @@ import { renderLineups, initPanel, revealSelected } from "./panel.js";
   const heatBtn = document.getElementById("heat");
   const view3dBtn = document.getElementById("view3d");
   const texturedBtn = document.getElementById("textured3d");
+  const topDownBtn = document.getElementById("topdown");
   const clearBtn = document.getElementById("clear");
   const keyEl = document.getElementById("key-dots");
   const mapSelect = document.getElementById("map-select");
@@ -77,6 +78,8 @@ import { renderLineups, initPanel, revealSelected } from "./panel.js";
 
     view3dBtn.classList.toggle("active", in3d);
     texturedBtn.hidden = !in3d;
+    topDownBtn.hidden = !in3d;
+    document.body.classList.toggle("crosshair-3d", in3d);
 
     // Nothing to explain until there are markers on the map to explain.
     keyEl.hidden = !hasTarget;
@@ -148,7 +151,11 @@ import { renderLineups, initPanel, revealSelected } from "./panel.js";
     bootError("data/*.s2geo (no maps extracted yet)");
     return;
   }
-  mapSelect.innerHTML = mapList.map(m => `<option value="${esc(m.map)}">${esc(m.map)}</option>`).join("");
+  // A map with no nav mesh has no walkable ground to sweep, so it can never
+  // return a lineup - that is the simulation test bed (flatgrass), not something
+  // to offer a player. Still reachable by an explicit ?map= for testing.
+  const playable = mapList.filter(m => m.hasLineups);
+  mapSelect.innerHTML = playable.map(m => `<option value="${esc(m.map)}">${esc(m.map)}</option>`).join("");
   mapSelect.addEventListener("change", () => loadMap(mapSelect.value));
   readColors();
 
@@ -160,26 +167,49 @@ import { renderLineups, initPanel, revealSelected } from "./panel.js";
   const urlMap = new URLSearchParams(location.search).get("map");
   const savedMap = localStorage.getItem(LAST_MAP_KEY);
   const initialMap = known(urlMap) ? urlMap : known(savedMap) ? savedMap : null;
+  // ?map=flatgrass is the deliberate escape hatch to the test bed; give the
+  // switcher an entry for it so it does not sit there showing the wrong map.
+  if (initialMap && !playable.some(m => m.map === initialMap)) {
+    mapSelect.insertAdjacentHTML("beforeend", `<option value="${esc(initialMap)}">${esc(initialMap)}</option>`);
+  }
 
   const intro = document.getElementById("intro");
   const introMapStep = document.getElementById("intro-map");
   const introFilterStep = document.getElementById("intro-filters");
-  const filtersCard = document.getElementById("card-filters");
+  const filterBody = document.getElementById("filter-body");
 
-  function closeIntro(openFilters) {
+  // The intro borrows the real <select> elements rather than cloning them, so
+  // there is only ever one source of truth for a filter's value; they are handed
+  // back to the sidebar card, in order, when the intro closes.
+  const filterEls = Object.values(state.filters);
+  document.getElementById("intro-filter-rows").innerHTML = filterEls
+    .map(f => `<div class="filter-row" data-for="${f.id}"><div class="filter-slot"></div>` +
+      `<div class="filter-text"><b>${esc(f.dataset.label)}</b><span>${esc(f.dataset.desc)}</span></div></div>`)
+    .join("");
+  for (const f of filterEls) {
+    document.querySelector(`.filter-row[data-for="${f.id}"] .filter-slot`).appendChild(f);
+  }
+
+  function closeIntro() {
+    for (const f of filterEls) {
+      filterBody.appendChild(f);
+    }
     intro.hidden = true;
-    filtersCard.open = openFilters;
+    syncControls();
     statusEl.textContent = "click Target, then click the map";
   }
 
-  document.getElementById("intro-map-grid").innerHTML = mapList
-    .map(m => `<button type="button" class="map-pick" data-map="${esc(m.map)}">${esc(m.map.replace(/^de_/, ""))}` +
-      `<small>${m.hasLineups ? "lineups ready" : "no nav mesh"}</small></button>`)
+  document.getElementById("intro-map-grid").innerHTML = playable
+    .map(m => `<button type="button" class="map-pick" data-map="${esc(m.map)}" title="${esc(m.map)}">` +
+      // Root-absolute: a url() inside a custom property resolves against the
+      // stylesheet that consumes it (viewer/app.css), not the document.
+      `<span class="thumb" style="--thumb:url('/data/${esc(m.map)}.thumb.png')"></span>` +
+      `${esc(m.map.replace(/^de_/, ""))}</button>`)
     .join("");
   for (const b of document.querySelectorAll(".map-pick")) {
     b.addEventListener("click", async () => {
       if (!(await loadMap(b.dataset.map))) {
-        intro.hidden = true;
+        closeIntro();
         return;
       }
       mapSelect.value = b.dataset.map;
@@ -187,8 +217,11 @@ import { renderLineups, initPanel, revealSelected } from "./panel.js";
       introFilterStep.hidden = false;
     });
   }
-  document.getElementById("intro-explore").addEventListener("click", () => closeIntro(false));
-  document.getElementById("intro-setfilters").addEventListener("click", () => closeIntro(true));
+  document.getElementById("intro-done").addEventListener("click", closeIntro);
+  document.getElementById("intro-back").addEventListener("click", () => {
+    introFilterStep.hidden = true;
+    introMapStep.hidden = false;
+  });
 
   if (initialMap) {
     mapSelect.value = initialMap;
@@ -429,6 +462,11 @@ import { renderLineups, initPanel, revealSelected } from "./panel.js";
   set3dCallbacks({ onSetTarget: setTarget, onSelect: select });
 
   const HINT_3D = "3D: WASD fly (QE up/down, shift fast) · drag to look · right-drag pan · scroll zoom · click terrain = set target";
+
+  topDownBtn.addEventListener("click", () => {
+    current3d()?.topDown();
+    statusEl.textContent = "looking straight down at the map";
+  });
 
   view3dBtn.addEventListener("click", async () => {
     if (stage3d.style.display !== "none") {
