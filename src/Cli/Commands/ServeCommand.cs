@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.IO.Compression;
 using System.Numerics;
 using System.Text;
 using System.Text.Json;
@@ -47,7 +48,7 @@ public static class ServeCommand
     // name now so the viewer can switch maps without restarting the server.
     record MapEntry(
         CollisionMesh Mesh, Func<byte, bool>? AttributeFilter, List<NavAreaJson>? NavAreas,
-        ThrowConstants Constants, byte[] MeshPayload, string BuildETag);
+        ThrowConstants Constants, byte[] MeshPayload, byte[] MeshPayloadGzip, string BuildETag);
 
     public static int Run(Dictionary<string, string> options)
     {
@@ -81,7 +82,15 @@ public static class ServeCommand
                     navAreas = JsonSerializer.Deserialize<List<NavAreaJson>>(File.ReadAllText(navPath));
                 }
                 var payload = MeshPayload(mesh, attributeFilter);
-                maps[mesh.MapName] = new MapEntry(mesh, attributeFilter, navAreas, constants, payload, $"\"{mesh.GameBuildId}\"");
+                // Raw vertex/index floats and ints compress well (measured
+                // ~55% smaller with plain gzip) but this is application/
+                // octet-stream, which neither Cloudflare's edge nor the
+                // already-Draco-compressed .glb exports get automatic
+                // compression for - so it's compressed once here, at load
+                // time, and served pre-compressed rather than paying that
+                // cost on every request.
+                var payloadGzip = Gzip(payload);
+                maps[mesh.MapName] = new MapEntry(mesh, attributeFilter, navAreas, constants, payload, payloadGzip, $"\"{mesh.GameBuildId}\"");
                 Console.WriteLine($"map loaded: {mesh.MapName} ({navAreas?.Count ?? 0} nav areas)");
             }
         }
@@ -128,6 +137,11 @@ public static class ServeCommand
             if (context.Request.Headers.IfNoneMatch.ToString().Contains(entry.BuildETag, StringComparison.Ordinal))
             {
                 return Results.StatusCode(StatusCodes.Status304NotModified);
+            }
+            if (context.Request.Headers.AcceptEncoding.ToString().Contains("gzip", StringComparison.OrdinalIgnoreCase))
+            {
+                context.Response.Headers.ContentEncoding = "gzip";
+                return Results.Bytes(entry.MeshPayloadGzip, "application/octet-stream");
             }
             return Results.Bytes(entry.MeshPayload, "application/octet-stream");
         });
@@ -352,6 +366,7 @@ public static class ServeCommand
             ".json" => "application/json",
             ".js" or ".mjs" => "text/javascript",
             ".css" => "text/css",
+            ".svg" => "image/svg+xml",
             _ => "application/octet-stream",
         };
 
@@ -408,5 +423,15 @@ public static class ServeCommand
     {
         var info = new FileInfo(path);
         return $"\"{info.LastWriteTimeUtc.Ticks:x}-{info.Length:x}\"";
+    }
+
+    static byte[] Gzip(byte[] data)
+    {
+        using var output = new MemoryStream();
+        using (var gzip = new GZipStream(output, CompressionLevel.Optimal))
+        {
+            gzip.Write(data);
+        }
+        return output.ToArray();
     }
 }
