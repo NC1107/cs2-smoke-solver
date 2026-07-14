@@ -183,8 +183,9 @@ import { renderLineups, initPanel, revealSelected } from "./panel.js";
   // back to the sidebar card, in order, when the intro closes.
   const filterEls = Object.values(state.filters);
   document.getElementById("intro-filter-rows").innerHTML = filterEls
-    .map(f => `<div class="filter-row" data-for="${f.id}"><div class="filter-slot"></div>` +
-      `<div class="filter-text"><b>${esc(f.dataset.label)}</b><span>${esc(f.dataset.desc)}</span></div></div>`)
+    .map(f => `<div class="filter-row" data-for="${f.id}">` +
+      `<label class="filter-head" for="${f.id}"><b>${esc(f.dataset.label)}:</b><span class="filter-slot"></span></label>` +
+      `<p class="filter-desc">${esc(f.dataset.desc)}</p></div>`)
     .join("");
   for (const f of filterEls) {
     document.querySelector(`.filter-row[data-for="${f.id}"] .filter-slot`).appendChild(f);
