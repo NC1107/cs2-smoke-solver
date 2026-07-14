@@ -35,7 +35,10 @@ public static class ExportGltfCommand
     public static int Run(Dictionary<string, string> options)
     {
         var vpkPath = Path.GetFullPath(Require(options, "vpk"));
-        var outPath = options.GetValueOrDefault("out", "data/de_dust2.glb");
+        // Default names the output after the map itself (de_mirage.vpk -> de_mirage.glb)
+        // rather than a fixed literal, so exporting a different map's --vpk doesn't
+        // require remembering to override --out too.
+        var outPath = options.GetValueOrDefault("out", $"data/{Path.GetFileNameWithoutExtension(vpkPath)}.glb");
         using var package = new SteamDatabase.ValvePak.Package();
         package.Read(vpkPath);
         var entry = (package.Entries.TryGetValue("vwrld_c", out var worlds) ? worlds : [])

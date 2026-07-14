@@ -55,6 +55,17 @@
     font-size: 12px;
   }
   .toolbar .brand { font-weight: 650; font-size: 13px; margin-right: 2px; }
+  #map-select {
+    font: inherit;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--ink);
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    padding: 3px 8px;
+    cursor: pointer;
+  }
   .btn {
     font: inherit;
     font-family: ui-sans-serif, system-ui, "Segoe UI", sans-serif;
@@ -169,6 +180,8 @@
   canvas { position: absolute; inset: 0; width: 100%; height: 100%; cursor: grab; }
   canvas.panning { cursor: grabbing; }
   canvas.picking { cursor: crosshair; }
+  #stage3d canvas { cursor: grab; }
+  #stage3d canvas.looking, #stage3d canvas.panning { cursor: grabbing; }
   .key {
     position: absolute;
     left: 10px;
@@ -271,7 +284,27 @@
   .lineup .row1 b { font-size: 12px; font-family: ui-sans-serif, system-ui, sans-serif; }
   .lineup .row1 .pct { margin-left: auto; color: var(--muted); }
   .lineup .cmd { margin-top: 4px; }
-  .lineup .preview-btn { margin-top: 4px; width: 100%; }
+  .preview-thumb {
+    margin-top: 6px;
+    aspect-ratio: 16 / 9;
+    border-radius: 4px;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--muted);
+    font-size: 11px;
+    overflow: hidden;
+  }
+  .preview-thumb:has(img) { cursor: zoom-in; }
+  .preview-thumb.loading { animation: preview-pulse 1.2s ease-in-out infinite; }
+  @keyframes preview-pulse { 0%, 100% { opacity: 0.6; } 50% { opacity: 1; } }
+  .preview-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .lineup-actions { display: flex; gap: 5px; margin-top: 6px; }
+  .lineup-actions .btn { flex: 1; --btn-pad: 3px 6px; }
+  .lineup-actions .remove-btn:hover { border-color: var(--click-right); color: var(--click-right); }
+  .lineup-actions .fav-btn:hover { border-color: var(--target); color: var(--target); }
   .preview-modal {
     position: fixed; inset: 0; z-index: 55;
     background: rgba(0, 0, 0, 0.75);
@@ -311,6 +344,7 @@
   .ref.sky { background: var(--heat-none); color: var(--panel); font-weight: 700; }
   .ref.flat { color: var(--muted); border: 1px solid var(--line); }
   .ref.edge { color: var(--accent); border: 1px solid var(--accent); }
+  .ref.fav { color: var(--target); border: none; padding: 0; }
   footer {
     padding: 4px 12px;
     border-top: 1px solid var(--line);

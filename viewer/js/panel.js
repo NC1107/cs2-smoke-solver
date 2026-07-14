@@ -12,6 +12,9 @@ let callbacks = {
   onSetTarget: () => {},
   onSelect: () => {},
   onPreview: () => {},
+  onGoTo: () => {},
+  onFavorite: () => {},
+  onRemove: () => {},
 };
 
 function lineupSummaryHtml(l) {
@@ -22,8 +25,9 @@ function lineupSummaryHtml(l) {
     : l.aimRef.tier === "sky" ? `<span class="ref sky" title="aims into open sky - no visual reference">SKY</span>`
     : l.aimRef.tier === "flat" ? `<span class="ref flat" title="aims at featureless surface - weak reference">flat</span>`
     : `<span class="ref edge" title="silhouette ${l.aimRef.edgeDeg.toFixed(1)} deg from crosshair">${l.aimRef.edgeDeg.toFixed(1)}°</span>`;
+  const fav = l._favorite ? `<span class="ref fav" title="favorited">★</span>` : "";
   return `<b class="${clickClass(l.strength)}">${clickShort(l.strength)}</b><span>${typeShort[l.type]}</span>` +
-    `<span>${l.Bounces}b</span><span>${l.flightTime.toFixed(1)}s</span>${ref}` +
+    `<span>${l.Bounces}b</span><span>${l.flightTime.toFixed(1)}s</span>${ref}${fav}` +
     `<span class="pct">${(l.stability * 100).toFixed(0)}%</span>`;
 }
 
@@ -71,14 +75,33 @@ export function renderLineups() {
       `<div class="row1">${lineupSummaryHtml(l)}</div>` +
       `<div style="margin:4px 0 2px">${esc(l.how)}</div>` +
       `<div class="cmd" id="cmd-l${i}">${esc(l.console)}<button data-copy="cmd-l${i}" class="btn">copy</button></div>` +
-      `<button type="button" class="btn preview-btn">Preview (textured 3D)</button>`;
+      `<div class="preview-thumb" title="rendering preview…"></div>` +
+      `<div class="lineup-actions">` +
+      `<button type="button" class="btn goto-btn" title="move the free 3D camera into this lineup's exact throw spot">Go to</button>` +
+      `<button type="button" class="btn fav-btn">${l._favorite ? "★ favorited" : "☆ favorite"}</button>` +
+      `<button type="button" class="btn remove-btn">Remove</button>` +
+      `</div>`;
     // Card click toggles the selection off, matching marker behavior (L16).
     el.addEventListener("click", () => callbacks.onSelect(i));
     list.appendChild(el);
     wireCopyButtons(el);
-    el.querySelector(".preview-btn").addEventListener("click", e => {
+
+    // Auto-renders (cached on the lineup itself) so sifting through the list
+    // shows a preview immediately rather than requiring an extra click per
+    // lineup; clicking the thumbnail once loaded enlarges it in the modal.
+    callbacks.onPreview(l, el.querySelector(".preview-thumb"));
+
+    el.querySelector(".goto-btn").addEventListener("click", e => {
       e.stopPropagation();
-      callbacks.onPreview(l, e.currentTarget);
+      callbacks.onGoTo(l);
+    });
+    el.querySelector(".fav-btn").addEventListener("click", e => {
+      e.stopPropagation();
+      callbacks.onFavorite(l);
+    });
+    el.querySelector(".remove-btn").addEventListener("click", e => {
+      e.stopPropagation();
+      callbacks.onRemove(l);
     });
   }
 

@@ -10,6 +10,7 @@
 
 <div class="toolbar">
   <span class="brand" id="brand">Smoke Solver</span>
+  <select id="map-select" aria-label="Map" title="Switch map"></select>
   <span id="status" role="status" aria-live="polite"></span>
   <button id="solve-cancel" class="btn" hidden>Cancel</button>
   <span id="readout"></span>
@@ -24,7 +25,7 @@
         <button id="search-all" class="btn" disabled>Search map</button>
         <button id="heat" class="btn" disabled>Heatmap</button>
         <button id="view3d" class="btn">3D</button>
-        <button id="textured3d" class="btn" disabled title="Load real map textures for the 3D view (~300MB, one-time)">Textured</button>
+        <button id="textured3d" class="btn" disabled title="Load real map textures for the 3D view (one-time, size varies by map)">Textured</button>
         <button id="clear" class="btn">Clear</button>
       </div>
     </details>

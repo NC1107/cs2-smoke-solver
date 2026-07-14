@@ -3,14 +3,22 @@
 // here (setTarget, select, runQuery) via the init*/set*Callbacks hooks.
 
 import { state, filtered, esc } from "./state.js";
-import { loadMapData, runQuery as postLineupQuery } from "./api.js";
+import { loadMapList, loadMapData, runQuery as postLineupQuery } from "./api.js";
 import { loadRadar, readColors, recolorRadar, draw, scheduleDraw, resize, resetView, initMap2d } from "./map2d.js";
-import { ensure3d, resetEnsure3d, current3d, sync3d, set3dCallbacks, applyTheme3d, capturePreview } from "./view3d.js";
+import { ensure3d, resetEnsure3d, resetEnsureTexturedScene, teardown3d, current3d, sync3d, set3dCallbacks, applyTheme3d, capturePreview } from "./view3d.js";
 import { renderLineups, initPanel } from "./panel.js";
 
 (async () => {
+  // Map switching means a failed load is no longer necessarily terminal (the
+  // user can just pick a different map), so a stale error from a previous
+  // attempt must not linger once a later one succeeds.
+  function clearBootError() {
+    document.getElementById("boot-error")?.remove();
+  }
   function bootError(file) {
+    clearBootError();
     const box = document.createElement("div");
+    box.id = "boot-error";
     box.style.cssText = "position:fixed; inset:0; z-index:60; display:flex; align-items:center; justify-content:center";
     box.innerHTML =
       `<div style="background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:18px 24px; max-width:460px">` +
@@ -19,29 +27,16 @@ import { renderLineups, initPanel } from "./panel.js";
     document.body.appendChild(box);
   }
 
-  try {
-    state.mapData = await loadMapData();
-  } catch {
-    bootError("data/viewer-map.json");
-    return;
-  }
-  document.getElementById("brand").textContent = state.mapData.map;
-  document.getElementById("meta").textContent =
-    `build ${state.mapData.build}`;
-
   const canvas = state.canvas;
   const stage3d = state.stage3d;
   const statusEl = state.statusEl;
   const heatBtn = document.getElementById("heat");
   const texturedBtn = document.getElementById("textured3d");
   const keyEl = document.getElementById("key-dots");
-
-  try {
-    await loadRadar();
-  } catch {
-    bootError("data/" + state.mapData.image);
-    return;
-  }
+  const mapSelect = document.getElementById("map-select");
+  const cancelBtn = document.getElementById("solve-cancel");
+  let solveController = null;
+  cancelBtn.addEventListener("click", () => solveController?.abort());
 
   function select(i) {
     state.selected = i === state.selected ? -1 : i;
@@ -57,9 +52,72 @@ import { renderLineups, initPanel } from "./panel.js";
     keyEl.classList.toggle("heat", on);
   }
 
-  const cancelBtn = document.getElementById("solve-cancel");
-  let solveController = null;
-  cancelBtn.addEventListener("click", () => solveController?.abort());
+  // A different map is entirely different geometry/nav/lineups, so this is a
+  // full reset (target, results, 3D scene) rather than an incremental swap -
+  // there is only ever "the current map," never a per-map cache to switch
+  // back into. Returns false (and shows the boot error) if the map's data
+  // failed to load, so the caller can bail out the same way initial boot did.
+  async function loadMap(name) {
+    solveController?.abort();
+    teardown3d();
+    stage3d.style.display = "none";
+    canvas.style.display = "block";
+    document.getElementById("view3d").classList.remove("primary");
+    texturedBtn.disabled = true;
+    texturedBtn.classList.remove("primary");
+    state.currentMap = name;
+    state.picking = false;
+    state.target = null;
+    state.result = null;
+    state.selected = -1;
+    setHeat(false);
+    canvas.classList.remove("picking");
+    document.getElementById("search-all").disabled = true;
+    heatBtn.disabled = true;
+
+    try {
+      state.mapData = await loadMapData(name);
+    } catch {
+      bootError(`data/${name}.viewer-map.json`);
+      return false;
+    }
+    document.getElementById("meta").textContent = `build ${state.mapData.build}`;
+    try {
+      await loadRadar();
+    } catch {
+      bootError("data/" + state.mapData.image);
+      return false;
+    }
+    clearBootError();
+    recolorRadar();
+    resize();
+    resetView();
+    renderLineups();
+    statusEl.textContent = "";
+    return true;
+  }
+
+  let mapList;
+  try {
+    mapList = await loadMapList();
+  } catch {
+    bootError("/api/maps");
+    return;
+  }
+  if (mapList.length === 0) {
+    bootError("data/*.s2geo (no maps extracted yet)");
+    return;
+  }
+  mapSelect.innerHTML = mapList.map(m => `<option value="${esc(m.map)}">${esc(m.map)}</option>`).join("");
+  const urlMap = new URLSearchParams(location.search).get("map");
+  const initialMap = mapList.some(m => m.map === urlMap) ? urlMap : mapList[0].map;
+  mapSelect.value = initialMap;
+  mapSelect.addEventListener("change", () => loadMap(mapSelect.value));
+
+  readColors();
+  if (!(await loadMap(initialMap))) {
+    return;
+  }
 
   // Progress lines stream in every ~100ms; painting each batch as dots shows
   // both sweep speed and which standable origins were actually evaluated.
@@ -94,7 +152,7 @@ import { renderLineups, initPanel } from "./panel.js";
     solveController = new AbortController();
     cancelBtn.hidden = false;
     try {
-      const { error, data } = await postLineupQuery(body, solveController.signal, onSolveProgress);
+      const { error, data } = await postLineupQuery({ ...body, map: state.currentMap }, solveController.signal, onSolveProgress);
       if (error) {
         statusEl.textContent = error;
         return;
@@ -176,59 +234,126 @@ import { renderLineups, initPanel } from "./panel.js";
   document.getElementById("preview-close").addEventListener("click", () => { previewModal.hidden = true; });
   previewModal.addEventListener("click", e => { if (e.target === previewModal) { previewModal.hidden = true; } });
 
+  // capturePreview() borrows the single shared camera/canvas, so two
+  // in-flight captures would stomp each other's saved camera state -
+  // serialize them behind one chain rather than letting rapid clicks
+  // through the lineup list race.
+  let previewChain = Promise.resolve();
+  function queuePreview(fn) {
+    const p = previewChain.then(fn, fn);
+    previewChain = p.catch(() => {});
+    return p;
+  }
+
   // Renders entirely client-side (capturePreview reuses the shared
   // camera/canvas already in this page), so no server round-trip - just a
-  // one-time ~300MB texture load the first time any preview is requested.
-  async function showPreview(l, btn) {
-    const prevLabel = btn.textContent;
-    btn.disabled = true;
-    btn.textContent = "rendering…";
-    statusEl.textContent = "rendering preview (loads real map textures, ~300MB one-time)…";
+  // one-time texture load (size varies by map, 26-92MB) the first time any
+  // preview is requested.
+  // Cached on the lineup itself so reselecting it (or the same result set
+  // surviving a re-render) never re-renders a frame that already exists.
+  async function loadPreviewThumb(l, thumbEl) {
+    if (l._previewUrl) {
+      thumbEl.innerHTML = `<img src="${l._previewUrl}" alt="first-person preview of this lineup">`;
+      thumbEl.onclick = () => enlargePreview(l);
+      return;
+    }
+    thumbEl.textContent = "rendering preview…";
+    thumbEl.classList.add("loading");
     try {
-      previewImg.src = await capturePreview({ feet: l.feet, type: l.type, pitchDeg: l.pitch, yawDeg: l.yaw });
-      previewModal.hidden = false;
-      statusEl.textContent = "";
+      const url = await queuePreview(() => capturePreview({ feet: l.feet, type: l.type, pitchDeg: l.pitch, yawDeg: l.yaw }));
+      l._previewUrl = url;
+      thumbEl.classList.remove("loading");
+      thumbEl.innerHTML = `<img src="${url}" alt="first-person preview of this lineup">`;
+      thumbEl.onclick = () => enlargePreview(l);
     } catch (err) {
-      statusEl.textContent = `preview failed: ${err.message}`;
-    } finally {
-      btn.disabled = false;
-      btn.textContent = prevLabel;
+      resetEnsureTexturedScene();
+      thumbEl.classList.remove("loading");
+      thumbEl.textContent = `preview failed: ${err.message}`;
     }
   }
 
-  initPanel({ onSetTarget: setTarget, onSelect: select, onPreview: showPreview });
+  function enlargePreview(l) {
+    if (!l._previewUrl) {
+      return;
+    }
+    previewImg.src = l._previewUrl;
+    previewModal.hidden = false;
+  }
+
+  function toggleFavorite(l) {
+    l._favorite = !l._favorite;
+    renderLineups();
+  }
+
+  function removeLineup(l) {
+    l._removed = true;
+    if (state.selected === l._idx) {
+      state.selected = -1;
+    }
+    renderLineups();
+    draw();
+    sync3d();
+  }
+
+  // Shared by the "3D" button and "Go to" (fly into a lineup's throw spot):
+  // both need the mesh loaded and the loop running first. Returns the live
+  // bundle on success, null if the load failed or was cancelled mid-flight.
+  async function openView3d() {
+    stage3d.style.display = "block";
+    canvas.style.display = "none";
+    document.getElementById("view3d").classList.add("primary");
+    statusEl.textContent = "loading 3D mesh…";
+    try {
+      const t3 = await ensure3d();
+      if (stage3d.style.display === "none") { // toggled off while loading
+        statusEl.textContent = "";
+        return null;
+      }
+      t3.start();
+      sync3d();
+      texturedBtn.disabled = false;
+      return t3;
+    } catch {
+      resetEnsure3d();
+      stage3d.style.display = "none";
+      canvas.style.display = "block";
+      document.getElementById("view3d").classList.remove("primary");
+      statusEl.textContent = "3D unavailable: serve needs --geo";
+      draw();
+      return null;
+    }
+  }
+
+  async function goToLineup(l) {
+    const t3 = await openView3d();
+    if (!t3) {
+      return;
+    }
+    previewModal.hidden = true;
+    t3.flyTo({ feet: l.feet, type: l.type, pitchDeg: l.pitch, yawDeg: l.yaw });
+    statusEl.textContent = "dropped into this lineup's throw spot - drag to look, WASD to move";
+  }
+
+  initPanel({
+    onSetTarget: setTarget, onSelect: select, onPreview: loadPreviewThumb,
+    onGoTo: goToLineup, onFavorite: toggleFavorite, onRemove: removeLineup,
+  });
   initMap2d({ onSetTarget: setTarget, onSelect: select, onRunQuery: runQuery });
   set3dCallbacks({ onSetTarget: setTarget, onSelect: select });
 
   document.getElementById("view3d").addEventListener("click", async () => {
-    const on = stage3d.style.display === "none";
-    stage3d.style.display = on ? "block" : "none";
-    canvas.style.display = on ? "none" : "block";
-    document.getElementById("view3d").classList.toggle("primary", on);
-    if (on) {
-      statusEl.textContent = "loading 3D mesh…";
-      try {
-        const t3 = await ensure3d();
-        if (stage3d.style.display === "none") { // toggled off while loading
-          statusEl.textContent = "";
-          return;
-        }
-        statusEl.textContent = "3D: WASD fly (QE up/down, shift fast) · drag orbit · right-drag pan · scroll zoom · click terrain = set target · click marker = pin";
-        t3.start();
-        sync3d();
-        texturedBtn.disabled = false;
-      } catch {
-        resetEnsure3d();
-        stage3d.style.display = "none";
-        canvas.style.display = "block";
-        document.getElementById("view3d").classList.remove("primary");
-        statusEl.textContent = "3D unavailable: serve needs --geo";
-        draw();
-      }
-    } else if (current3d()) {
-      current3d().stop();
+    if (stage3d.style.display !== "none") {
+      current3d()?.stop();
+      stage3d.style.display = "none";
+      canvas.style.display = "block";
+      document.getElementById("view3d").classList.remove("primary");
       texturedBtn.disabled = true;
       draw();
+      return;
+    }
+    const t3 = await openView3d();
+    if (t3) {
+      statusEl.textContent = "3D: WASD fly (QE up/down, shift fast) · drag to look · right-drag pan · scroll zoom · click terrain = set target · click marker = pin";
     }
   });
 
@@ -239,14 +364,15 @@ import { renderLineups, initPanel } from "./panel.js";
     }
     const wantOn = !t3.isTextured;
     texturedBtn.disabled = true;
-    statusEl.textContent = wantOn ? "loading real map textures (~300MB, one-time)…" : "";
+    statusEl.textContent = wantOn ? "loading real map textures (one-time, size varies by map)…" : "";
     try {
       await t3.setTextured(wantOn);
       texturedBtn.classList.toggle("primary", wantOn);
       statusEl.textContent = wantOn
-        ? "textured: drag orbit · right-drag pan · scroll zoom · WASD fly"
-        : "3D: WASD fly (QE up/down, shift fast) · drag orbit · right-drag pan · scroll zoom · click terrain = set target · click marker = pin";
+        ? "textured: drag to look · right-drag pan · scroll zoom · WASD fly"
+        : "3D: WASD fly (QE up/down, shift fast) · drag to look · right-drag pan · scroll zoom · click terrain = set target · click marker = pin";
     } catch (err) {
+      resetEnsureTexturedScene();
       statusEl.textContent = `failed to load textures: ${err.message}`;
     } finally {
       texturedBtn.disabled = false;
@@ -277,9 +403,4 @@ import { renderLineups, initPanel } from "./panel.js";
   };
   syncCompactControls();
   compactMq.addEventListener("change", syncCompactControls);
-
-  readColors();
-  recolorRadar();
-  resize();
-  resetView();
 })();

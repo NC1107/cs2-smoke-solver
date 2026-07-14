@@ -75,7 +75,6 @@ export function recolorRadar() {
   rc.putImageData(data, 0, 0);
 }
 
-// Nearest visible marker to a world-space point, or -1 if none within maxDist.
 function nearestLineup(wx, wy, maxDist) {
   let best = -1, bestD = maxDist;
   for (const l of filtered()) {

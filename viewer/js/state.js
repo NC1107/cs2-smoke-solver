@@ -3,6 +3,7 @@
 // It imports nothing, so every other module may import it freely.
 
 export const state = {
+  currentMap: null,
   mapData: null,
   colors: {},
   picking: false,
@@ -39,6 +40,7 @@ export function filtered() {
   const filters = state.filters;
   const t = state.result.target;
   return state.result.lineups.filter(l =>
+    !l._removed &&
     (!filters.type.value || l.type === filters.type.value) &&
     (!filters.strength.value || Math.abs(l.strength - parseFloat(filters.strength.value)) < 0.01) &&
     (!filters.bounces.value || l.Bounces <= parseInt(filters.bounces.value)) &&
@@ -52,10 +54,10 @@ export const clickShort = s => s >= 0.99 ? "left click" : s >= 0.49 ? "mid (L+R)
 export const clickClass = s => s >= 0.99 ? "left" : s >= 0.49 ? "mid" : "right";
 
 // Shared physical/UI constants (M44); world units unless noted.
-export const SMOKE_BLOOM_RADIUS = 144; // settled smoke bloom radius
-export const PICK_RADIUS_PX = 12; // marker hit-test radius, screen px
-export const HEAT_CELL = 24; // coverage heat map cell size
-export const EYE_HEIGHT = 64; // standing eye height (getpos z offset)
+export const SMOKE_BLOOM_RADIUS = 144;
+export const PICK_RADIUS_PX = 12;
+export const HEAT_CELL = 24;
+export const EYE_HEIGHT = 64; // getpos reports eye position, not feet - subtract this to convert
 
 // Minimal HTML escaper for API-derived strings rendered via innerHTML (L20).
 export const esc = s => String(s).replace(/[&<>"']/g,

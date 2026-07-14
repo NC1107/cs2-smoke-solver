@@ -7,7 +7,7 @@ import { state, filtered, clickClass, SMOKE_BLOOM_RADIUS } from "./state.js";
 import { fetchMesh } from "./api.js";
 
 const stage3d = state.stage3d;
-let three = null; // lazy-initialized bundle of scene state
+let three = null;
 let threePromise = null; // memoized in-flight init so re-toggles share one
 
 let callbacks = {
@@ -31,6 +31,38 @@ export function current3d() {
   return three;
 }
 
+function disposeSceneContents(scene) {
+  scene?.traverse(obj => {
+    obj.geometry?.dispose();
+    for (const m of [].concat(obj.material ?? [])) {
+      m.map?.dispose();
+      m.dispose?.();
+    }
+  });
+}
+
+// A different map means entirely different geometry/nav/lineups, so the
+// whole WebGL scene (built once in init3d() for whichever mesh was current
+// at the time) is stale and must be rebuilt from scratch rather than kept
+// across a map switch - there is no per-map cache here, only ever "the
+// current one." Disposing GPU resources explicitly matters because browsers
+// cap the number of live WebGL contexts; switching maps many times in one
+// page session without this would eventually stop being able to create new
+// ones.
+export function teardown3d() {
+  if (three) {
+    three.stop();
+    disposeSceneContents(three.scene);
+    disposeSceneContents(texturedScene);
+    three.renderer.dispose();
+    three.renderer.domElement.remove();
+  }
+  three = null;
+  threePromise = null;
+  texturedScene = null;
+  texturedScenePromise = null;
+}
+
 const scriptPromises = {};
 function loadScript(src) {
   scriptPromises[src] ??= new Promise((resolve, reject) => {
@@ -46,8 +78,7 @@ function loadScript(src) {
 async function init3d() {
   // three.js is opt-in, so keep its ~740 KB off the 2D-only load path.
   await loadScript("viewer/lib/three.min.js");
-  await loadScript("viewer/lib/OrbitControls.js");
-  const buf = await fetchMesh();
+  const buf = await fetchMesh(state.currentMap);
   const dv = new DataView(buf);
   const vCount = dv.getInt32(0, true);
   const iCount = dv.getInt32(4, true);
@@ -66,10 +97,25 @@ async function init3d() {
   camera.up.set(0, 0, 1);
   const cx = (RX0 + RX1) / 2, cy = (RY0 + RY1) / 2;
   camera.position.set(cx, cy - 3800, 3600);
-  const controls = new THREE.OrbitControls(camera, renderer.domElement);
-  controls.target.set(cx, cy, 0);
-  controls.maxPolarAngle = Math.PI / 2 - 0.02;
-  controls.update();
+  camera.lookAt(cx, cy, 0);
+
+  // Free-look: yaw/pitch of the camera's own facing direction (not an orbit
+  // pivot far away), same sign convention as renderPreview's aim direction
+  // (positive pitch looks down) so flyTo() can hand this lineup pitch/yaw
+  // straight through with no conversion. Derived from the initial lookAt()
+  // above rather than duplicated math, so both stay in lockstep.
+  const initDir = new THREE.Vector3();
+  camera.getWorldDirection(initDir);
+  let yaw = Math.atan2(initDir.y, initDir.x);
+  let pitch = -Math.asin(THREE.MathUtils.clamp(initDir.z, -1, 1));
+  const PITCH_LIMIT = 89 * Math.PI / 180;
+  const lookDir = new THREE.Vector3(), lookAt = new THREE.Vector3();
+  function applyLook() {
+    pitch = Math.max(-PITCH_LIMIT, Math.min(PITCH_LIMIT, pitch));
+    const cp = Math.cos(pitch);
+    lookDir.set(cp * Math.cos(yaw), cp * Math.sin(yaw), -Math.sin(pitch));
+    camera.lookAt(lookAt.copy(camera.position).add(lookDir));
+  }
 
   const geo = new THREE.BufferGeometry();
   geo.setAttribute("position", new THREE.BufferAttribute(verts, 3));
@@ -94,9 +140,6 @@ async function init3d() {
   const mat = new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide });
   const collisionVisual = new THREE.Mesh(geo, mat);
   scene.add(collisionVisual);
-  // Textured GLB rendering disabled by request: the collision mesh with
-  // elevation shading below is the visual. (Re-enable by restoring the
-  // GLTFLoader block from git history / data/de_dust2.glb is still there.)
   scene.add(new THREE.HemisphereLight(0xffffff, 0x33302a, 0.95));
   const sun = new THREE.DirectionalLight(0xffffff, 0.7);
   sun.position.set(0.4, 0.25, 1);
@@ -123,10 +166,54 @@ async function init3d() {
 
   const raycaster = new THREE.Raycaster();
   const meshObj = scene.children.find(o => o.isMesh);
+
+  // Free camera: left-drag looks around from the current spot (rotates the
+  // camera in place, like turning your head - not orbiting a distant pivot,
+  // which used to swing the whole view when navigating up close to a wall).
+  // Right-drag pans (translates without rotating); scroll dollies forward/
+  // back along the view direction. A held button that never moves past the
+  // 4px threshold still falls through to the click-to-pick handler below.
+  const LOOK_SENSITIVITY = 0.0035;
+  const PAN_SENSITIVITY = 1.35;
+  const DOLLY_SENSITIVITY = 1.4;
+  const panRight = new THREE.Vector3(), panUp = new THREE.Vector3(0, 0, 1), dollyDir = new THREE.Vector3();
   let down = null;
-  renderer.domElement.addEventListener("pointerdown", e => { down = [e.clientX, e.clientY]; });
+  let dragButton = -1;
+  let lastX = 0, lastY = 0;
+  renderer.domElement.addEventListener("contextmenu", e => e.preventDefault());
+  renderer.domElement.addEventListener("pointerdown", e => {
+    down = [e.clientX, e.clientY];
+    if (e.button === 0 || e.button === 2) {
+      dragButton = e.button;
+      lastX = e.clientX;
+      lastY = e.clientY;
+      renderer.domElement.setPointerCapture(e.pointerId);
+      renderer.domElement.classList.add(dragButton === 0 ? "looking" : "panning");
+    }
+  });
+  renderer.domElement.addEventListener("pointermove", e => {
+    if (dragButton === -1) { return; }
+    const dx = e.clientX - lastX, dy = e.clientY - lastY;
+    lastX = e.clientX;
+    lastY = e.clientY;
+    if (dragButton === 0) {
+      yaw -= dx * LOOK_SENSITIVITY;
+      // Positive pitch looks down (dir.z = -sin(pitch)), so dragging the
+      // mouse down (dy > 0) - standard non-inverted mouselook - must
+      // increase pitch, not decrease it.
+      pitch += dy * LOOK_SENSITIVITY;
+      applyLook();
+    } else {
+      panRight.set(Math.sin(yaw), -Math.cos(yaw), 0);
+      camera.position.addScaledVector(panRight, dx * PAN_SENSITIVITY);
+      camera.position.addScaledVector(panUp, dy * PAN_SENSITIVITY);
+    }
+  });
   renderer.domElement.addEventListener("pointerup", e => {
-    if (!down || Math.hypot(e.clientX - down[0], e.clientY - down[1]) > 4) { return; }
+    dragButton = -1;
+    renderer.domElement.classList.remove("looking", "panning");
+    if (!down || Math.hypot(e.clientX - down[0], e.clientY - down[1]) > 4) { down = null; return; }
+    down = null;
     const rect = renderer.domElement.getBoundingClientRect();
     const ndc = new THREE.Vector2(
       ((e.clientX - rect.left) / rect.width) * 2 - 1,
@@ -144,6 +231,11 @@ async function init3d() {
       callbacks.onSetTarget([pnt.x, pnt.y, pnt.z], `target ${pnt.x.toFixed(0)}, ${pnt.y.toFixed(0)}, ${pnt.z.toFixed(0)} (3D)`);
     }
   });
+  renderer.domElement.addEventListener("wheel", e => {
+    e.preventDefault();
+    camera.getWorldDirection(dollyDir);
+    camera.position.addScaledVector(dollyDir, -e.deltaY * DOLLY_SENSITIVITY);
+  }, { passive: false });
 
   function resize3d() {
     const w2 = stage3d.clientWidth, h2 = stage3d.clientHeight;
@@ -158,16 +250,29 @@ async function init3d() {
   }
   window.addEventListener("resize", resize3d);
 
-  // WASD freecam: fly relative to the camera heading; Q/E for down/up,
-  // shift for 4x speed. Works alongside orbit (drag) and pan (right-drag).
+  // WASD freecam: fly relative to the camera heading; Space/E for up,
+  // Ctrl/Q/C for down (matching CS2's own spectator free-cam scheme), shift
+  // for 4x speed. Works alongside look (left-drag) and pan (right-drag).
   // Key listeners bind in start() and unbind in stop() so 2D mode never
   // sees them; UI interactions (controls, panel, any form control) are
   // ignored so typing or toggling never flies the camera (M13).
+  // Every code here must be preventDefault()'d: the browser owns several of
+  // these as chords before our handler ever runs them as game input - Space
+  // scrolls the page, and Ctrl+W (an entirely plausible chord once Ctrl means
+  // "down," since flying down-and-forward is a completely normal combined
+  // move) closes the whole browser tab.
+  const FLY_KEYS = new Set([
+    "KeyW", "KeyA", "KeyS", "KeyD", "KeyQ", "KeyE", "KeyC", "Space",
+    "ControlLeft", "ControlRight", "ShiftLeft", "ShiftRight",
+  ]);
   const keys = new Set();
   const onKeyDown = e => {
     if (e.target instanceof Element &&
         e.target.closest("#controls, .panel, input, select, button, summary, details")) {
       return;
+    }
+    if (FLY_KEYS.has(e.code)) {
+      e.preventDefault();
     }
     keys.add(e.code);
   };
@@ -189,11 +294,10 @@ async function init3d() {
     if (keys.has("KeyD")) { move.add(right); }
     if (keys.has("KeyA")) { move.sub(right); }
     if (keys.has("KeyE") || keys.has("Space")) { move.z += 1; }
-    if (keys.has("KeyQ") || keys.has("KeyC")) { move.z -= 1; }
+    if (keys.has("KeyQ") || keys.has("KeyC") || keys.has("ControlLeft") || keys.has("ControlRight")) { move.z -= 1; }
     if (move.lengthSq() === 0) { return; }
     move.normalize().multiplyScalar(speed);
     camera.position.add(move);
-    controls.target.add(move);
   }
 
   let live = false;
@@ -204,12 +308,11 @@ async function init3d() {
   function loop() {
     if (!live) { return; }
     fly();
-    controls.update();
     renderer.render(activeScene, camera);
     requestAnimationFrame(loop);
   }
   three = {
-    renderer, scene, camera, controls, markerGroup, targetGroup, resize3d,
+    renderer, scene, camera, markerGroup, targetGroup, resize3d,
     markerGeo, markerMats, targetGeo, targetMat, bloomGeo, bloomMat, lineMat,
     get isLive() { return live; },
     get isTextured() { return activeScene !== scene; },
@@ -229,7 +332,7 @@ async function init3d() {
       window.removeEventListener("keyup", onKeyUp);
       window.removeEventListener("blur", onBlur);
     },
-    // Switches the interactive (orbit + WASD) view between the flat
+    // Switches the interactive (free-look + WASD) view between the flat
     // collision mesh and the real-textured GLB. Markers/target follow
     // whichever scene is now active so picking and the target dot keep
     // working in both modes.
@@ -242,6 +345,19 @@ async function init3d() {
       dest.add(markerGroup);
       dest.add(targetGroup);
       activeScene = dest;
+    },
+    // Drops the free camera directly into a lineup's exact throw position
+    // and aim - "go stand there" rather than a single static preview frame,
+    // so the player can then free-look/WASD around from that exact spot.
+    // Reuses the same yaw/pitch sign convention applyLook() already uses
+    // (see its derivation above), so the solver's raw pitch/yaw degrees
+    // pass straight through with no conversion.
+    flyTo({ feet, type, pitchDeg, yawDeg }) {
+      const eyeHeight = EYE_HEIGHT[type] ?? DEFAULT_EYE_HEIGHT;
+      camera.position.set(feet[0], feet[1], feet[2] + eyeHeight);
+      yaw = yawDeg * Math.PI / 180;
+      pitch = pitchDeg * Math.PI / 180;
+      applyLook();
     },
   };
   return three;
@@ -275,23 +391,47 @@ function ensureCrosshair() {
 }
 
 // Textured scene, shared by lineup previews and the interactive view's
-// "Textured" toggle. A separate GLB exported straight from the game's VPK
-// with real materials/UVs (data/de_dust2_textured.glb, built via the
-// exportgltf CLI command), loaded lazily since it is ~300 MB.
+// "Textured" toggle. A separate GLB per map, exported straight from the
+// game's VPK with real materials/UVs (data/{map}_textured.glb, built via
+// exportgltf + rig/optimize-textured-glb.mjs), loaded lazily since it is
+// tens of MB.
 let texturedScene = null;
 let texturedScenePromise = null;
-export function ensureTexturedScene(url = "data/de_dust2_textured.glb") {
+// Mirrors resetEnsure3d(): a failed load (e.g. called before ensure3d() has
+// loaded THREE) would otherwise cache the rejected promise forever, so every
+// later retry in the same page session replays the same stale failure.
+export function resetEnsureTexturedScene() {
+  texturedScenePromise = null;
+}
+export function ensureTexturedScene(url = `data/${state.currentMap}_textured.glb`) {
   texturedScenePromise ??= (async () => {
     await loadScript("viewer/lib/GLTFLoader.js");
+    await loadScript("viewer/lib/DRACOLoader.js");
+    const draco = new THREE.DRACOLoader();
+    draco.setDecoderPath("viewer/lib/draco/");
+    const loader = new THREE.GLTFLoader();
+    loader.setDRACOLoader(draco);
     const gltf = await new Promise((resolve, reject) => {
-      new THREE.GLTFLoader().load(url, resolve, undefined, reject);
+      loader.load(url, resolve, undefined, reject);
     });
     const root = gltf.scene;
-    // VRF exports in meters, Y-up; the collision mesh (and every solver
-    // coordinate) is Hammer units, Z-up, so rotate and rescale the whole
-    // hierarchy once at the root rather than touching individual meshes.
-    root.rotation.x = Math.PI / 2;
-    root.scale.setScalar(1 / 0.0254);
+    // VRF exports in meters with a cyclic axis permutation, not a plain
+    // Y-up/Z-up swap: raw (x,y,z) maps to Hammer (z,y,x) - Hammer_X=raw_z,
+    // Hammer_Y=raw_x, Hammer_Z=raw_y (all times 1/0.0254), confirmed by
+    // comparing this GLB's bounding box against the map's known Hammer-unit
+    // region (viewer-map.json). A single Euler rotation can't express this
+    // axis permutation without ambiguity over axis order - e.g. rotation.x =
+    // 90deg only swaps two axes, leaving the frame rotated 90 degrees off
+    // the collision mesh/solver frame - so the basis is set directly as a
+    // matrix instead.
+    const s = 1 / 0.0254;
+    root.matrixAutoUpdate = false;
+    root.matrix.set(
+      0, 0, s, 0,
+      s, 0, 0, 0,
+      0, s, 0, 0,
+      0, 0, 0, 1);
+    root.updateMatrixWorld(true);
 
     // Render unlit rather than PBR-lit. CS2's own bake already puts lighting
     // into the textures/vertex tints, and the exporter can't classify
@@ -300,20 +440,91 @@ export function ensureTexturedScene(url = "data/de_dust2_textured.glb") {
     // materials to both extremes (pitch black roof undersides, blown-out
     // white walls) depending on viewing angle. A flat, unlit material is
     // both simpler and closer to what the game itself would show here.
+    // Source's compiler/editor-only materials (invisible clip brushes, light
+    // helpers, nodraw, etc.) are all named "tools*" by convention and were
+    // never meant to be seen in-game - the exporter includes them anyway,
+    // and at least one (a giant "toolssolidblocklight"/"toolsblocklight"
+    // ground-covering plane, its own debug texture reading "Solid"/"Block
+    // Light" across the whole map) sat on top of the real geometry and made
+    // the world look misaligned/rotated depending on the viewing angle.
+    // A second junk category: materials/effects/smoke/* (dust motes, window
+    // lightshafts, steam wisps - csgo_effects.vfx, GLTFLoader preserves the
+    // source .vmat path/shader name on material.userData via extras). These
+    // are additive particle-card VFX meant to render as faint animated
+    // overlays; rendered as solid unlit geometry they show up as stark white
+    // wedges and orange planes floating over rooftops, useless for a static
+    // lineup reference, so they are dropped entirely rather than shaded.
+    // A third junk category found across every map (not just one): the
+    // "tools" naming convention isn't always reflected in the glTF material's
+    // display name - some editor-only materials keep a friendly name (e.g.
+    // Mirage's Retake-mode "Wrong Way" site markers are named "wrongway_timer"
+    // but live at materials/tools/wrongway_timer.vmat) or live under
+    // materials/dev/ instead of materials/tools/ (a level-wide "black_simple"
+    // placeholder present on every single map checked, plus per-map lighting
+    // reflectivity checkers like materials/dev/reflectivity_30.vmat on Nuke
+    // and Ancient), or under models/ui/ (Nuke's solid red "retakes_blocker" -
+    // a Retake-game-mode-only wall) - matched by the vmat path prefix instead
+    // of the display name so these are caught regardless of what the
+    // material happens to be called.
+    const toRemove = [];
     root.traverse(o => {
-      if (o.isMesh && o.material) {
-        // A few meshes (flags, banners) carry no diffuse texture at all and
-        // rely on baked per-vertex color instead; without vertexColors those
-        // fall back to material.color, which is white by default and paints
-        // them as flat white triangles.
-        const hasVertexColor = !!o.geometry.getAttribute("color");
-        o.material = new THREE.MeshBasicMaterial({
-          map: o.material.map,
-          color: o.material.color,
-          vertexColors: !o.material.map && hasVertexColor,
-        });
+      if (!o.isMesh || !o.material) {
+        return;
       }
+      const vmat = o.material.userData?.vmat;
+      const vmatName = vmat?.Name ?? "";
+      if (o.material.name?.toLowerCase().startsWith("tools") ||
+          vmatName.startsWith("materials/effects/") ||
+          vmatName.startsWith("materials/tools/") ||
+          vmatName.startsWith("materials/dev/") ||
+          vmatName.startsWith("models/ui/")) {
+        toRemove.push(o);
+        return;
+      }
+      // A few meshes (flags, banners) carry no diffuse texture at all and
+      // rely on baked per-vertex color instead; without vertexColors those
+      // fall back to material.color, which is white by default and paints
+      // them as flat white triangles.
+      const hasVertexColor = !!o.geometry.getAttribute("color");
+      // Water and glass are procedural shaders (reflection/refraction/
+      // caustics computed at runtime) with no baseColorTexture and no
+      // baseColorFactor at all - GLTFLoader leaves material.color at its
+      // default white, so every water/glass surface on every map rendered as
+      // a flat opaque white plane. There is no static texture to fall back
+      // to (it doesn't exist even in the raw export), so approximate each
+      // with a translucent tint - water uses its own g_vWaterFogColor vmat
+      // param (already per-map art-directed, e.g. muddy tan for Ancient's
+      // jungle water vs. clear blue elsewhere) when present.
+      let color = o.material.color;
+      let { transparent, opacity } = o.material;
+      const shaderName = vmat?.ShaderName ?? "";
+      if (!o.material.map && shaderName === "csgo_water_fancy.vfx") {
+        const fog = vmat?.VectorParams?.g_vWaterFogColor;
+        color = fog ? new THREE.Color(fog[0], fog[1], fog[2]) : new THREE.Color(0x2f5f6b);
+        transparent = true;
+        opacity = 0.75;
+      } else if (!o.material.map && shaderName === "csgo_glass.vfx") {
+        color = new THREE.Color(0xbfd9e0);
+        transparent = true;
+        opacity = 0.35;
+      }
+      // Alpha-cutout meshes (fences, window bars, rusty grates) lose their
+      // cutout pattern and render as solid colored quads unless the MASK
+      // alphaTest GLTFLoader already computed from the glTF material is
+      // carried over onto the replacement material.
+      o.material = new THREE.MeshBasicMaterial({
+        map: o.material.map,
+        color,
+        vertexColors: !o.material.map && hasVertexColor,
+        transparent,
+        alphaTest: o.material.alphaTest,
+        opacity,
+        side: o.material.side,
+      });
     });
+    for (const o of toRemove) {
+      o.parent.remove(o);
+    }
 
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(state.colors.surface);

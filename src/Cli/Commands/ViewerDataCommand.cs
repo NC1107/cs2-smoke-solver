@@ -35,7 +35,9 @@ public static class ViewerDataCommand
         var region = Require(options, "region").Split(',', StringSplitOptions.TrimEntries)
             .Select(v => float.Parse(v, CultureInfo.InvariantCulture)).ToArray();
         var (x0, y0, x1, y1) = (region[0], region[1], region[2], region[3]);
-        var outPath = options.GetValueOrDefault("out", "data/viewer-map.json");
+        // Namespaced by map so multiple maps' viewer data can sit side by side
+        // under data/ - the viewer's map picker fetches data/{map}.viewer-map.json.
+        var outPath = options.GetValueOrDefault("out", $"data/{mesh.MapName}.viewer-map.json");
         var imagePath = Path.ChangeExtension(outPath, ".png");
 
         // Radar-style rendering: a horizontal slice at chest height over the local

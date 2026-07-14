@@ -1,7 +1,18 @@
 // Fetch wrappers. No DOM access here; callers own status text and overlays.
 
-export async function loadMapData() {
-  const res = await fetch("data/viewer-map.json");
+// Every extracted map leaves data/{map}.viewer-map.json/.png behind (see
+// ViewerDataCommand); this lists them so the viewer's map picker never has
+// to hardcode a map list.
+export async function loadMapList() {
+  const res = await fetch("/api/maps");
+  if (!res.ok) {
+    throw new Error(`HTTP ${res.status}`);
+  }
+  return res.json();
+}
+
+export async function loadMapData(map) {
+  const res = await fetch(`data/${encodeURIComponent(map)}.viewer-map.json`);
   if (!res.ok) {
     throw new Error(`HTTP ${res.status}`);
   }
@@ -58,8 +69,8 @@ export async function runQuery(body, signal, onProgress) {
   return { data: result };
 }
 
-export async function fetchMesh() {
-  const res = await fetch("/api/mesh");
+export async function fetchMesh(map) {
+  const res = await fetch(`/api/mesh?map=${encodeURIComponent(map)}`);
   if (!res.ok) {
     throw new Error(`mesh HTTP ${res.status}`);
   }
