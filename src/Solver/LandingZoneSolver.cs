@@ -65,7 +65,7 @@ public static class LandingZoneSolver
         var candidates = FindCandidateRestCells(grid, sightlines, p);
 
         var zone = new ConcurrentBag<LandingCell>();
-        Parallel.ForEach(candidates, cell =>
+        Parallel.ForEach(candidates, Cpu.Bound, cell =>
         {
             var smoke = SmokeFloodFill.Fill(grid, grid.CellCenter(cell), p);
             if (smoke.Cells.Length == 0)

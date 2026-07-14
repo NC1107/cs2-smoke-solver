@@ -201,8 +201,7 @@
   body.preview-mode .toolbar,
   body.preview-mode #controls,
   body.preview-mode .key,
-  body.preview-mode .panel,
-  body.preview-mode footer { display: none; }
+  body.preview-mode .panel { display: none; }
   body.preview-mode .stage { position: fixed; inset: 0; }
   .preview-crosshair {
     display: none;
@@ -408,13 +407,13 @@
     background: var(--panel);
     border: 1px solid var(--line);
     border-radius: 10px;
-    padding: 22px 24px;
-    width: min(560px, 100%);
+    padding: 16px 18px;
+    width: min(520px, 100%);
     box-shadow: 0 18px 50px rgba(0, 0, 0, 0.35);
   }
-  .intro h1 { margin: 0; font-size: 17px; letter-spacing: -0.01em; }
-  .intro p { margin: 5px 0 0; color: var(--muted); font-size: 12.5px; }
-  .intro-step { margin-top: 16px; }
+  .intro h1 { margin: 0; font-size: 16px; letter-spacing: -0.01em; }
+  .intro p { margin: 3px 0 0; color: var(--muted); font-size: 12px; }
+  .intro-step { margin-top: 10px; }
   .intro-step[hidden] { display: none; }
   .map-grid {
     display: grid;
@@ -449,23 +448,25 @@
     opacity: 0.8;
   }
   .map-pick:hover .thumb { opacity: 1; }
-  .filter-rows { display: grid; gap: 13px; margin: 14px 0 16px; max-height: 46vh; overflow-y: auto; }
-  .filter-row { display: grid; gap: 2px; }
+  .filter-rows { display: grid; gap: 7px; margin: 10px 0 12px; max-height: 52vh; overflow-y: auto; }
+  .filter-row { display: grid; gap: 0; }
   .filter-head { display: flex; align-items: center; gap: 8px; cursor: pointer; }
   /* Fixed label column so the dropdowns line up down the left rather than
      stepping in and out with the length of each name. */
-  .filter-head b { font-size: 12.5px; white-space: nowrap; min-width: 96px; }
+  .filter-head b { font-size: 12px; white-space: nowrap; min-width: 88px; }
   .filter-row select {
     font: inherit;
-    font-size: 12px;
+    font-size: 11.5px;
     color: var(--ink);
     background: var(--surface);
     border: 1px solid var(--line);
     border-radius: 4px;
-    padding: 4px 7px;
+    padding: 2px 6px;
     cursor: pointer;
   }
-  .filter-desc { margin: 0; color: var(--muted); font-size: 11.5px; line-height: 1.45; }
+  /* Aligned under the dropdown rather than the label: the line explains the
+     control, so it reads as attached to it. */
+  .filter-desc { margin: 1px 0 0 96px; color: var(--muted); font-size: 11px; line-height: 1.35; }
   .intro-choices { display: flex; gap: 8px; flex-wrap: wrap; }
   .intro-choices .btn { --btn-pad: 7px 14px; --btn-font-size: 12.5px; }
   .list-note { color: var(--muted); font-size: 11px; }
@@ -495,14 +496,6 @@
   .ref.flat { color: var(--muted); border: 1px solid var(--line); }
   .ref.edge { color: var(--accent); border: 1px solid var(--accent); }
   .ref.fav { color: var(--target); border: none; padding: 0; }
-  footer {
-    padding: 4px 12px;
-    border-top: 1px solid var(--line);
-    color: var(--muted);
-    font-size: 10.5px;
-    display: flex;
-    gap: 12px;
-  }
   @media (max-width: 640px) {
     #controls { width: 148px; }
     #controls summary { display: list-item; }

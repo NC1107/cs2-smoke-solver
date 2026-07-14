@@ -129,6 +129,17 @@ public static class ServeCommand
         }
         StartBrotliPrecompress(maps, dataDir);
 
+        // A solve occupies one pool thread per core (see Cpu.Bound). The pool's
+        // default floor is exactly that many, so everything else the request
+        // pipeline needs - the progress pump's 100ms timer, and every other
+        // user's request - had to wait for the pool's thread-injection hill
+        // climb, which adds threads about once a second. Progress arrived in
+        // multi-second lumps and concurrent requests hung for the duration of
+        // somebody else's solve. Headroom above the solve's own ceiling means
+        // those threads are there the moment they are needed.
+        ThreadPool.GetMinThreads(out _, out var minIo);
+        ThreadPool.SetMinThreads(Environment.ProcessorCount + 4, minIo);
+
         var builder = WebApplication.CreateSlimBuilder();
         // Keep CLI output as quiet as the old server: warnings and errors only.
         // Host startup failures are muted entirely because the bind-failure
@@ -276,8 +287,10 @@ public static class ServeCommand
                 var cachePath = Path.Combine("data", "cache", cacheKey + ".json");
 
                 // Progress streams as NDJSON so the viewer can paint each evaluated
-                // origin live: phase lines, then batches of checked [x, y, hits]
-                // cells, then a final result line. Cache files keep the bare result
+                // origin live: phase lines, then batches of checked [x, y, z, hits]
+                // cells, then a final result line. Z is carried so the 3D view can
+                // stand each dot on the ground it belongs to rather than flattening
+                // the sweep onto one plane. Cache files keep the bare result
                 // JSON, so cached replies are just that single last line.
                 context.Response.ContentType = "application/x-ndjson";
                 var clientGone = false;
@@ -314,8 +327,8 @@ public static class ServeCommand
                     var solveTask = Task.Run(() => RunTargetQuery(
                         mesh, attributeFilter, navAreas, body.RootElement, serveConstants,
                         onPhase: (phase, count) => events.Enqueue((phase, [count])),
-                        onOrigin: (feet, hits) => events.Enqueue(("origin", [(int)MathF.Round(feet.X), (int)MathF.Round(feet.Y), hits])),
-                        onCandidate: (feet, ok) => events.Enqueue(("cand", [(int)MathF.Round(feet.X), (int)MathF.Round(feet.Y), ok ? 1 : 0]))));
+                        onOrigin: (feet, hits) => events.Enqueue(("origin", [(int)MathF.Round(feet.X), (int)MathF.Round(feet.Y), (int)MathF.Round(feet.Z), hits])),
+                        onCandidate: (feet, ok) => events.Enqueue(("cand", [(int)MathF.Round(feet.X), (int)MathF.Round(feet.Y), (int)MathF.Round(feet.Z), ok ? 1 : 0]))));
                     while (!solveTask.IsCompleted)
                     {
                         await Task.WhenAny(solveTask, Task.Delay(100));

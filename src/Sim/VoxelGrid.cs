@@ -104,7 +104,7 @@ public sealed class VoxelGrid
         // Voxelization dominates command startup and every triangle is
         // independent; solid bits are set with an interlocked OR so ranges
         // can run in parallel.
-        Parallel.For(0, indices.Length / 3, ti =>
+        Parallel.For(0, indices.Length / 3, Cpu.Bound, ti =>
         {
             var t = ti * 3;
             if (attributeFilter != null && !attributeFilter(mesh.TriangleAttributes[t / 3]))

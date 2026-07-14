@@ -5,7 +5,7 @@
 import { state, filtered, esc } from "./state.js";
 import { loadMapList, loadMapData, runQuery as postLineupQuery, fetchTrajectory } from "./api.js";
 import { loadRadar, readColors, recolorRadar, draw, scheduleDraw, resize, resetView, initMap2d } from "./map2d.js";
-import { ensure3d, resetEnsure3d, resetEnsureTexturedScene, teardown3d, current3d, sync3d, set3dCallbacks, applyTheme3d, capturePreview } from "./view3d.js";
+import { ensure3d, resetEnsure3d, resetEnsureTexturedScene, teardown3d, current3d, sync3d, syncProgress3d, set3dCallbacks, applyTheme3d, capturePreview } from "./view3d.js";
 import { renderLineups, initPanel, revealSelected } from "./panel.js";
 
 (async () => {
@@ -145,7 +145,6 @@ import { renderLineups, initPanel, revealSelected } from "./panel.js";
       bootError(`data/${name}.viewer-map.json`);
       return false;
     }
-    document.getElementById("meta").textContent = `build ${state.mapData.build}`;
     try {
       await loadRadar();
     } catch {
@@ -201,15 +200,20 @@ import { renderLineups, initPanel, revealSelected } from "./panel.js";
 
   // The intro borrows the real <select> elements rather than cloning them, so
   // there is only ever one source of truth for a filter's value; they are handed
-  // back to the sidebar card, in order, when the intro closes.
+  // back to the sidebar card, in order, when it closes. Which means the borrowing
+  // must only happen if the intro is actually going to be shown - doing it up
+  // front left every returning visitor, and every ?map= link, with the filters
+  // stranded inside a hidden dialog and an empty filters card.
   const filterEls = Object.values(state.filters);
-  document.getElementById("intro-filter-rows").innerHTML = filterEls
-    .map(f => `<div class="filter-row" data-for="${f.id}">` +
-      `<label class="filter-head" for="${f.id}"><b>${esc(f.dataset.label)}:</b><span class="filter-slot"></span></label>` +
-      `<p class="filter-desc">${esc(f.dataset.desc)}</p></div>`)
-    .join("");
-  for (const f of filterEls) {
-    document.querySelector(`.filter-row[data-for="${f.id}"] .filter-slot`).appendChild(f);
+  function mountIntroFilters() {
+    document.getElementById("intro-filter-rows").innerHTML = filterEls
+      .map(f => `<div class="filter-row" data-for="${f.id}">` +
+        `<label class="filter-head" for="${f.id}"><b>${esc(f.dataset.label)}:</b><span class="filter-slot"></span></label>` +
+        `<p class="filter-desc">${esc(f.dataset.desc)}</p></div>`)
+      .join("");
+    for (const f of filterEls) {
+      document.querySelector(`.filter-row[data-for="${f.id}"] .filter-slot`).appendChild(f);
+    }
   }
 
   function closeIntro() {
@@ -251,6 +255,7 @@ import { renderLineups, initPanel, revealSelected } from "./panel.js";
       return;
     }
   } else {
+    mountIntroFilters();
     intro.hidden = false;
   }
 
@@ -281,6 +286,7 @@ import { renderLineups, initPanel, revealSelected } from "./panel.js";
       statusEl.textContent = `verifying ${p.verified.length} / ${p.candidates ?? "?"} candidates against the exact sim…`;
     }
     scheduleDraw();
+    syncProgress3d();
   }
 
   async function runQuery(body) {
@@ -314,6 +320,7 @@ import { renderLineups, initPanel, revealSelected } from "./panel.js";
       cancelBtn.hidden = true;
       syncControls();
       draw();
+      syncProgress3d();
     }
   }
 
@@ -324,7 +331,10 @@ import { renderLineups, initPanel, revealSelected } from "./panel.js";
     state.selected = -1;
     state.heatOn = false;
     canvas.classList.remove("picking");
-    statusEl.textContent = note;
+    // The two-click flow is the whole tool and was never stated anywhere: click
+    // the ground you want to throw *from* to solve just that spot, or Search map
+    // to sweep every spot that can reach the target.
+    statusEl.textContent = `${note} - now click the spot you want to throw FROM, or "Search map" to find every spot`;
     syncControls();
     renderLineups();
     draw();
@@ -454,6 +464,7 @@ import { renderLineups, initPanel, revealSelected } from "./panel.js";
       }
       t3.start();
       sync3d();
+      syncProgress3d();
       t3.focusStage();
       return t3;
     } catch {
@@ -461,7 +472,7 @@ import { renderLineups, initPanel, revealSelected } from "./panel.js";
       stage3d.style.display = "none";
       canvas.style.display = "block";
       syncControls();
-      statusEl.textContent = "3D unavailable: serve needs --geo";
+      statusEl.textContent = "3D unavailable - this browser could not start WebGL, or the map mesh failed to load";
       draw();
       return null;
     }

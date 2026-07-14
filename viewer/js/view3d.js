@@ -159,6 +159,8 @@ async function init3d() {
   scene.add(markerGroup);
   const targetGroup = new THREE.Group();
   scene.add(targetGroup);
+  const progressGroup = new THREE.Group();
+  scene.add(progressGroup);
 
   // Shared marker assets: sync3d re-parents these instead of allocating new
   // GPU buffers per rebuild (three.js never frees them on plain .remove()).
@@ -173,6 +175,14 @@ async function init3d() {
   const bloomGeo = new THREE.SphereGeometry(1, 24, 16); // unit sphere, scaled to the zone radius
   const bloomMat = new THREE.MeshBasicMaterial({ color: colors.target, transparent: true, opacity: 0.14, depthWrite: false });
   const lineMat = new THREE.LineBasicMaterial({ color: colors.accent });
+  // A sweep evaluates tens of thousands of origins and restreams every ~100ms,
+  // so the live progress dots are Points clouds (one draw call each) rather
+  // than a mesh per origin, which would stall the view exactly when it is
+  // meant to be showing that the solver is making progress.
+  const progressCheckedMat = new THREE.PointsMaterial({
+    size: 22, vertexColors: true, transparent: true, opacity: 0.6, depthWrite: false });
+  const progressVerifiedMat = new THREE.PointsMaterial({
+    size: 40, color: colors["heat-ok"], transparent: true, opacity: 0.95, depthWrite: false });
 
   const raycaster = new THREE.Raycaster();
   const meshObj = scene.children.find(o => o.isMesh);
@@ -363,8 +373,9 @@ async function init3d() {
     requestAnimationFrame(loop);
   }
   three = {
-    renderer, scene, camera, markerGroup, targetGroup, resize3d,
+    renderer, scene, camera, markerGroup, targetGroup, progressGroup, resize3d,
     markerGeo, markerMats, targetGeo, targetMat, bloomGeo, bloomMat, lineMat,
+    progressCheckedMat, progressVerifiedMat,
     get isLive() { return live; },
     get isTextured() { return activeScene !== scene; },
     start() {
@@ -389,17 +400,17 @@ async function init3d() {
       window.removeEventListener("blur", onBlur);
     },
     // Switches the interactive (free-look + WASD) view between the flat
-    // collision mesh and the real-textured GLB. Markers/target follow
-    // whichever scene is now active so picking and the target dot keep
-    // working in both modes.
+    // collision mesh and the real-textured GLB. Markers/target/progress follow
+    // whichever scene is now active so picking, the target dot and a live
+    // solve keep working in both modes.
     async setTextured(on) {
       if (on === this.isTextured) { return; }
       const dest = on ? await ensureTexturedScene() : scene;
       const src = on ? scene : texturedScene;
-      src?.remove(markerGroup);
-      src?.remove(targetGroup);
-      dest.add(markerGroup);
-      dest.add(targetGroup);
+      for (const g of [markerGroup, targetGroup, progressGroup]) {
+        src?.remove(g);
+        dest.add(g);
+      }
       activeScene = dest;
       dirty = true;
     },
@@ -743,6 +754,7 @@ export function applyTheme3d() {
   three.targetMat.color.set(colors.target);
   three.bloomMat.color.set(colors.target);
   three.lineMat.color.set(colors.accent);
+  three.progressVerifiedMat.color.set(colors["heat-ok"]);
   three.requestRender();
 }
 
@@ -754,6 +766,55 @@ function clearGroup(group) {
     if (child.userData.ownedGeometry) { child.geometry.dispose(); }
     group.remove(child);
   }
+}
+
+// Cells are [x, y, z, verdict]; the dot floats just clear of the floor the
+// origin stands on so it does not z-fight with it.
+function progressCloud(cells, material, colorOf) {
+  const pos = new Float32Array(cells.length * 3);
+  const col = colorOf ? new Float32Array(cells.length * 3) : null;
+  const tmp = new THREE.Color();
+  let n = 0;
+  for (const cell of cells) {
+    const [x, y, z] = cell;
+    pos[n] = x; pos[n + 1] = y; pos[n + 2] = z + 6;
+    if (col) {
+      tmp.set(colorOf(cell));
+      col[n] = tmp.r; col[n + 1] = tmp.g; col[n + 2] = tmp.b;
+    }
+    n += 3;
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+  if (col) { geo.setAttribute("color", new THREE.BufferAttribute(col, 3)); }
+  const points = new THREE.Points(geo, material);
+  points.userData.ownedGeometry = true;
+  return points;
+}
+
+// The 3D counterpart of the 2D sweep dots: one dot per evaluated origin,
+// blue where a throw reached the target and orange where none did, with the
+// verify phase growing the confirmed ones into bright markers. Rejected
+// candidates keep their plain "sim reached" dot, which is what the finished
+// heatmap shows them as anyway.
+export function syncProgress3d() {
+  if (!three || stage3d.style.display === "none") {
+    return;
+  }
+  const { progressGroup, progressCheckedMat, progressVerifiedMat } = three;
+  clearGroup(progressGroup);
+  const p = state.progress;
+  if (p?.checked.length) {
+    const ok = state.colors["heat-ok"], none = state.colors["heat-none"];
+    progressGroup.add(progressCloud(p.checked, progressCheckedMat, c => c[3] > 0 ? ok : none));
+  }
+  if (p?.verified.length) {
+    const confirmed = p.verified.filter(c => c[3]);
+    if (confirmed.length) {
+      progressGroup.add(progressCloud(confirmed, progressVerifiedMat, null));
+    }
+  }
+  three.requestRender();
 }
 
 export function sync3d() {

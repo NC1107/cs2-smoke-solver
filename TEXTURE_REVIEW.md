@@ -15,7 +15,9 @@ Not yet reviewed in this pass (was extensively reviewed earlier in the project -
 - **Clock/timer tape at both A and B sites.**
   Fixed. Root cause: `materials/tools/wrongway_timer.vmat` (CS2 Retake-mode "Wrong Way" site marker, not real world geometry) was not caught by the old tools-material filter, which only checked the material's display name, not its file path.
 - **Giant ceiling fans, giant box/crack, a "block rock", a giant bush.**
-  Fixed (`rig/fix-prop-scale.mjs`, task #32). 14 outlier nodes corrected - every duplicated small prop that had a sibling at the normal scale (soda cups, bottles, cans, buckets, chairs, paint cans, coffee mugs, clay pots, crates, the ceiling fan) got reset to its siblings' consistent scale. Operates directly on the already-optimized GLB (no VPK re-export needed) since node scale survives quantize()/draco() untouched.
+  Fixed (`rig/fix-prop-scale.mjs`, task #32). Every duplicated small prop that had a sibling at the normal scale (soda cups, bottles, cans, buckets, chairs, paint cans, coffee mugs, clay pots, crates, the ceiling fan) got reset to its siblings' consistent scale.
+- **Giant curtains, a giant stool, a giant blue panel (a TV).**
+  Fixed. These are one-off props with no sibling to compare against, so the median pass never saw them - they came out at 58m, 34m and 32m respectively. Caught by the rendered-size pass described at the bottom of this doc, along with 11 more nobody had spotted (a 13m shoe, a 10m spray paint can, and so on).
 
 ## de_inferno
 
@@ -31,16 +33,14 @@ Not yet reviewed in this pass (was extensively reviewed earlier in the project -
 - **Misc walls, wrong texture on the B bomb silo and its concrete.**
   Fixed. Root cause: `materials/dev/reflectivity_30.vmat`, a lighting-checker debug texture, was not caught by the old tools-material filter (same root cause class as Mirage's tape, see above).
 - **The giant wall on A on nuke might be another prop bug.**
-  Likely fixed as part of the general scale-bug pass below, not individually confirmed live.
+  Fixed. Two one-off props were rendering at 74m and 77m (`nuke_vent_bombsite_breakable_c` and `nuke_vent_slats`), correcting to 1.88m and 1.95m. The vent_bombsite one is the same prop an earlier draft of the fix gave up on - with only 2 instances there was no majority to vote against it, and averaging the pair produced a number matching neither. Measuring its rendered size settles it without needing a sibling at all.
 - **Looks like a giant radiator prop bug and a red wall in the middle of a site.**
   "Radiator" fixed: it's actually `airduct_hvac_001`, an HVAC duct prop (`metal_door_001_br`, a related duplicated prop, was the one actually caught - both are part of the same general fix pass, task #32).
   Red wall fixed. Root cause: `models/ui/retakes/retakes_blocker.vmat` - a solid red, textureless Retake-game-mode wall (same class of bug as Mirage's clock tape and Anubis's black wall, just a third vmat path prefix, `models/ui/`, not caught until now). Filter broadened to catch this prefix too.
-- **Open, unresolved**: `nuke_vent_bombsite_breakable_c` has exactly 2 instances (37.000 and 0.940 scale) with no third sibling and no other-map cross-reference to determine which is correct - a first attempt auto-corrected this by averaging the pair, which was wrong (matched neither value), so it's been left at its original, unmodified values rather than guessed at. If this looks wrong in the viewer, that's this exact node - let me know which of the two looks right (or if both look wrong) and I can fix it directly.
-
 ## de_overpass
 
 - **Giant wall in monster area, actually looks like a giant turbine or something, along with an orange tie.**
-  Turbine fixed: `hvac_fanblade_spinning_01` (two instances, 25.408 and 0.529 scale - corrected the outlier to 0.645, cross-checked against inferno's independently-confirmed fan blade fix landing in the same range). The "orange tie" is still unidentified - no separate orange/wrong-texture material found on this map beyond the already-fixed glass category, so it may have been part of the same turbine mesh and already resolved, or may need a fresh look.
+  Turbine fixed: `hvac_fanblade_spinning_01` (two instances, 25.408 and 0.529 scale - corrected the outlier to 0.645, cross-checked against inferno's independently-confirmed fan blade fix landing in the same range). The "orange tie" is now identified and fixed: `construction_safetyribbon_01`, an orange construction ribbon rendering at 34m, corrected to 0.85m. A 111m door (`metal_door_112`) turned up in the same pass; nobody had reported it.
 
 ## de_ancient
 
@@ -56,6 +56,8 @@ Not yet reviewed in this pass (was extensively reviewed earlier in the project -
   Fixed. Root cause: `materials/dev/black_simple.vmat`, a level-wide debug placeholder present on every map checked (same root cause class as Nuke's and Ancient's dev-material bugs above).
 - **Some wall textures look like water reflection textures.**
   Fixed (pending your confirmation). Root cause: almost certainly the glass shader (`csgo_glass.vfx`), which - like water - is procedural with no diffuse texture and was rendering as flat opaque white. Now tinted translucent pale blue instead.
+- **Giant flag.**
+  Fixed. `clothes_b` was rendering at 256m. It's the clearest confirmation of the root cause found anywhere: the map holds a second, un-bugged instance of the same cloth at 6.50m, and 256.09 / (1/0.0254) = 6.50 exactly.
 
 ## Not map-specific
 
@@ -66,8 +68,14 @@ Not yet reviewed in this pass (was extensively reviewed earlier in the project -
 
 ## Scale bug fix (task #32)
 
-`rig/fix-prop-scale.mjs` checked all 7 maps directly, not just the 4 reported above. dust2, ancient, and anubis had none of this bug present - only mirage, inferno, nuke, and overpass did, all covered above.
-Worth recording since it wasn't obvious going in: an automatic fix for a "few instances way too big" pattern is easy to get subtly wrong, and this one went through a few bad drafts before landing:
-- A first, broader version tried to auto-detect *any* implausibly-large one-off prop (not just ones with a normal-sized sibling to compare against) - on inferno alone it flagged 4500+ nodes, essentially every large wall/roof/vehicle mesh on the map, since ordinary world geometry legitimately spans the same size range for unrelated reasons. Dropped entirely; singleton props are now only ever touched via an explicit, human-confirmed list.
-- Matching that confirmed list by *material* rather than by the specific node initially corrected a perfectly fine mesh (the ceiling fan's base/housing) right along with the actual broken one (its blades), since both use the same shared kit material. Fixed to match by exact node name instead.
-- For props with exactly 2 instances, there's no real statistical majority to check against - averaging the pair (nuke's `nuke_vent_bombsite_breakable_c`) produced a value that matched neither original number. That one is left unresolved above rather than guessed at; overpass's fan blade had enough outside corroboration (matching inferno's independently-fixed fan blade) to correct with confidence instead.
+`rig/fix-prop-scale.mjs` checks all 7 maps. The bug is always the same factor - 1/0.0254, a metres-to-inches conversion applied one time too many - and it turned up on mirage, inferno, nuke, overpass and anubis. Only dust2 and ancient are clean.
+
+The pass that catches props with 3+ instances (replace any outlier with the group's median scale) was right the first time and hasn't changed. Getting the *rest* of them right took several bad drafts, all of which are worth recording because each failed for a different reason:
+
+- A first version tried to auto-detect any implausibly-large one-off prop by looking at `node.scale` alone. On inferno it flagged 4500+ nodes - essentially every wall, roof and vehicle on the map. The mistake was treating `node.scale` as if it meant "how big this is", when it means nothing on its own: a mesh authored large legitimately carries a small scale, and vice versa.
+- Retreating from that, singleton props were only ever touched via an explicit, human-confirmed allowlist. Safe, but it only ever fixed what somebody had already noticed by eye, and it quietly missed anubis's flag (rendering at 256m), overpass's 111m door, and nine more on mirage - which is how this doc came to claim anubis was clean when it wasn't.
+- Matching that allowlist by *material* rather than by node corrected a perfectly fine mesh (the ceiling fan's housing) along with the broken one (its blades), since both use the same shared kit material.
+
+What actually works is measuring the thing the bug is visible in: **mesh extent x node scale**, which is a real size in metres. A prop is not 10 metres across. Across all 7 maps the largest genuine prop in this class is ~6.6m and the smallest bugged one is ~10m, and every bugged one lands back in the 0.2-6.5m range once divided by the conversion factor - anubis's flag corrects to 6.50m, which is exactly the size of its own un-bugged sibling. Props with 3+ instances are never judged this way, which is what keeps overpass's genuinely 22m subway train (3 instances, all agreeing) out of it. One prop needs an explicit exception: ancient's tallest waterfall really is ~11.8m, and it's a singleton, so there's nothing to prove it against.
+
+Ordering matters now: `fix-prop-scale.mjs` **must** run before `optimize-textured-glb.mjs`. The optimizer flattens node transforms into the vertex data, and once that's happened the per-instance scale this reads no longer exists and the bug is baked in for good.

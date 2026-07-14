@@ -76,7 +76,7 @@ public static class LineupSolver
         origins ??= FindStandableOrigins(grid, originMin, originMax);
         var best = new ConcurrentDictionary<(int, int), Lineup>();
 
-        Parallel.ForEach(origins, feet =>
+        Parallel.ForEach(origins, Cpu.Bound, feet =>
         {
             var toZone = zoneCentroid - feet;
             var distance = new Vector2(toZone.X, toZone.Y).Length();
@@ -195,7 +195,7 @@ public static class LineupSolver
         zoneCentroid /= Math.Max(zoneCrossings.Count, 1);
 
         var verified = new ConcurrentBag<Lineup>();
-        Parallel.ForEach(candidates, lineup =>
+        Parallel.ForEach(candidates, Cpu.Bound, lineup =>
         {
             var eye = lineup.Feet + new Vector3(0, 0, GrenadeTrajectory.EyeHeight(lineup.Type));
             var cache = new Dictionary<(int, int), TrajectoryResult>();

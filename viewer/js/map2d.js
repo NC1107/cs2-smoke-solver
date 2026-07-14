@@ -147,7 +147,7 @@ export function draw() {
     // when at least one throw reached the target, orange when none did. This
     // is the progress indicator - watching it fill shows sweep speed and any
     // standable spots the solver never visited.
-    for (const [px, py, hits] of state.progress.checked) {
+    for (const [px, py, , hits] of state.progress.checked) {
       ctx.fillStyle = hits > 0 ? colors["heat-ok"] : colors["heat-none"];
       ctx.globalAlpha = hits > 0 ? 0.55 : 0.3;
       ctx.fillRect(px - HEAT_CELL / 2 + 6, -py - HEAT_CELL / 2 + 6, HEAT_CELL - 12, HEAT_CELL - 12);
@@ -155,7 +155,7 @@ export function draw() {
     // Verify phase verdicts overlay the sweep dots: candidates the exact sim
     // confirmed grow to a solid block, rejected ones dim to the raw tone the
     // final heatmap will show them in.
-    for (const [px, py, ok] of state.progress.verified) {
+    for (const [px, py, , ok] of state.progress.verified) {
       if (ok) {
         ctx.fillStyle = colors["heat-ok"];
         ctx.globalAlpha = 0.9;

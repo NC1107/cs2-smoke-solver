@@ -11,10 +11,11 @@ export const state = {
   result: null,
   selected: -1,
   busy: false,
-  // Live solve progress: { phase, total, candidates, checked: [[x, y, hits],
-  // ...], verified: [[x, y, ok], ...] }. Non-null only while a streamed solve
-  // is in flight; map2d paints the checked origins and verify verdicts as
-  // dots so sweep speed and coverage are visible.
+  // Live solve progress: { phase, total, candidates, checked: [[x, y, z, hits],
+  // ...], verified: [[x, y, z, ok], ...] }. Non-null only while a streamed solve
+  // is in flight; both views paint the checked origins and verify verdicts as
+  // dots so sweep speed and coverage are visible. The 2D view ignores z; the 3D
+  // view needs it to stand each dot on the floor the origin actually sits on.
   progress: null,
   heatOn: false,
   hovered: -1,

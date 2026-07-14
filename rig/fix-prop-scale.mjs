@@ -1,33 +1,38 @@
 // Corrects a specific data bug found in VRF's raw export: some individual
-// instances of a repeated static prop carry a wildly wrong node.scale - a
-// soda cup or ceiling fan sitting at 30-50x its sibling instances' size,
-// while nothing else about the node (parent, mesh, material) differs.
-// Confirmed present on mirage, inferno, nuke, and overpass by direct GLB
-// inspection. Root cause is in the raw VRF export itself (quantize()/
-// draco() never touch node.scale), so this operates directly on the
-// already-optimized GLB rather than requiring a fresh VPK export.
+// instances of a static prop carry a wildly wrong node.scale - a soda cup,
+// ceiling fan, TV or curtain sitting at ~39x its intended size, while nothing
+// else about the node (parent, mesh, material) differs. The factor is always
+// 1/0.0254: a metres-to-inches conversion applied one time too many. Confirmed
+// on every map except dust2. Root cause is in the raw VRF export itself
+// (quantize()/draco() never touch node.scale), so this operates on the export
+// rather than requiring a fresh VPK dump.
+//
+// MUST run before optimize-textured-glb.mjs, which flattens node transforms
+// into the vertex data - after that the per-instance scale this reads no
+// longer exists and the bug is baked in permanently.
 //
 // Two detection passes:
 //
-// 1. Sibling-outlier (safe, general): group nodes by mesh index, take the
-//    per-axis median across the group as "the real scale" (median is
-//    robust to a minority of outliers), and replace any instance that
-//    deviates from the median by more than 5x. Legitimate size variety
-//    (e.g. a rock formation reusing one mesh at deliberately different
-//    scales) shows up as a smooth spread, not a lone value sitting 30-50x
-//    from a tight cluster.
+// 1. Sibling-outlier: group nodes by mesh, take the per-axis median across the
+//    group as "the real scale" (robust to a minority of outliers), and replace
+//    any instance deviating from it by more than 5x. Needs 3+ instances - with
+//    2, "median" degenerates into the average of a maybe-right and a
+//    maybe-wrong value, landing both on a number that matches neither
+//    (confirmed on nuke's vent_bombsite prop).
 //
-// 2. Singleton unit-conversion (narrow, manual allowlist only): a prop
-//    placed only once (no sibling to compare against, e.g. inferno's
-//    ceiling fan blades or dish soap bottle) can't be caught by pass 1.
-//    A magnitude-only heuristic (scale implausibly large, but plausible
-//    after dividing by 1/0.0254) flags 4500+ nodes on inferno alone -
-//    essentially every large architectural mesh on the map (walls, roofs,
-//    vehicles, doors, trees), since ordinary world geometry legitimately
-//    spans this same magnitude range for unrelated reasons. There is no
-//    cheap signal that separates "bugged small prop" from "big object
-//    that's supposed to be big" without already knowing which is which,
-//    so this pass only ever touches an explicit, human-confirmed allowlist.
+// 2. Implausible size: for a prop with fewer than 3 instances there is no
+//    majority to vote against, so it is judged on the only ground truth left -
+//    how big it actually renders. node.scale alone says nothing (a mesh
+//    authored large legitimately carries a small scale, and vice versa), which
+//    is why a magnitude-only heuristic flagged 4500+ nodes on inferno; but
+//    mesh extent x scale is a real size in metres, and a prop is not 10 metres
+//    across. Measured over all 7 maps, the largest genuine prop in this class
+//    is ~6.6m (Ancient's mid-size water cascade, Anubis's hanging cloth) while
+//    the smallest bugged one is ~10m (a 10-metre spray paint can) - every bug
+//    lands back in the 0.2-6.5m range once divided by the conversion factor.
+//    Props with 3+ instances are never judged this way, which is what keeps
+//    Overpass's genuinely 22m-long subway train (3 instances, all agreeing)
+//    out of it.
 //
 // Usage: node rig/fix-prop-scale.mjs <input.glb> <output.glb>
 import { NodeIO } from "@gltf-transform/core";
@@ -38,31 +43,22 @@ const inPath = process.argv[2];
 const outPath = process.argv[3];
 const DEVIATION_THRESHOLD = 5;
 const UNIT_CONVERSION = 1 / 0.0254;
-const PLAUSIBLE_MAX = 3.5;
+const MAX_PROP_METRES = 8;
 
-// Exact node names confirmed as visibly wrong (Nick's direct reports, plus
-// cross-map corroboration - see below), each with fewer than 3 total
-// instances of its mesh so pass 1's median can't reliably identify them by
-// statistics alone. Matched by node name, not material: a shared kit
-// material (e.g. ceiling_fan_01.vmat) can cover multiple distinct meshes -
-// the fan's blades and its base/housing, say - and only one of them was
-// actually broken; matching by material alone corrected the already-fine
-// housing right along with the blades.
-const CONFIRMED_SINGLETONS = new Set([
-  "dish_soap.dish_soap_bg_body_lod0", // inferno's giant soap bottle (Nick's report)
-  "ceiling_fan_blades_01.ceiling_fan_blades_01", // inferno's giant ceiling fan (Nick's report)
-  // overpass's "giant turbine" (Nick's report): only 2 instances exist
-  // (25.408, 0.529) with no third sibling to anchor a median against, but
-  // inferno's independently-confirmed ceiling fan blade landed at 0.643 and
-  // mirage's at 1.016 after fixing - corroborating that ~0.5 is the
-  // plausible value here too, and 25.408 is the outlier.
-  "hvac_fanblade_spinning_01.hvac_fanblade_spinning_01_bg_body_lod0",
+// Ancient's tallest waterfall is a single instance that really is ~11.8m - it
+// belongs to a deliberate 3.5m / 6.6m / 11.8m size family of the same effect,
+// and at 1/39th the size it would be a 30cm trickle. The only prop found
+// across all 7 maps that is both genuinely larger than MAX_PROP_METRES and has
+// no siblings to prove it.
+const GENUINELY_LARGE = new Set([
+  "aztec_water_cascade_03c.aztec_water_cascade_03c_bg_body_lod0",
 ]);
-// Never touch editor/debug-only geometry - it's excluded from rendering
-// entirely (see view3d.js's material filter), so its scale is irrelevant,
-// and toolsblocklight meshes are exactly what an earlier, unscoped version
-// of this pass mistakenly "fixed" before this exclusion was added.
-const JUNK_PREFIXES = ["materials/tools/", "materials/dev/", "models/ui/"];
+
+// Never touch geometry the viewer doesn't render (see view3d.js's material
+// filter): editor/debug helpers and particle-card VFX. An earlier, unscoped
+// version of this pass "fixed" toolsblocklight meshes, which is what the
+// exclusion exists to prevent.
+const JUNK_PREFIXES = ["materials/tools/", "materials/dev/", "materials/effects/", "models/ui/"];
 
 const [decoder, encoder] = await Promise.all([
   draco3d.createDecoderModule(),
@@ -80,8 +76,42 @@ function median(values) {
 }
 
 function vmatName(node) {
-  const material = node.getMesh()?.listPrimitives()[0]?.getMaterial();
-  return material?.getExtras()?.vmat?.Name ?? "";
+  return node.getMesh()?.listPrimitives()[0]?.getMaterial()?.getExtras()?.vmat?.Name ?? "";
+}
+
+// The GLB is authored in metres (the viewer scales it by 1/0.0254 to reach
+// Hammer units), so a mesh's extent times its node scale is a size in metres.
+function meshExtent(mesh) {
+  const lo = [Infinity, Infinity, Infinity];
+  const hi = [-Infinity, -Infinity, -Infinity];
+  for (const primitive of mesh.listPrimitives()) {
+    const position = primitive.getAttribute("POSITION");
+    if (!position) {
+      continue;
+    }
+    const element = [0, 0, 0];
+    for (let i = 0; i < position.getCount(); i++) {
+      position.getElement(i, element);
+      for (let axis = 0; axis < 3; axis++) {
+        lo[axis] = Math.min(lo[axis], element[axis]);
+        hi[axis] = Math.max(hi[axis], element[axis]);
+      }
+    }
+  }
+  return [0, 1, 2].map(axis => Math.max(0, hi[axis] - lo[axis]));
+}
+
+function renderedMetres(node, extent) {
+  const scale = node.getScale();
+  return Math.max(...extent.map((e, axis) => e * Math.abs(scale[axis])));
+}
+
+// World geometry, not props: the map's baked terrain chunks and Hammer-authored
+// brush meshes. Both legitimately span the whole map and carry scales in the
+// hundreds, and neither is a prop instance VRF could have mis-scaled.
+function isWorldGeometry(node) {
+  const name = node.getName();
+  return /^n\d+_lr\d+/.test(name) || name.includes("hammer_mesh");
 }
 
 const byMesh = new Map();
@@ -97,13 +127,12 @@ for (const node of doc.getRoot().listNodes()) {
 }
 
 let fixedCount = 0;
-for (const [, nodes] of byMesh) {
+for (const [mesh, nodes] of byMesh) {
   const vn = vmatName(nodes[0]);
   if (JUNK_PREFIXES.some(p => vn.startsWith(p))) {
     continue;
   }
   if (nodes.length >= 3) {
-    // A real majority cluster to anchor against - median is robust here.
     const scales = nodes.map(n => n.getScale());
     const med = [0, 1, 2].map(axis => median(scales.map(s => s[axis])));
     const medMag = Math.hypot(...med);
@@ -111,40 +140,38 @@ for (const [, nodes] of byMesh) {
       continue;
     }
     nodes.forEach((node, i) => {
-      const s = scales[i];
-      const ratio = Math.hypot(...s) / medMag;
+      const ratio = Math.hypot(...scales[i]) / medMag;
       if (ratio > DEVIATION_THRESHOLD || ratio < 1 / DEVIATION_THRESHOLD) {
-        console.log(`  [sibling-outlier] ${node.getName()} (${vn}): ${s.map(v => v.toFixed(3))} -> ${med.map(v => v.toFixed(3))}`);
+        console.log(`  [sibling-outlier] ${node.getName()} (${vn}): ${scales[i].map(v => v.toFixed(3))} -> ${med.map(v => v.toFixed(3))}`);
         node.setScale(med);
         fixedCount++;
       }
     });
-  } else {
-    // 1 or 2 instances: no reliable majority to compute a median against
-    // (with exactly 2, "median" degenerates into a plain average of a
-    // maybe-right and maybe-wrong value, splitting the difference into a
-    // number that matches neither - confirmed on nuke's vent_bombsite prop,
-    // where doing that landed both instances on a value that matched
-    // nothing). Only touch an explicit, human-confirmed allowlist instead.
-    for (const node of nodes) {
-      if (!CONFIRMED_SINGLETONS.has(node.getName())) {
-        continue;
-      }
-      const s = node.getScale();
-      // A confirmed name can still have a perfectly fine sibling sharing
-      // it (overpass's fan blade has one correct instance and one bugged
-      // one, both named identically) - only touch the instance that is
-      // itself actually implausibly large, not every node with this name.
-      if (Math.hypot(...s) <= PLAUSIBLE_MAX) {
-        continue;
-      }
-      const newScale = s.map(v => v / UNIT_CONVERSION);
-      console.log(`  [confirmed] ${node.getName()} (${vn}): ${s.map(v => v.toFixed(3))} -> ${newScale.map(v => v.toFixed(3))}`);
-      node.setScale(newScale);
-      fixedCount++;
+    continue;
+  }
+  const extent = meshExtent(mesh);
+  for (const node of nodes) {
+    if (isWorldGeometry(node) || GENUINELY_LARGE.has(node.getName())) {
+      continue;
     }
+    const metres = renderedMetres(node, extent);
+    if (metres <= MAX_PROP_METRES) {
+      continue;
+    }
+    const scale = node.getScale();
+    const corrected = scale.map(v => v / UNIT_CONVERSION);
+    const correctedMetres = metres / UNIT_CONVERSION;
+    // If one conversion doesn't bring it back into prop range, this isn't the
+    // bug this script knows how to fix - say so rather than guessing.
+    if (correctedMetres > MAX_PROP_METRES) {
+      console.log(`  [skipped] ${node.getName()} (${vn}): ${metres.toFixed(1)}m is still ${correctedMetres.toFixed(1)}m after conversion - not the unit-conversion bug`);
+      continue;
+    }
+    console.log(`  [oversized] ${node.getName()} (${vn}): ${metres.toFixed(1)}m -> ${correctedMetres.toFixed(2)}m`);
+    node.setScale(corrected);
+    fixedCount++;
   }
 }
 
-console.log(`${inPath}: corrected ${fixedCount} outlier node(s) out of ${doc.getRoot().listNodes().length} total nodes`);
+console.log(`${inPath}: corrected ${fixedCount} node(s) out of ${doc.getRoot().listNodes().length} total nodes`);
 await io.write(outPath, doc);
