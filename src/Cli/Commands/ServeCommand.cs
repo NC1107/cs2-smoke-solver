@@ -48,7 +48,18 @@ public static class ServeCommand
     // name now so the viewer can switch maps without restarting the server.
     record MapEntry(
         CollisionMesh Mesh, Func<byte, bool>? AttributeFilter, List<NavAreaJson>? NavAreas,
-        ThrowConstants Constants, byte[] MeshPayload, byte[] MeshPayloadGzip, string BuildETag);
+        ThrowConstants Constants, byte[] MeshPayload, byte[] MeshPayloadGzip, string BuildETag)
+    {
+        // Brotli is ~26% smaller than gzip on this payload, but at the quality
+        // level that buys is far too slow to sit on the startup path (de_inferno's
+        // 49MB takes ~4.5 minutes). So it is never computed on a request or during
+        // startup: it is read back from data/cache/ when an earlier run left it
+        // there, and otherwise filled in by a background thread while the server is
+        // already up and serving gzip. Reference assignment is atomic, so a request
+        // sees either null (and serves gzip) or the finished blob, never a partial
+        // one.
+        public volatile byte[]? MeshPayloadBrotli;
+    }
 
     public static int Run(Dictionary<string, string> options)
     {
@@ -90,7 +101,15 @@ public static class ServeCommand
                 // time, and served pre-compressed rather than paying that
                 // cost on every request.
                 var payloadGzip = Gzip(payload);
-                maps[mesh.MapName] = new MapEntry(mesh, attributeFilter, navAreas, constants, payload, payloadGzip, $"\"{mesh.GameBuildId}\"");
+                var entry = new MapEntry(mesh, attributeFilter, navAreas, constants, payload, payloadGzip, $"\"{mesh.GameBuildId}\"");
+                // Keyed by the game build the mesh came from, so a CS2 update
+                // simply misses the old blob rather than serving stale geometry.
+                var brotliPath = BrotliCachePath(dataDir, mesh.MapName, mesh.GameBuildId);
+                if (File.Exists(brotliPath))
+                {
+                    entry.MeshPayloadBrotli = File.ReadAllBytes(brotliPath);
+                }
+                maps[mesh.MapName] = entry;
                 Console.WriteLine($"map loaded: {mesh.MapName} ({navAreas?.Count ?? 0} nav areas)");
             }
         }
@@ -98,6 +117,7 @@ public static class ServeCommand
         {
             Console.WriteLine("no maps found under data/*.s2geo - run `extract --map <name>` first; static file serving still works");
         }
+        StartBrotliPrecompress(maps, dataDir);
 
         var builder = WebApplication.CreateSlimBuilder();
         // Keep CLI output as quiet as the old server: warnings and errors only.
@@ -134,11 +154,22 @@ public static class ServeCommand
             }
             context.Response.Headers.ETag = entry.BuildETag;
             context.Response.Headers.CacheControl = "public, max-age=604800";
+            // Three different bodies share this URL. Without this a cache (the
+            // browser's, or Cloudflare's now that it holds these) can hand a
+            // Brotli body to a client that only asked for gzip.
+            context.Response.Headers.Vary = "Accept-Encoding";
             if (context.Request.Headers.IfNoneMatch.ToString().Contains(entry.BuildETag, StringComparison.Ordinal))
             {
                 return Results.StatusCode(StatusCodes.Status304NotModified);
             }
-            if (context.Request.Headers.AcceptEncoding.ToString().Contains("gzip", StringComparison.OrdinalIgnoreCase))
+            var accepted = context.Request.Headers.AcceptEncoding.ToString();
+            var brotli = entry.MeshPayloadBrotli;
+            if (brotli != null && accepted.Contains("br", StringComparison.OrdinalIgnoreCase))
+            {
+                context.Response.Headers.ContentEncoding = "br";
+                return Results.Bytes(brotli, "application/octet-stream");
+            }
+            if (accepted.Contains("gzip", StringComparison.OrdinalIgnoreCase))
             {
                 context.Response.Headers.ContentEncoding = "gzip";
                 return Results.Bytes(entry.MeshPayloadGzip, "application/octet-stream");
@@ -423,6 +454,63 @@ public static class ServeCommand
     {
         var info = new FileInfo(path);
         return $"\"{info.LastWriteTimeUtc.Ticks:x}-{info.Length:x}\"";
+    }
+
+    static string BrotliCachePath(string dataDir, string mapName, string gameBuildId) =>
+        Path.Combine(dataDir, "cache", $"{mapName}-{gameBuildId}.mesh.br");
+
+    // Compresses whatever the previous run did not already leave on disk, on a
+    // dedicated below-normal thread rather than the ThreadPool: this is minutes of
+    // solid CPU on the larger maps, and the ThreadPool is what the solver's
+    // Parallel.ForEach draws its workers from. Serving is already live throughout,
+    // handing out gzip until each blob lands.
+    static void StartBrotliPrecompress(Dictionary<string, MapEntry> maps, string dataDir)
+    {
+        var pending = maps.Where(kv => kv.Value.MeshPayloadBrotli == null).ToList();
+        if (pending.Count == 0)
+        {
+            return;
+        }
+        var thread = new Thread(() =>
+        {
+            foreach (var (name, entry) in pending)
+            {
+                try
+                {
+                    var blob = Brotli(entry.MeshPayload);
+                    var path = BrotliCachePath(dataDir, name, entry.Mesh.GameBuildId);
+                    Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+                    // Via a temp file so a kill mid-write cannot leave a truncated
+                    // blob that the next startup would happily serve as a mesh.
+                    var temp = path + ".tmp";
+                    File.WriteAllBytes(temp, blob);
+                    File.Move(temp, path, overwrite: true);
+                    entry.MeshPayloadBrotli = blob;
+                    Console.WriteLine($"brotli ready: {name} ({entry.MeshPayloadGzip.Length / 1_000_000.0:F1}MB gzip -> {blob.Length / 1_000_000.0:F1}MB)");
+                }
+                catch (Exception ex)
+                {
+                    // Nothing here is load-bearing - gzip keeps being served.
+                    Console.Error.WriteLine($"brotli precompress failed for {name}: {ex.Message}");
+                }
+            }
+        })
+        {
+            IsBackground = true,
+            Priority = ThreadPriority.BelowNormal,
+            Name = "brotli-precompress",
+        };
+        thread.Start();
+    }
+
+    static byte[] Brotli(byte[] data)
+    {
+        using var output = new MemoryStream();
+        using (var brotli = new BrotliStream(output, CompressionLevel.SmallestSize))
+        {
+            brotli.Write(data);
+        }
+        return output.ToArray();
     }
 
     static byte[] Gzip(byte[] data)
