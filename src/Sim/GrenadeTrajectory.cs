@@ -49,8 +49,28 @@ public sealed record ThrowConstants(
     // 0/122 gated wall bounces damped vs 68/76 ground). Measured bracket
     // (684.1, 696.6]; 689 = 17.5 m/s. Not in the SDK-era code; measured in CS2.
     float DampGateSpeed = 689f,
-    float JumpVelocity = GrenadeTrajectory.JumpVelocity,
-    float RunSpeed = GrenadeTrajectory.RunSpeed,
+    // Vertical velocity a jump adds to the throw. MEASURED at 273.6 (12 live
+    // jump throws, spread 0.2), not the 300 a naive "release with full jump
+    // velocity" model assumes: the grenade leaves the hand several ticks into
+    // the jump, by which point the rise has bled the vertical speed. A crouch
+    // jump releases a touch higher up its own arc, so it carries 277.5.
+    float JumpVelocity = 273.6f,
+    float CrouchJumpVelocity = 277.5f,
+    // Horizontal velocity a running jump throw adds along the facing. MEASURED
+    // at 306 from two full-speed run jumps (left and right click both landed on
+    // 306.1, confirming it is player velocity, independent of the throw). The
+    // folklore 250 is the ground run speed; the running jump carries more.
+    float RunSpeed = 306f,
+    // How far above the eye the grenade is actually released on a jump throw.
+    // MEASURED: right 14.0, both 20.0, left 26.1 (9 throws, spread 0.4),
+    // linear in click power because the harder throw's longer wind-up releases
+    // later, when the jump has carried the player higher. Zero for grounded
+    // throws (two grounded controls released at 0.00 and -0.04). Modelling this
+    // as a release-height offset reproduces the observed birth position; the
+    // birth velocity above already carries the matching jump vz.
+    float ReleaseRiseRight = 14.0f,
+    float ReleaseRiseBoth = 20.0f,
+    float ReleaseRiseLeft = 26.1f,
     // Measured Long A ranges falsified the folklore 0.7 + 0.3 * strength speed
     // curve (right-click flew 152u, the curve predicts ~437u), so each click
     // gets an independently calibrated velocity multiplier. Confirmed exactly
@@ -63,6 +83,9 @@ public sealed record ThrowConstants(
 
     public float SpeedScale(float strength) =>
         strength >= 0.99f ? 1f : strength >= 0.49f ? BothClickScale : RightClickScale;
+
+    public float ReleaseRise(float strength) =>
+        strength >= 0.99f ? ReleaseRiseLeft : strength >= 0.49f ? ReleaseRiseBoth : ReleaseRiseRight;
 }
 
 /// <summary>
@@ -74,13 +97,11 @@ public sealed record ThrowConstants(
 public static class GrenadeTrajectory
 {
     public const float ThrowSpeed = 675f;
-    public const float JumpVelocity = 300f;
-    public const float RunSpeed = 250f;
     public const float MaxFlightSeconds = 10f;
     // Engine view offsets (VEC_VIEW / VEC_DUCK_VIEW). Crouching only lowers the
-    // release point; throw speed and the pitch bias are unchanged. The crouch
-    // offset comes from the SDK constants and has not yet been validated against
-    // live captures the way the standing value has.
+    // release point; throw speed and the pitch bias are unchanged. Both values
+    // are confirmed against live captures: a grounded stand throw and a grounded
+    // crouch throw each released within 0.04u of feet plus these heights.
     public const float StandEyeHeight = 64.06f;
     public const float CrouchEyeHeight = 46.04f;
 
@@ -207,15 +228,20 @@ public static class GrenadeTrajectory
             -MathF.Sin(pitch));
 
         var velocity = forward * (k.ThrowSpeed * k.SpeedScale(spec.Strength));
-        if (spec.Type is ThrowType.JumpThrow or ThrowType.CrouchJumpThrow or ThrowType.RunJumpThrow)
+        var release = spec.EyePosition + forward * 16f;
+        var isJump = spec.Type is ThrowType.JumpThrow or ThrowType.CrouchJumpThrow or ThrowType.RunJumpThrow;
+        if (isJump)
         {
-            velocity.Z += k.JumpVelocity;
+            velocity.Z += spec.Type is ThrowType.CrouchJumpThrow ? k.CrouchJumpVelocity : k.JumpVelocity;
+            // The player has risen off the ground by release; the grenade is
+            // born from that raised eye, not the standing one.
+            release.Z += k.ReleaseRise(spec.Strength);
         }
         if (spec.Type is ThrowType.RunJumpThrow)
         {
             velocity += new Vector3(MathF.Cos(yaw), MathF.Sin(yaw), 0) * k.RunSpeed;
         }
-        return (spec.EyePosition + forward * 16f, velocity);
+        return (release, velocity);
     }
 
     public static TrajectoryResult SimulateExact(TriangleCollider collider, ThrowSpec spec, ThrowConstants? constants = null, List<string>? trace = null)

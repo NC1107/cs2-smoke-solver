@@ -82,24 +82,30 @@ public class SimulateExactTests
     [Fact]
     public void DeriveInitialAddsJumpVelocityAndRunSpeed()
     {
+        var k = ThrowConstants.Default;
         var eye = new Vector3(100, 200, 64);
         const float yaw = 30f;
         const float pitch = -20f;
-        var (_, stand) = GrenadeTrajectory.DeriveInitial(new ThrowSpec(eye, yaw, pitch, ThrowType.Stand));
-        var (_, jump) = GrenadeTrajectory.DeriveInitial(new ThrowSpec(eye, yaw, pitch, ThrowType.JumpThrow));
+        var (standPos, stand) = GrenadeTrajectory.DeriveInitial(new ThrowSpec(eye, yaw, pitch, ThrowType.Stand));
+        var (jumpPos, jump) = GrenadeTrajectory.DeriveInitial(new ThrowSpec(eye, yaw, pitch, ThrowType.JumpThrow));
         var (_, crouchJump) = GrenadeTrajectory.DeriveInitial(new ThrowSpec(eye, yaw, pitch, ThrowType.CrouchJumpThrow));
-        var (_, runJump) = GrenadeTrajectory.DeriveInitial(new ThrowSpec(eye, yaw, pitch, ThrowType.RunJumpThrow));
+        var (runPos, runJump) = GrenadeTrajectory.DeriveInitial(new ThrowSpec(eye, yaw, pitch, ThrowType.RunJumpThrow));
 
         var jumpBoost = jump - stand;
         Assert.Equal(0f, jumpBoost.X, 3);
         Assert.Equal(0f, jumpBoost.Y, 3);
-        Assert.Equal(GrenadeTrajectory.JumpVelocity, jumpBoost.Z, 3);
-        Assert.Equal(jump, crouchJump);
+        Assert.Equal(k.JumpVelocity, jumpBoost.Z, 3);
+        // Crouch jump carries its own measured vertical, distinct from a stand jump.
+        Assert.Equal(k.CrouchJumpVelocity, (crouchJump - stand).Z, 3);
+
+        // A jump throw is released above the standing eye by the click's rise
+        // (left click here); a grounded throw is not raised at all.
+        Assert.Equal(k.ReleaseRise(1f), jumpPos.Z - standPos.Z, 3);
 
         var runBoost = runJump - jump;
         var yawRad = yaw * MathF.PI / 180f;
-        Assert.Equal(GrenadeTrajectory.RunSpeed * MathF.Cos(yawRad), runBoost.X, 2);
-        Assert.Equal(GrenadeTrajectory.RunSpeed * MathF.Sin(yawRad), runBoost.Y, 2);
+        Assert.Equal(k.RunSpeed * MathF.Cos(yawRad), runBoost.X, 2);
+        Assert.Equal(k.RunSpeed * MathF.Sin(yawRad), runBoost.Y, 2);
         Assert.Equal(0f, runBoost.Z, 3);
     }
 
