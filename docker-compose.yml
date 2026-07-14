@@ -1,0 +1,26 @@
+services:
+  smokesolver:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: smokesolver-serve:latest
+    container_name: smokesolver
+    command: ["serve", "--port", "8137", "--bind", "any", "--attrs", "Default,default,EntitySolid"]
+    volumes:
+      - ./data:/app/data
+    restart: unless-stopped
+    networks:
+      - proxy
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=proxy
+      - traefik.http.routers.smokesolver.rule=Host(`${SMOKESOLVER_DOMAIN}`)
+      - traefik.http.routers.smokesolver.entrypoints=websecure
+      - traefik.http.routers.smokesolver.tls.certresolver=${TRAEFIK_CERTRESOLVER}
+      - traefik.http.services.smokesolver.loadbalancer.server.port=8137
+      - traefik.http.services.smokesolver.loadbalancer.healthcheck.path=/api/maps
+      - traefik.http.services.smokesolver.loadbalancer.healthcheck.interval=30s
+
+networks:
+  proxy:
+    external: true

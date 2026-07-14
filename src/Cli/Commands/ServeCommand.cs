@@ -54,6 +54,12 @@ public static class ServeCommand
         var port = int.Parse(options.GetValueOrDefault("port", "8137"), CultureInfo.InvariantCulture);
         var root = Path.GetFullPath(options.GetValueOrDefault("root", "."));
         var attrs = options.GetValueOrDefault("attrs", "");
+        var bind = options.GetValueOrDefault("bind", "localhost");
+        if (bind is not ("localhost" or "any"))
+        {
+            Console.Error.WriteLine($"error: --bind must be 'localhost' or 'any', got '{bind}'");
+            return 1;
+        }
 
         // Every extracted map (`extract --map <name>`) leaves a self-describing
         // data/<name>.s2geo behind (MapName/GameBuildId are baked into the
@@ -90,9 +96,21 @@ public static class ServeCommand
         // catch below already prints a friendlier one-liner.
         builder.Logging.SetMinimumLevel(LogLevel.Warning);
         builder.Logging.AddFilter("Microsoft.Extensions.Hosting.Internal.Host", LogLevel.None);
-        // Loopback only: this server exposes local files and an expensive
-        // solver, so it must never bind a routable interface.
-        builder.WebHost.ConfigureKestrel(kestrel => kestrel.ListenLocalhost(port));
+        // Loopback by default: this server exposes local files and an expensive
+        // solver, so a routable interface is opt-in only, via --bind any (e.g.
+        // inside a container reachable solely through a reverse proxy on the
+        // same Docker network, never through a routable host interface directly).
+        builder.WebHost.ConfigureKestrel(kestrel =>
+        {
+            if (bind == "any")
+            {
+                kestrel.ListenAnyIP(port);
+            }
+            else
+            {
+                kestrel.ListenLocalhost(port);
+            }
+        });
         using var app = builder.Build();
 
         app.MapGet("/api/maps", () => Results.Json(maps

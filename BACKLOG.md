@@ -116,3 +116,15 @@ Weights will need playtesting; start by sorting the existing mid-doors result se
 - LineupSolver: the `result.Lost || FlightTime >= MaxFlightSeconds` skip branch in `Solve`/`VerifyExact` has no test.
   Constructing a deterministic lost or timed-out trajectory needs physics-tuned fixtures (an open-void throw with no ground in reach).
   Flagged by the 2026-07-13 review loop as follow-up rather than blocking.
+
+## Deferred: player-facing CS# plugin
+
+`rig/CalibrationThrower/` is a dev/calibration tool (synthetic smoke throws via game-memory hooks, trajectory capture for validating the physics model) - it's not meant for players and isn't part of the deployed product.
+A separate, new CounterStrikeSharp plugin is planned for actual in-game use: a player types a command, the plugin returns lineup suggestions for their current position.
+
+Decided architecture: fully self-contained, not a network client.
+`SmokeSolver.Sim.dll` and `SmokeSolver.Solver.dll` both have zero external NuGet dependencies, so they can ship directly inside the plugin's own folder (CS#'s McMaster.NETCore.Plugins loader supports private per-plugin dependencies) alongside a small per-map data folder (`.s2geo` + `.navareas.json`).
+Solving runs in-process inside the CS2 server - no network call, no dependency on the Docker/Traefik-hosted `serve` backend being up.
+Trade-off: updating the solving logic means redistributing the plugin folder, not just deploying a new backend version - accepted, since it means any server admin can drop the plugin in and it works with zero external dependencies.
+
+Not started. This note exists so the decision isn't lost before it's built.

@@ -39,7 +39,7 @@ if (args.Length == 0 || !commands.TryGetValue(args[0], out var command))
     Console.Error.WriteLine("  ground     --geo <file.s2geo> --from x,y --to x,y [--steps 20] [--zmax 500]");
     Console.Error.WriteLine("  lineups    --geo <file.s2geo> --from x,y,z --to \"x,y,z;...\" --origins x0,y0,x1,y1");
     Console.Error.WriteLine("  viewerdata --geo <file.s2geo> --entities <file.json> --region x0,y0,x1,y1");
-    Console.Error.WriteLine("  serve      [--port 8137] [--geo ... --nav ... --attrs ...] (web viewer + lineup API)");
+    Console.Error.WriteLine("  serve      [--port 8137] [--bind localhost|any] [--attrs ...] (web viewer + lineup API; auto-discovers every data/*.s2geo)");
     Console.Error.WriteLine("  throw      --geo <file.s2geo> --pos x,y,z --ang pitch,yaw [--type ...] [--strength ...]");
     Console.Error.WriteLine("  calibrate  --geo <file.s2geo> --throws data/throws.json [--out data/throw-constants.json]");
     Console.Error.WriteLine("  validate   --geo ... --nav ... --target x,y[,z] | --markers <file> [--pass 1] [--limit N]");
