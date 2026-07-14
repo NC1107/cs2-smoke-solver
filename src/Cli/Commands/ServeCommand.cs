@@ -124,6 +124,7 @@ public static class ServeCommand
                 return Results.NotFound();
             }
             context.Response.Headers.ETag = entry.BuildETag;
+            context.Response.Headers.CacheControl = "public, max-age=604800";
             if (context.Request.Headers.IfNoneMatch.ToString().Contains(entry.BuildETag, StringComparison.Ordinal))
             {
                 return Results.StatusCode(StatusCodes.Status304NotModified);
@@ -376,6 +377,18 @@ public static class ServeCommand
         else if (relative.StartsWith("viewer/", StringComparison.Ordinal))
         {
             context.Response.Headers.CacheControl = "no-cache";
+        }
+        else if (relative.StartsWith("data/", StringComparison.Ordinal))
+        {
+            // The textured GLBs (tens of MB each) and radar PNGs had no
+            // Cache-Control at all, which left Cloudflare treating every
+            // request as uncacheable ("DYNAMIC") - every viewer visit's
+            // multi-map textured 3D load was hitting this server directly,
+            // full size, every time. These only change when a map gets
+            // re-processed, so a week is safe; the ETag still catches it if
+            // that happens before the week is up.
+            context.Response.Headers.CacheControl = "public, max-age=604800";
+            etag = FileETag(full);
         }
         if (etag != null)
         {

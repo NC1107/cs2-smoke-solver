@@ -19,8 +19,16 @@ services:
     deploy:
       resources:
         limits:
-          cpus: '2.0'
-          memory: 1G
+          # A cache-miss solve is a CPU-bound Parallel.ForEach that scales
+          # with whatever core count .NET sees (cgroup-aware, so it really is
+          # bounded by this limit, not the host's full core count). 2 cores
+          # measured at ~195% CPU during a real solve - contending 2+
+          # concurrent solves against only 2 cores roughly doubles their
+          # latency. Set high enough that a small handful of concurrent
+          # solves don't starve each other; it's a ceiling, not a reservation,
+          # so it costs nothing on hosts with fewer cores than this.
+          cpus: '6.0'
+          memory: 2G
         reservations:
           cpus: '0.1'
           memory: 128M
