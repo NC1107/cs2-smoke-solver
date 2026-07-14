@@ -7,15 +7,22 @@
 // fetched by GLTFLoader as separate HTTP requests even though the viewer
 // only ever renders unlit (map + color) - see ensureTexturedScene() in
 // viewer/js/view3d.js. None of that is needed for a background reference
-// view, so this strips it: drop the unused PBR texture slots, downscale and
-// WebP-compress the remaining color textures, quantize vertex precision,
-// Draco-compress the geometry, and embed everything into one .glb (killing
-// the loose-PNG HTTP requests too). de_dust2 went from ~1.1GB to 54.6MB.
+// view, so this strips it: drop the unused PBR texture slots and the vertex
+// attributes an unlit material never reads, downscale and WebP-compress the
+// remaining color textures, quantize vertex precision, merge everything that
+// shares a material into one draw call, Draco-compress the geometry, and embed
+// it all into one .glb (killing the loose-PNG HTTP requests too). de_dust2 went
+// from ~1.1GB to 35MB.
+//
+// This only ever touches the *visual* mesh. The simulation collides against
+// data/{map}.s2geo (Valve's own authored physics hulls, extracted separately by
+// MapExtractor.ExtractWorldPhysics) and never reads this .glb, so nothing here
+// can move a smoke by a single unit.
 //
 // Usage: node rig/optimize-textured-glb.mjs [input.glb] [output.glb]
 import { NodeIO } from "@gltf-transform/core";
 import { ALL_EXTENSIONS } from "@gltf-transform/extensions";
-import { prune, textureCompress, quantize, dedup, draco } from "@gltf-transform/functions";
+import { prune, textureCompress, quantize, dedup, draco, flatten, join } from "@gltf-transform/functions";
 import draco3d from "draco3dgltf";
 
 const inPath = process.argv[2] ?? "data/de_dust2_textured.glb";
@@ -56,12 +63,52 @@ for (const mesh of doc.getRoot().listMeshes()) {
   }
 }
 
+// ensureTexturedScene() rebuilds every material as an unlit MeshBasicMaterial,
+// which reads only the base color map, the UVs that sample it, and (for the
+// handful of untextured meshes) COLOR_0. Everything else on the vertex is
+// shipped, decompressed and uploaded to the GPU for nothing: NORMAL and TANGENT
+// feed a lighting model that isn't running, and _TEXCOORD_4 is Source 2's
+// lightmap UV set, which has no baked lightmap to sample here.
+const stripped = { NORMAL: 0, TANGENT: 0, _TEXCOORD_4: 0, COLOR_0: 0 };
+for (const mesh of doc.getRoot().listMeshes()) {
+  for (const primitive of mesh.listPrimitives()) {
+    for (const name of ["NORMAL", "TANGENT", "_TEXCOORD_4"]) {
+      if (primitive.getAttribute(name)) {
+        primitive.setAttribute(name, null);
+        stripped[name]++;
+      }
+    }
+    // COLOR_0 is only the fallback tint for meshes that have no base color
+    // texture, so it is dead weight on every mesh that does have one.
+    if (primitive.getMaterial()?.getBaseColorTexture() && primitive.getAttribute("COLOR_0")) {
+      primitive.setAttribute("COLOR_0", null);
+      stripped.COLOR_0++;
+    }
+  }
+}
+console.log("stripped unread vertex attributes:", stripped);
+
+// Re-running this on an already-optimized .glb (the raw ~1GB exports are not
+// kept) must not put the textures through a second lossy WebP generation, and
+// must not quantize already-quantized positions a second time.
+const textures = doc.getRoot().listTextures();
+const alreadyCompressed = textures.length > 0 && textures.every(t => t.getMimeType() === "image/webp");
+
 await doc.transform(
   prune(),
-  textureCompress({ targetFormat: "webp", resize: [1024, 1024], quality: 82 }),
-  quantize(),
-  draco(),
+  ...(alreadyCompressed ? [] : [
+    textureCompress({ targetFormat: "webp", resize: [1024, 1024], quality: 82 }),
+    quantize(),
+  ]),
+  // The exporter emits one primitive per source mesh instance, so a map arrives
+  // as thousands of individually-drawn props that mostly share a few hundred
+  // materials - de_mirage was 3,480 draw calls a frame. Baking the node
+  // transforms down and merging every primitive that shares a material collapses
+  // that to a few hundred. This merges meshes; it does not touch triangles.
+  flatten(),
+  join({ keepNamed: false }),
   dedup(),
+  draco(),
 );
 
 await io.write(outPath, doc);
