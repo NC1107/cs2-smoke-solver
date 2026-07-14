@@ -3,7 +3,7 @@
 // wired via wireCopyButtons on document.body). Setting a target and
 // selecting a lineup route through the callbacks main.js registers.
 
-import { state, filtered, typeShort, clickShort, clickClass, esc, EYE_HEIGHT } from "./state.js";
+import { state, filtered, typeShort, clickShort, clickClass, esc, skyAngle, EYE_HEIGHT } from "./state.js";
 
 const statusEl = state.statusEl;
 const LIST_CAP = 50;
@@ -18,11 +18,15 @@ let callbacks = {
 };
 
 function lineupSummaryHtml(l) {
-  // Aim reference badge: SKY = nothing to line the crosshair against (near
-  // unusable), flat = geometry but no silhouette, edge = a silhouette within
-  // X degrees of the crosshair (smaller = easier to align).
+  // Aim reference badge: SKY = nothing to line the crosshair against, shown
+  // with how far above the horizon it points (CS2's grenade reticle reaches the
+  // screen edge, so a shallow sky shot can still be aligned against the skyline
+  // while a steep one has nothing on screen at all); flat = geometry but no
+  // silhouette; edge = a silhouette within X degrees of the crosshair (smaller
+  // = easier to align).
   const ref = !l.aimRef ? ""
-    : l.aimRef.tier === "sky" ? `<span class="ref sky" title="aims into open sky - no visual reference">SKY</span>`
+    : l.aimRef.tier === "sky" ? `<span class="ref sky" title="aims ${skyAngle(l).toFixed(0)} deg above the horizon with nothing on screen to line up against">SKY ${skyAngle(l).toFixed(0)}°</span>`
+    : l.aimRef.tier === "reticle" ? `<span class="ref reticle" title="open sky at the crosshair, but the grenade reticle's arms cross a silhouette ${l.aimRef.reticleDeg.toFixed(0)} deg out - line it up on that">reticle ${l.aimRef.reticleDeg.toFixed(0)}°</span>`
     : l.aimRef.tier === "flat" ? `<span class="ref flat" title="aims at featureless surface - weak reference">flat</span>`
     : `<span class="ref edge" title="silhouette ${l.aimRef.edgeDeg.toFixed(1)} deg from crosshair">${l.aimRef.edgeDeg.toFixed(1)}°</span>`;
   const fav = l._favorite ? `<span class="ref fav" title="favorited">★</span>` : "";

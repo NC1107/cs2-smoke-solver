@@ -493,6 +493,7 @@
   .ref { font-size: 10px; border-radius: 3px; padding: 0 3px; white-space: nowrap; }
   .lineup-option b, .lineup-option span:not(.pct) { white-space: nowrap; }
   .ref.sky { background: var(--heat-none); color: var(--panel); font-weight: 700; }
+  .ref.reticle { color: var(--target); border: 1px solid var(--target); }
   .ref.flat { color: var(--muted); border: 1px solid var(--line); }
   .ref.edge { color: var(--accent); border: 1px solid var(--accent); }
   .ref.fav { color: var(--target); border: none; padding: 0; }

@@ -26,12 +26,34 @@ public class AimReferenceTests
     [Fact]
     public void AimIntoEmptySkyIsFlaggedAsASkyShot()
     {
-        // 45 degrees up over open terrain: every ray in the cone escapes.
+        // 45 degrees up, facing away from the wall over open terrain: every ray
+        // in the cone escapes, and so does every ray down both reticle arms, so
+        // there is nothing on screen to line the throw up against.
         var info = AimReference.Analyze(Scene, Feet, ThrowType.Stand, pitchDeg: -45f, yawDeg: 180f);
 
         Assert.True(info.IsSkyShot, $"expected a sky shot, sky fraction was {info.SkyFraction}");
         Assert.Equal("sky", info.Tier);
         Assert.Null(info.ReferencePoint);
+        Assert.False(float.IsFinite(info.NearestReticleDeg),
+            $"nothing should sit under the reticle here, found a silhouette {info.NearestReticleDeg} deg out");
+    }
+
+    [Fact]
+    public void SkyAtTheCrosshairIsStillAimableWhenTheReticleCrossesASilhouette()
+    {
+        // 30 degrees up at the wall. The +-6 degree cone sees nothing but sky -
+        // the wall's top edge sits only ~10.9 degrees above the eye - so judging
+        // this by the crosshair alone writes it off as unaimable. CS2's grenade
+        // reticle draws an arm ~37 degrees down the screen from the crosshair,
+        // which puts that top edge right under it, ~19 degrees out.
+        var info = AimReference.Analyze(Scene, Feet, ThrowType.Stand, pitchDeg: -30f, yawDeg: 0f);
+
+        Assert.True(info.SkyFraction > 0.95f,
+            $"the crosshair cone should be open sky, sky fraction was {info.SkyFraction}");
+        Assert.False(info.IsSkyShot, "the reticle has the wall's top edge to align against");
+        Assert.Equal("reticle", info.Tier);
+        Assert.True(info.NearestReticleDeg is > 15f and < 24f,
+            $"expected the wall's top edge ~19 deg below the crosshair, got {info.NearestReticleDeg}");
     }
 
     [Fact]

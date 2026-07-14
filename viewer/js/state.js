@@ -28,9 +28,32 @@ export const state = {
     bounces: document.getElementById("f-bounces"),
     flight: document.getElementById("f-flight"),
     stability: document.getElementById("f-stability"),
+    sky: document.getElementById("f-sky"),
     precision: document.getElementById("f-precision"),
   },
 };
+
+// How far above the horizon a throw aims, in degrees. Source's pitch is
+// negative upwards (setang), so this is the sign flip.
+export const skyAngle = l => Math.max(0, -l.pitch);
+
+// Sky-aimed throws are steep by nature (median 54 degrees up, and none of them
+// below 20), so any of these settings other than "any" also drops the handful
+// with nothing under the reticle anywhere - there is no way to reproduce that
+// aim in game, whatever angle it is at.
+//
+// Only throws that put the crosshair itself on open sky are judged on their aim
+// angle at all. A steep throw with a rooftop or wall still under the crosshair
+// is lined up against that, not against the horizon, however high it points.
+function skyAllowed(l, setting) {
+  if (l.aimRef?.tier === "sky") {
+    return false;
+  }
+  if (!(l.aimRef?.sky > 0.95)) {
+    return true;
+  }
+  return setting !== "off" && skyAngle(l) <= parseFloat(setting);
+}
 
 // These pure helpers live here (not in a feature module) because map2d,
 // view3d, and panel all need them and are not allowed to cross-import.
@@ -47,6 +70,7 @@ export function filtered() {
     (!filters.bounces.value || l.Bounces <= parseInt(filters.bounces.value)) &&
     (!filters.flight.value || l.flightTime <= parseFloat(filters.flight.value)) &&
     (!filters.stability.value || l.stability >= parseFloat(filters.stability.value)) &&
+    (!filters.sky.value || skyAllowed(l, filters.sky.value)) &&
     (!filters.precision.value || Math.hypot(l.rest[0] - t[0], l.rest[1] - t[1]) <= parseFloat(filters.precision.value)));
 }
 

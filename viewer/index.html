@@ -71,6 +71,14 @@
           <option value="0.8">≥80% stable</option>
           <option value="1">100% stable</option>
         </select>
+        <select id="f-sky" aria-label="Maximum upward aim angle for lineups that aim into open sky"
+                data-label="Sky aim" data-desc="How high you'll aim when the crosshair sits on open sky. CS2's grenade reticle reaches the screen edge, so you line these up against the skyline - the default keeps them and only drops near-vertical throws.">
+          <option value="">any sky angle</option>
+          <option value="65" selected>≤65° up (recommended)</option>
+          <option value="50">≤50° up</option>
+          <option value="35">≤35° up</option>
+          <option value="off">no sky-aimed lineups</option>
+        </select>
         <select id="f-precision" aria-label="Landing precision, distance from target"
                 data-label="Precision" data-desc="How close the smoke lands to the target position you picked. For perfect exact smokes choose 1u, but most less precise smokes still work well under 32u.">
           <option value="">any precision</option>
