@@ -165,7 +165,12 @@ Left-click smokes thrown on a flat plane at Valve's stated pitches:
 | Jump throw | -27.4° | 2653 u | 2692.1 u | +39.1 u (+1.5%) |
 | Run-jump throw | -33.0° | 4380 u | 4434.2 u | +54.2 u (+1.2%) |
 
-All three land within ~1.5%, comfortably inside the noise of pitches quoted to a tenth of a degree (0.1° of pitch moves the landing tens of units at these ranges).
-This confirms the launch speeds, the jump/run additions, and the gravity/flight integration together against an external source.
+All three land within ~1.5%, confirming the launch speeds, the jump/run additions, and the gravity/flight integration together against an external source.
+
+The residual is a consistent ~0.5-1.5% *overshoot* (we land slightly farther than Valve), and it is **not** an artifact of the eye height or the pitch quoting:
+- Substituting the CS:GO eye heights (64.0625 above feet / 64.0938 above floor vs our 64.06) moves each distance by ≤0.03u - the eye-height difference is ~2000× smaller than the residual, so it cannot be the lever, and a higher launch would nudge the overshoot the wrong way.
+- Sweeping the pitch across Valve's ±0.1° quoting resolution moves each distance by <2u, so the residual is not pitch-rounding noise. The flatness is expected: Valve quotes the distance-*maximizing* pitch, where distance is stationary.
+
+So the ~1% is a genuine small magnitude difference, most plausibly the measurement convention (Valve's distance origin vs the smoke's ~12-16u-forward spawn point, or first-landing vs settle point) and the precision of a hand-measured reference table. It is an order of magnitude below the collision-mesh-fidelity error and is not worth re-fitting the (telemetry-measured) constants against.
 
 Valve's fourth row, a plain *running* (ground, no jump) throw of 3045u @ -40.7°, is not reproduced here: the sim has no ground-running throw type (only `RunJumpThrow` adds movement velocity), so there is no calibrated constant for it.
