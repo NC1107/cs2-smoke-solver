@@ -289,7 +289,7 @@ public static class ServeCommand
                 // Repeat clicks are free: results are cached on disk keyed by build,
                 // constants, and the quantized query. A new game build or recalibration
                 // changes the key, so stale answers cannot leak through.
-                var cacheKey = QueryCacheKey(mesh, serveConstants, body.RootElement, attrs);
+                var cacheKey = QueryCacheKey(mesh, entry.BuildETag.Trim('"'), serveConstants, body.RootElement, attrs);
                 var cachePath = Path.Combine("data", "cache", cacheKey + ".json");
 
                 // Progress streams as NDJSON so the viewer can paint each evaluated

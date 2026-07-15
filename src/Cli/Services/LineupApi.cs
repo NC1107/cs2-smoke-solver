@@ -134,7 +134,7 @@ public static class LineupApi
         return null;
     }
 
-    public static string QueryCacheKey(CollisionMesh mesh, ThrowConstants constants, JsonElement query, string attrs)
+    public static string QueryCacheKey(CollisionMesh mesh, string meshVersion, ThrowConstants constants, JsonElement query, string attrs)
     {
         var targetEl = query.GetProperty("target");
         var tx = (int)MathF.Round(targetEl[0].GetSingle() / 16f);
@@ -150,7 +150,10 @@ public static class LineupApi
         // Bump when solver or sim behavior changes: cached answers from older code
         // must never be replayed as current results.
         const int QueryVersion = 8;
-        var seed = $"v{QueryVersion}|{mesh.MapName}|{mesh.GameBuildId}|{JsonSerializer.Serialize(constants)}|{tx},{ty},{tz}|{origin}|{reach:F0}|{tol:F0}|{attrs}";
+        // meshVersion is the content-hashed mesh identity (not just the game
+        // build), so re-extracting a map - e.g. dropping the Retake tape - forces
+        // a re-solve instead of replaying results computed against the old mesh.
+        var seed = $"v{QueryVersion}|{mesh.MapName}|{meshVersion}|{JsonSerializer.Serialize(constants)}|{tx},{ty},{tz}|{origin}|{reach:F0}|{tol:F0}|{attrs}";
         var hash = System.Security.Cryptography.SHA1.HashData(Encoding.UTF8.GetBytes(seed));
         return Convert.ToHexString(hash)[..20].ToLowerInvariant();
     }
