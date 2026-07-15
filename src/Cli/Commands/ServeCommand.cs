@@ -111,10 +111,16 @@ public static class ServeCommand
                 // time, and served pre-compressed rather than paying that
                 // cost on every request.
                 var payloadGzip = Gzip(payload);
-                var entry = new MapEntry(mesh, attributeFilter, navAreas, constants, payload, payloadGzip, $"\"{mesh.GameBuildId}\"");
-                // Keyed by the game build the mesh came from, so a CS2 update
-                // simply misses the old blob rather than serving stale geometry.
-                var brotliPath = BrotliCachePath(dataDir, mesh.MapName, mesh.GameBuildId);
+                // Identify the mesh by the content it actually serves, not just
+                // the game build: extraction changes (e.g. excluding a game
+                // mode's brushes) alter the geometry without bumping the CS2
+                // build, and a build-only ETag then leaves browsers on the old
+                // mesh for the full cache week. The payload hash changes whenever
+                // the bytes do, so both the client ETag and the precompressed
+                // brotli cache below invalidate exactly when the mesh does.
+                var meshVersion = $"{mesh.GameBuildId}-{Convert.ToHexString(System.Security.Cryptography.SHA1.HashData(payload))[..12].ToLowerInvariant()}";
+                var entry = new MapEntry(mesh, attributeFilter, navAreas, constants, payload, payloadGzip, $"\"{meshVersion}\"");
+                var brotliPath = BrotliCachePath(dataDir, mesh.MapName, meshVersion);
                 if (File.Exists(brotliPath))
                 {
                     entry.MeshPayloadBrotli = File.ReadAllBytes(brotliPath);
@@ -478,14 +484,15 @@ public static class ServeCommand
         }
         else if (relative.StartsWith("data/", StringComparison.Ordinal))
         {
-            // The textured GLBs (tens of MB each) and radar PNGs had no
-            // Cache-Control at all, which left Cloudflare treating every
-            // request as uncacheable ("DYNAMIC") - every viewer visit's
-            // multi-map textured 3D load was hitting this server directly,
-            // full size, every time. These only change when a map gets
-            // re-processed, so a week is safe; the ETag still catches it if
-            // that happens before the week is up.
-            context.Response.Headers.CacheControl = "public, max-age=604800";
+            // The textured GLBs (tens of MB each) and radar PNGs must revalidate
+            // rather than cache blind for a week: re-processing a map (e.g. an
+            // extraction fix) changes these files without any URL change, and a
+            // week-long fresh window left browsers showing the old geometry
+            // (giant props, deleted brushes) until it expired. no-cache still
+            // lets the browser STORE the file - it just reconditions each load
+            // against the ETag, so an unchanged file comes back as a 304 with no
+            // re-download and only a changed file pays for a fresh transfer.
+            context.Response.Headers.CacheControl = "no-cache";
             etag = FileETag(full);
         }
         if (etag != null)
@@ -508,8 +515,8 @@ public static class ServeCommand
         return $"\"{info.LastWriteTimeUtc.Ticks:x}-{info.Length:x}\"";
     }
 
-    static string BrotliCachePath(string dataDir, string mapName, string gameBuildId) =>
-        Path.Combine(dataDir, "cache", $"{mapName}-{gameBuildId}.mesh.br");
+    static string BrotliCachePath(string dataDir, string mapName, string version) =>
+        Path.Combine(dataDir, "cache", $"{mapName}-{version}.mesh.br");
 
     // Compresses whatever the previous run did not already leave on disk, on a
     // dedicated below-normal thread rather than the ThreadPool: this is minutes of
@@ -530,7 +537,9 @@ public static class ServeCommand
                 try
                 {
                     var blob = Brotli(entry.MeshPayload);
-                    var path = BrotliCachePath(dataDir, name, entry.Mesh.GameBuildId);
+                    // Same content-versioned key the entry's ETag carries, so
+                    // the on-disk brotli blob tracks the served mesh exactly.
+                    var path = BrotliCachePath(dataDir, name, entry.BuildETag.Trim('"'));
                     Directory.CreateDirectory(Path.GetDirectoryName(path)!);
                     // Via a temp file so a kill mid-write cannot leave a truncated
                     // blob that the next startup would happily serve as a mesh.
