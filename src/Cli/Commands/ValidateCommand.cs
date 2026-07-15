@@ -165,8 +165,6 @@ public static class ValidateCommand
             Thread.Sleep(1500);
         }
 
-        static string ClickName(float strength) =>
-            strength >= 0.99f ? "left" : strength >= 0.49f ? "mid" : "right";
         Console.WriteLine($"all {submitted} submitted; waiting for captures (smokes persist ~20s each) ...");
 
         // Captures arrive when each projectile despawns; match them back to plans
@@ -393,7 +391,7 @@ public static class ValidateCommand
         md.AppendLine("|---|---|---|---|---|---|---|---|---|---|");
         foreach (var row in results.OrderByDescending(r => r.ErrPredicted).Take(10))
         {
-            var click = row.Strength >= 0.99f ? "left" : row.Strength >= 0.49f ? "mid" : "right";
+            var click = ClickName(row.Strength);
             md.AppendLine($"| {row.Index} | {row.ErrPredicted:F0}u | {row.DivergenceClass} | {row.DivergenceTick} | {row.Type} | {click} | {row.Stability:P0} | {row.PredictedBounces}/{row.RealBounces} | ({row.PredictedRest[0]:F0},{row.PredictedRest[1]:F0},{row.PredictedRest[2]:F0}) | ({row.RealRest[0]:F0},{row.RealRest[1]:F0},{row.RealRest[2]:F0}) |");
         }
         md.AppendLine();

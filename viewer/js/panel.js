@@ -3,7 +3,7 @@
 // wired via wireCopyButtons on document.body). Setting a target and
 // selecting a lineup route through the callbacks main.js registers.
 
-import { state, filtered, typeShort, clickShort, clickClass, esc, skyAngle, EYE_HEIGHT } from "./state.js";
+import { state, filtered, typeShort, clickShort, clickClass, esc, skyAngle, DEFAULT_EYE_HEIGHT } from "./state.js";
 
 const statusEl = state.statusEl;
 const LIST_CAP = 50;
@@ -181,7 +181,7 @@ function setTargetFromGetpos() {
     return;
   }
   callbacks.onSetTarget(
-    [parseFloat(m[1]), parseFloat(m[2]), parseFloat(m[3]) - EYE_HEIGHT],
+    [parseFloat(m[1]), parseFloat(m[2]), parseFloat(m[3]) - DEFAULT_EYE_HEIGHT],
     `target ${(+m[1]).toFixed(0)}, ${(+m[2]).toFixed(0)}`);
 }
 

@@ -451,42 +451,21 @@ public sealed class TriangleCollider
 
     (float T, Vector3 Normal)? HitTriangle(Vector3 origin, Vector3 direction, int triangleOffset)
     {
-        const float epsilon = 1e-7f;
         var a = Vertex(_indices[triangleOffset]);
         var b = Vertex(_indices[triangleOffset + 1]);
         var c = Vertex(_indices[triangleOffset + 2]);
-
-        var edge1 = b - a;
-        var edge2 = c - a;
-        var h = Vector3.Cross(direction, edge2);
-        var det = Vector3.Dot(edge1, h);
-        if (MathF.Abs(det) < epsilon)
+        var t = MollerTrumbore.Intersect(origin, direction, a, b, c);
+        // Physics sweep window: a contact right at the segment end (t == 1) is
+        // still a contact; only sub-1e-5 self-grazes are rejected.
+        if (t is not (> 1e-5f and <= 1f))
         {
             return null;
         }
-        var invDet = 1f / det;
-        var s = origin - a;
-        var u = invDet * Vector3.Dot(s, h);
-        if (u is < 0f or > 1f)
-        {
-            return null;
-        }
-        var q = Vector3.Cross(s, edge1);
-        var v = invDet * Vector3.Dot(direction, q);
-        if (v < 0f || u + v > 1f)
-        {
-            return null;
-        }
-        var t = invDet * Vector3.Dot(edge2, q);
-        if (t is <= 1e-5f or > 1f)
-        {
-            return null;
-        }
-        var normal = Vector3.Normalize(Vector3.Cross(edge1, edge2));
+        var normal = Vector3.Normalize(Vector3.Cross(b - a, c - a));
         if (Vector3.Dot(normal, direction) > 0)
         {
             normal = -normal;
         }
-        return (t, normal);
+        return (t.Value, normal);
     }
 }

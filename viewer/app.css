@@ -25,6 +25,9 @@
     --click-right: #DB2777;
     --heat-ok: #2563EB;
     --heat-none: #EA580C;
+    /* Darker than --heat-none: the SKY badge renders 10px text on --panel,
+       where #EA580C only reaches 3.37:1 (AA needs 4.5). 4.90:1. */
+    --ref-sky-ink: #C2410C;
     --btn-font-size: 12px;
     --btn-pad: 3px 10px;
     --btn-radius: 4px;
@@ -45,6 +48,7 @@
       --click-right: #F472B6;
       --heat-ok: #60A5FA;
       --heat-none: #FB923C;
+      --ref-sky-ink: var(--heat-none); /* 8:1 on the dark panel already */
     }
   }
   * { box-sizing: border-box; }
@@ -499,7 +503,7 @@
   .lineup-option .pct { margin-left: auto; color: var(--muted); }
   .ref { font-size: 10px; border-radius: 3px; padding: 0 3px; white-space: nowrap; }
   .lineup-option b, .lineup-option span:not(.pct) { white-space: nowrap; }
-  .ref.sky { background: var(--heat-none); color: var(--panel); font-weight: 700; }
+  .ref.sky { color: var(--ref-sky-ink); border: 1px solid var(--ref-sky-ink); font-weight: 700; }
   .ref.reticle { color: var(--target); border: 1px solid var(--target); }
   .ref.flat { color: var(--muted); border: 1px solid var(--line); }
   .ref.edge { color: var(--accent); border: 1px solid var(--accent); }

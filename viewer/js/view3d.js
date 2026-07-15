@@ -3,7 +3,7 @@
 // wraps init/sync. Raycast picks route through callbacks that main.js
 // registers, so this module never imports the orchestrator.
 
-import { state, filtered, clickClass, SMOKE_BLOOM_RADIUS } from "./state.js";
+import { state, filtered, clickClass, SMOKE_BLOOM_RADIUS, EYE_HEIGHT_BY_TYPE, DEFAULT_EYE_HEIGHT } from "./state.js";
 import { fetchMesh } from "./api.js";
 
 const stage3d = state.stage3d;
@@ -542,7 +542,7 @@ async function init3d() {
     // (see its derivation above), so the solver's raw pitch/yaw degrees
     // pass straight through with no conversion.
     flyTo({ feet, type, pitchDeg, yawDeg }) {
-      const eyeHeight = EYE_HEIGHT[type] ?? DEFAULT_EYE_HEIGHT;
+      const eyeHeight = EYE_HEIGHT_BY_TYPE[type] ?? DEFAULT_EYE_HEIGHT;
       camera.position.set(feet[0], feet[1], feet[2] + eyeHeight);
       yaw = yawDeg * Math.PI / 180;
       pitch = pitchDeg * Math.PI / 180;
@@ -570,8 +570,6 @@ async function init3d() {
 
 // Per-type eye height, matching GrenadeTrajectory.EyeHeight exactly so the
 // preview camera sits where the solver's own aim ray actually starts.
-const EYE_HEIGHT = { Crouch: 46.04, CrouchJumpThrow: 46.04 };
-const DEFAULT_EYE_HEIGHT = 64.06;
 
 // Source engine FOV is "Hor+": fov_desired is the horizontal FOV at a 4:3
 // reference aspect, and the vertical FOV this implies stays constant across
@@ -768,7 +766,7 @@ export function renderPreview({ feet, type, pitchDeg, yawDeg, fovDesiredDeg = 90
   // fall back to the flat collision mesh otherwise so this still works
   // stand-alone (e.g. tests, or a map with no textured export yet).
   const scene = texturedScene ?? three.scene;
-  const eyeHeight = EYE_HEIGHT[type] ?? DEFAULT_EYE_HEIGHT;
+  const eyeHeight = EYE_HEIGHT_BY_TYPE[type] ?? DEFAULT_EYE_HEIGHT;
   const eye = new THREE.Vector3(feet[0], feet[1], feet[2] + eyeHeight);
   const pr = pitchDeg * Math.PI / 180, yr = yawDeg * Math.PI / 180;
   // Same convention as GrenadeTrajectory/AimReference: yaw around Z, pitch

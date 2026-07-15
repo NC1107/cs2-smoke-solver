@@ -125,6 +125,17 @@ public static class GrenadeTrajectory
     // decisions; below it the surface is a wall/ramp.
     const float FloorNormalZ = 0.7f;
 
+    // Floor-impact angle damp, the ONE copy both integrators share. It applies
+    // to floor impacts only: 122 gated wall bounces across the dust2 validation
+    // runs all reflected at exactly 0.45 while 68/76 gated ground bounces
+    // damped (flatgrass could not constrain this - its wall hits were all below
+    // the speed gate). u is |normal-component of velocity| / speed, computed by
+    // each caller against its own contact representation. This was previously
+    // duplicated in both integrators and one copy went missing, desyncing
+    // stage 1 from the exact path by ~120u on fast steep throws.
+    static float FloorImpactDamp(float speed, float u, bool isFloor, ThrowConstants k) =>
+        speed > k.DampGateSpeed && u > 0.5f && isFloor ? 1.5f - u : 1f;
+
     // Post-contact positional backoff keeping the hull from re-embedding in
     // the surface it just hit.
     const float ContactBackoff = 1e-3f;
@@ -175,13 +186,9 @@ public static class GrenadeTrajectory
                     1 => velocity with { Y = -velocity.Y },
                     _ => velocity with { Z = -velocity.Z },
                 };
-                // Same floor-impact angle damp the exact simulator applies: without
-                // it, stage-1 voxel candidates in the fast-steep regime overshot
-                // the exact path by ~120u and VerifyExact rejected them wholesale.
                 var speed = preImpact.Length();
                 var u = speed > 1e-6f ? MathF.Abs(preImpact.Z) / speed : 0f;
-                var damp = speed > k.DampGateSpeed && u > 0.5f && axis == 2 ? 1.5f - u : 1f;
-                velocity *= k.Elasticity * damp;
+                velocity *= k.Elasticity * FloorImpactDamp(speed, u, isFloor: axis == 2, k);
                 if (axis == 2 && velocity.Length() < k.StopSpeed && HasGroundBelow(grid, position))
                 {
                     return new TrajectoryResult(position, bounces, time, Lost: false, firstTouch);
@@ -285,12 +292,7 @@ public static class GrenadeTrajectory
                 var speed = w.Length();
                 var reflected = SnapStopEpsilon(w - 2f * Vector3.Dot(w, hit.Normal) * hit.Normal);
                 var u = speed > 1e-6f ? MathF.Abs(Vector3.Dot(w, hit.Normal)) / speed : 0f;
-                // The angle damp applies to FLOOR impacts only: 122 gated wall
-                // bounces across the dust2 validation runs all reflected at
-                // exactly 0.45 while 68/76 gated ground bounces damped
-                // (flatgrass could not constrain this - its wall hits were all
-                // below the speed gate).
-                var damp = speed > k.DampGateSpeed && u > 0.5f && hit.Normal.Z > FloorNormalZ ? 1.5f - u : 1f;
+                var damp = FloorImpactDamp(speed, u, isFloor: hit.Normal.Z > FloorNormalZ, k);
                 var vAfter = reflected * (k.Elasticity * damp);
                 trace?.Add($"t={time:F2} contact ({contact.X:F0},{contact.Y:F0},{contact.Z:F0}) normal ({hit.Normal.X:F2},{hit.Normal.Y:F2},{hit.Normal.Z:F2}) v after ({vAfter.X:F0},{vAfter.Y:F0},{vAfter.Z:F0})");
 

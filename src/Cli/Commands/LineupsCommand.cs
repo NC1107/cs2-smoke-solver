@@ -168,7 +168,7 @@ public static class LineupsCommand
                     yaw = l.YawDeg,
                     pitch = l.PitchDeg,
                     type = l.Type.ToString(),
-                    how = Describe(l.Type, l.Strength), strength = l.Strength, click = l.Strength >= 0.99f ? "left" : l.Strength >= 0.49f ? "left+right" : "right",
+                    how = Describe(l.Type, l.Strength), strength = l.Strength, click = ClickName(l.Strength),
                     rest = new[] { l.RestPoint.X, l.RestPoint.Y, l.RestPoint.Z },
                     l.Bounces,
                     flightTime = l.FlightTime,

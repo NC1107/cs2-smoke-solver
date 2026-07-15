@@ -203,6 +203,47 @@ import { renderLineups, initPanel, revealSelected } from "./panel.js";
     mapSelect.insertAdjacentHTML("beforeend", `<option value="${esc(initialMap)}">${esc(initialMap)}</option>`);
   }
 
+  // Minimal modal discipline shared by the intro and the preview modal: focus
+  // moves in on open, Tab cycles inside, Escape closes (via the dialog's own
+  // close path), and focus returns to whatever opened it. Without this a
+  // keyboard or screen-reader user tabs straight into the page behind an
+  // open "modal" and never finds it.
+  function openModal(el, onEscape) {
+    el._returnFocus = document.activeElement;
+    el._keydown = e => {
+      if (e.key === "Escape") {
+        e.stopPropagation();
+        onEscape?.();
+        return;
+      }
+      if (e.key !== "Tab") {
+        return;
+      }
+      const focusables = [...el.querySelectorAll("button, [href], select, input, [tabindex]:not([tabindex='-1'])")]
+        .filter(f => !f.hidden && f.offsetParent !== null);
+      if (focusables.length === 0) {
+        return;
+      }
+      const first = focusables[0], last = focusables[focusables.length - 1];
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    };
+    el.addEventListener("keydown", el._keydown);
+    el.hidden = false;
+    (el.querySelector("button, [href], select, input") ?? el).focus();
+  }
+  function closeModal(el) {
+    el.hidden = true;
+    el.removeEventListener("keydown", el._keydown);
+    el._returnFocus?.focus?.();
+    el._returnFocus = null;
+  }
+
   const intro = document.getElementById("intro");
   const introMapStep = document.getElementById("intro-map");
   const introFilterStep = document.getElementById("intro-filters");
@@ -230,9 +271,9 @@ import { renderLineups, initPanel, revealSelected } from "./panel.js";
     for (const f of filterEls) {
       filterBody.appendChild(f);
     }
-    intro.hidden = true;
+    closeModal(intro);
     syncControls();
-    statusEl.textContent = "click Target, then click the map";
+    statusEl.textContent = "click anywhere on the map to set your smoke target";
   }
 
   document.getElementById("intro-map-grid").innerHTML = playable
@@ -266,7 +307,9 @@ import { renderLineups, initPanel, revealSelected } from "./panel.js";
     }
   } else {
     mountIntroFilters();
-    intro.hidden = false;
+    // Escape may only skip the intro once a map exists - it is the map picker,
+    // and closing it with nothing loaded would strand the page empty.
+    openModal(intro, () => { if (state.mapData) { closeIntro(); } });
   }
 
   // Progress lines stream in every ~100ms; painting each batch as dots shows
@@ -411,8 +454,8 @@ import { renderLineups, initPanel, revealSelected } from "./panel.js";
 
   const previewModal = document.getElementById("preview-modal");
   const previewImg = document.getElementById("preview-img");
-  document.getElementById("preview-close").addEventListener("click", () => { previewModal.hidden = true; });
-  previewModal.addEventListener("click", e => { if (e.target === previewModal) { previewModal.hidden = true; } });
+  document.getElementById("preview-close").addEventListener("click", () => closeModal(previewModal));
+  previewModal.addEventListener("click", e => { if (e.target === previewModal) { closeModal(previewModal); } });
 
   // capturePreview() borrows the single shared camera/canvas, so two
   // in-flight captures would stomp each other's saved camera state -
@@ -457,7 +500,7 @@ import { renderLineups, initPanel, revealSelected } from "./panel.js";
       return;
     }
     previewImg.src = l._previewUrl;
-    previewModal.hidden = false;
+    openModal(previewModal, () => closeModal(previewModal));
   }
 
   function toggleFavorite(l) {
@@ -510,7 +553,9 @@ import { renderLineups, initPanel, revealSelected } from "./panel.js";
     if (!t3) {
       return;
     }
-    previewModal.hidden = true;
+    if (!previewModal.hidden) {
+      closeModal(previewModal);
+    }
     t3.flyTo({ feet: l.feet, type: l.type, pitchDeg: l.pitch, yawDeg: l.yaw });
     statusEl.textContent = "dropped into this lineup's throw spot - drag to look, WASD to move";
   }

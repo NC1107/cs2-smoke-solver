@@ -82,7 +82,12 @@ export const clickClass = s => s >= 0.99 ? "left" : s >= 0.49 ? "mid" : "right";
 export const SMOKE_BLOOM_RADIUS = 144;
 export const PICK_RADIUS_PX = 12;
 export const HEAT_CELL = 24;
-export const EYE_HEIGHT = 64; // getpos reports eye position, not feet - subtract this to convert
+// Eye height above feet by throw type - 64.06 standing, 46.04 crouched,
+// measured from CS2 telemetry (Valve's 64.093811 eye-above-floor minus the
+// 0.03125 feet-above-floor gap). The ONE table for every consumer: a second
+// copy in the 3D module once drifted to a plain 64.
+export const DEFAULT_EYE_HEIGHT = 64.06;
+export const EYE_HEIGHT_BY_TYPE = { Crouch: 46.04, CrouchJumpThrow: 46.04 };
 
 // Minimal HTML escaper for API-derived strings rendered via innerHTML (L20).
 export const esc = s => String(s).replace(/[&<>"']/g,

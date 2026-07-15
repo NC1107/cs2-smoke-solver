@@ -121,6 +121,12 @@ public static class CliParsing
     public static List<Vector3> ParseTargets(string s) =>
         [.. s.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Select(ParseVec)];
 
+    // The canonical click label for a throw strength. Validation reports used
+    // to say "mid" for the same band the lineup API called "left+right",
+    // making a report and the API describe the identical throw differently.
+    public static string ClickName(float strength) =>
+        strength >= 0.99f ? "left" : strength >= 0.49f ? "left+right" : "right";
+
     public static string Describe(ThrowType type, float strength = 1f)
     {
         var movement = type switch
