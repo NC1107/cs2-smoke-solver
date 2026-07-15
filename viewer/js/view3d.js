@@ -526,23 +526,15 @@ export function ensureTexturedScene(url = `data/${state.currentMap}_textured.glb
     draco.setDecoderPath("viewer/lib/draco/");
     const loader = new THREE.GLTFLoader();
     loader.setDRACOLoader(draco);
-    // Fetch the GLB with revalidation before handing it to the loader: a
-    // browser copy cached under the old week-long policy would otherwise keep
-    // rendering a superseded export (e.g. the old wrong-scale props) until that
-    // cache expired. Load from a blob URL so the loader path is unchanged.
-    const glbResp = await fetch(url, { cache: "no-cache" });
-    if (!glbResp.ok) {
-      throw new Error(`glb HTTP ${glbResp.status}`);
-    }
-    const glbUrl = URL.createObjectURL(await glbResp.blob());
-    let gltf;
-    try {
-      gltf = await new Promise((resolve, reject) => {
-        loader.load(glbUrl, resolve, undefined, reject);
-      });
-    } finally {
-      URL.revokeObjectURL(glbUrl);
-    }
+    // Cache-bust the URL with the map build so a re-processed GLB is fetched
+    // fresh past both Cloudflare (which caches these static files at the edge,
+    // ignoring a client fetch's cache mode) and the browser. The loader streams
+    // the file rather than buffering the whole 18MB - fetching it into a blob
+    // first failed intermittently, a real risk on memory-limited mobile.
+    const bust = state.mapData?.build ? `?v=${state.mapData.build}` : "";
+    const gltf = await new Promise((resolve, reject) => {
+      loader.load(url + bust, resolve, undefined, reject);
+    });
     const root = gltf.scene;
     // VRF exports in meters with a cyclic axis permutation, not a plain
     // Y-up/Z-up swap: raw (x,y,z) maps to Hammer (z,y,x) - Hammer_X=raw_z,
