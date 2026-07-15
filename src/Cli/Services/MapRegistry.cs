@@ -98,6 +98,51 @@ public static class MapRegistry
     static string BrotliCachePath(string dataDir, string mapName, string version) =>
         Path.Combine(dataDir, "cache", $"{mapName}-{version}.mesh.br");
 
+    /// <summary>
+    /// Drops cache files nothing will read again: query results older than 30
+    /// days (their keys rotate with every solver/mesh change, so old files are
+    /// never referenced, only accumulated) and brotli mesh blobs whose
+    /// content-versioned name no longer matches any loaded map.
+    /// </summary>
+    public static void PruneCache(string root, Dictionary<string, MapEntry> maps)
+    {
+        var cacheDir = Path.Combine(root, "data", "cache");
+        if (!Directory.Exists(cacheDir))
+        {
+            return;
+        }
+        var live = maps
+            .Select(kv => Path.GetFileName(BrotliCachePath("", kv.Key, kv.Value.BuildETag.Trim('"'))))
+            .ToHashSet(StringComparer.Ordinal);
+        var cutoff = DateTime.UtcNow.AddDays(-30);
+        var pruned = 0;
+        try
+        {
+            foreach (var file in Directory.EnumerateFiles(cacheDir))
+            {
+                var name = Path.GetFileName(file);
+                var stale =
+                    (name.EndsWith(".json", StringComparison.Ordinal) && File.GetLastWriteTimeUtc(file) < cutoff) ||
+                    (name.EndsWith(".mesh.br", StringComparison.Ordinal) && !live.Contains(name));
+                if (stale)
+                {
+                    File.Delete(file);
+                    pruned++;
+                }
+            }
+        }
+        catch (Exception e)
+        {
+            // Best-effort housekeeping; a locked or foreign-owned file is not
+            // worth failing startup over.
+            Console.Error.WriteLine($"cache prune stopped early: {e.Message}");
+        }
+        if (pruned > 0)
+        {
+            Console.WriteLine($"cache: pruned {pruned} stale file(s)");
+        }
+    }
+
     // Compresses whatever the previous run did not already leave on disk, on a
     // dedicated below-normal thread rather than the ThreadPool: this is minutes of
     // solid CPU on the larger maps, and the ThreadPool is what the solver's

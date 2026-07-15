@@ -41,6 +41,7 @@ public static class ServeCommand
             Console.WriteLine("no maps found under data/*.s2geo - run `extract --map <name>` first; static file serving still works");
         }
         StartBrotliPrecompress(maps, root);
+        PruneCache(root, maps);
 
         // A solve occupies one pool thread per core (see Cpu.Bound). The pool's
         // default floor is exactly that many, so everything else the request

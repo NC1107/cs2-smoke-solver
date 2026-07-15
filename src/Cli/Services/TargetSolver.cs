@@ -49,6 +49,9 @@ public static class TargetSolver
     {
         var hasOrigin = originClickOpt.HasValue;
         var originClick = originClickOpt ?? new Vector2(target.X, target.Y);
+        // Materialized once: three consumers below used to each rebuild this
+        // array-of-arrays from the nav list per solve.
+        float[][][] corners = [.. navAreas.Select(a => a.Corners)];
         onPhase?.Invoke("prepare", 0);
 
         var (meshMin, meshMax) = mesh.ComputeBounds();
@@ -65,7 +68,7 @@ public static class TargetSolver
             MathF.Min(meshMax.Z + 64, target.Z + 900));
         var grid = VoxelGrid.Build(mesh, voxelSize, min, max, attributeFilter);
 
-        var navZ = hasTargetZ ? null : LineupSolver.NavGroundZ([.. navAreas.Select(a => a.Corners)], target.X, target.Y);
+        var navZ = hasTargetZ ? null : LineupSolver.NavGroundZ(corners, target.X, target.Y);
         if (navZ is { } z0)
         {
             target = target with { Z = z0 };
@@ -110,7 +113,7 @@ public static class TargetSolver
 
         var origins = LineupSolver.OriginsFromNavAreas(
                 grid,
-                [.. navAreas.Select(a => a.Corners)],
+                corners,
                 new Vector3(originClick.X - originReach, originClick.Y - originReach, meshMin.Z),
                 new Vector3(originClick.X + originReach, originClick.Y + originReach, max.Z),
                 sampleStep: 24f,
@@ -123,7 +126,7 @@ public static class TargetSolver
             // literally (and its pinned variants) - the lattice's nearest sample
             // can sit half a grid step away, and for a tight known lineup that
             // is the difference between finding it and not.
-            var clickZ = LineupSolver.NavGroundZ([.. navAreas.Select(a => a.Corners)], originClick.X, originClick.Y) ?? target.Z;
+            var clickZ = LineupSolver.NavGroundZ(corners, originClick.X, originClick.Y) ?? target.Z;
             origins.AddRange(LineupSolver.ExactOriginWithPins(grid, collider, new Vector3(originClick.X, originClick.Y, clickZ)));
         }
 

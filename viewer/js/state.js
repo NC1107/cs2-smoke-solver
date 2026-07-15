@@ -96,7 +96,7 @@ export const esc = s => String(s).replace(/[&<>"']/g,
 
 // One tap-vs-drag threshold for every canvas: a pointer that moves further
 // than this between down and up is a camera gesture, not a click.
-export const DRAG_THRESHOLD_PX = 4;
+const DRAG_THRESHOLD_PX = 4;
 export function isDrag(downX, downY, x, y) {
   return Math.hypot(x - downX, y - downY) > DRAG_THRESHOLD_PX;
 }

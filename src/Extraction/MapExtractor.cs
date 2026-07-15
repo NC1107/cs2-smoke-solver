@@ -257,7 +257,7 @@ public static class MapExtractor
         var nav = new ValveResourceFormat.NavMesh.NavMeshFile();
         nav.Read(new MemoryStream(navData));
         var areas = new List<NavAreaDump>();
-        foreach (var area in nav.GetHullAreas(0))
+        foreach (var area in nav.GetHullAreas(0) ?? [])
         {
             areas.Add(new NavAreaDump(
                 area.AreaId,

@@ -94,7 +94,7 @@ give weapon_smokegrenade
 ```
 
 Each lineup in the viewer (and in the lineups JSON) carries a `setpos ...; setang ...` command.
-Paste it, throw as described (stand / jumpthrow bind / W + jumpthrow), and compare the real trajectory and bloom against the predicted rest point.
+Paste it, throw as described (stand, or hold click + tap jump + release for the jump variants), and compare the real trajectory and bloom against the predicted rest point.
 Deviations are calibration data, not surprises: constants are placeholders until the calibration pass.
 
 `--attrs "Default,default"` excludes `ConditionallySolid` clip volumes, which block rays but not vision in game.

@@ -61,6 +61,8 @@ Phase 1 can be purely geometric from the collision mesh; texture and color bound
 
 #### Position reference quality
 
+**Shipped 2026-07-15**: origins now include wall-pressed and corner-wedged variants (the solver actively generates them from wall probes), every result is classified corner/wall/open (`LineupSolver.PositionPin`), pinned spots rank above open ground, and the viewer badges them. The below is the original design note.
+
 How precisely the player can reproduce the standing spot without a getpos console command.
 
 1. Wedged into a corner (two walls touching the hull): position is self-correcting, perfect.
@@ -92,7 +94,7 @@ Keep stability as the physical-risk factor and do not double-penalize bounces.
 
 ### Additional factors worth considering (not from the original request)
 
-- **Execution complexity**: stand < crouch < jumpthrow bind < crouch+jump < run+jump; more moving parts means more ways to throw it wrong under pressure.
+- **Execution complexity**: stand < crouch < jump throw < crouch+jump < run+jump; more moving parts means more ways to throw it wrong under pressure.
 - **Pitch extremity**: aiming steeper than about -60 degrees is disorienting even with a reference, because the reference leaves the screen during the flick back down; mild penalty scaling with pitch.
 - **Throw-spot exposure**: standing in an open lane (for example mid doors gap) to throw is a death sentence in a real round; approximate by checking sightline exposure of the origin from the enemy-approach areas for the chosen target.
 - **Setup reachability**: for round-start smokes, the origin must be reachable from spawn in time for the smoke to matter; score by nav-path distance from the team spawn.

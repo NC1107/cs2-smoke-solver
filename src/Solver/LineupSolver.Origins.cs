@@ -100,7 +100,10 @@ public static partial class LineupSolver
                 return;
             }
             var snapped = SnapToGround(grid, collider, new Vector3(xy.X, xy.Y, baseFeet.Z));
-            var (cx, cy, cz) = grid.CellOf(snapped + new Vector3(0, 0, 8));
+            // Sanity-check torso height, not ankle height: a floor plane lying
+            // exactly on a voxel boundary marks BOTH neighboring cells solid,
+            // so a probe half a voxel up would reject valid floor positions.
+            var (cx, cy, cz) = grid.CellOf(snapped + new Vector3(0, 0, grid.VoxelSize * 1.5f));
             if (grid.InBounds(cx, cy, cz) && !grid.IsSolid(grid.Index(cx, cy, cz)))
             {
                 pinned.Add(snapped);

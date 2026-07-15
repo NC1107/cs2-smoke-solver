@@ -62,7 +62,7 @@ function onListKeydown(e) {
   btns[next].focus();
 }
 
-// Detail card for the pinned lineup plus a capped, keyboard-navigable list
+// Detail card for the selected lineup plus a capped, keyboard-navigable list
 // of the filtered results (H19). The canvas stays the visual index; the
 // list drives the exact same select path as clicking a marker.
 // One copy of the results status line; main.js's heat toggle prints it too.
@@ -207,7 +207,7 @@ function setTargetFromGetpos() {
     `target ${(+m[1]).toFixed(0)}, ${(+m[2]).toFixed(0)}`);
 }
 
-export function wireCopyButtons(container) {
+function wireCopyButtons(container) {
   for (const btn of container.querySelectorAll("[data-copy]")) {
     btn.addEventListener("click", e => {
       e.stopPropagation();

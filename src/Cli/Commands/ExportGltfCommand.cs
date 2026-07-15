@@ -41,7 +41,7 @@ public static class ExportGltfCommand
         var outPath = options.GetValueOrDefault("out", $"data/{Path.GetFileNameWithoutExtension(vpkPath)}.glb");
         using var package = new SteamDatabase.ValvePak.Package();
         package.Read(vpkPath);
-        var entry = (package.Entries.TryGetValue("vwrld_c", out var worlds) ? worlds : [])
+        var entry = (package.Entries?.TryGetValue("vwrld_c", out var worlds) == true ? worlds : [])
             .FirstOrDefault()
             ?? throw new FileNotFoundException($"no world resource (.vwrld_c) inside {vpkPath}");
         Console.WriteLine($"exporting {entry.GetFullPath()} with materials...");
