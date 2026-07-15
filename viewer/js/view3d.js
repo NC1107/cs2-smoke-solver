@@ -3,8 +3,9 @@
 // wraps init/sync. Raycast picks route through callbacks that main.js
 // registers, so this module never imports the orchestrator.
 
-import { state, filtered, clickClass, isDrag, SMOKE_BLOOM_RADIUS, EYE_HEIGHT_BY_TYPE, DEFAULT_EYE_HEIGHT } from "./state.js";
+import { state, filtered, clickClass, SMOKE_BLOOM_RADIUS, EYE_HEIGHT_BY_TYPE, DEFAULT_EYE_HEIGHT } from "./state.js";
 import { fetchMesh } from "./api.js";
+import { createFlyCamera } from "./flycam.js";
 import { loadScript, ensureTexturedScene, currentTexturedScene, disposeSceneContents, disposeTexturedScene } from "./textured-scene.js";
 
 const stage3d = state.stage3d;
@@ -71,9 +72,9 @@ async function init3d() {
   const renderer = new THREE.WebGLRenderer({ antialias: true });
   renderer.setPixelRatio(window.devicePixelRatio);
   // Focusable so the fly keys have somewhere to live. Clicking a 3D control
-  // leaves focus on that button, and onKeyDown deliberately ignores keys aimed
-  // at a button - which is why WASD went dead after pressing Top-down until you
-  // clicked the view again.
+  // leaves focus on that button, and the camera module deliberately ignores
+  // keys aimed at a button - which is why WASD went dead after pressing
+  // Top-down until you clicked the view again.
   renderer.domElement.tabIndex = 0;
   stage3d.appendChild(renderer.domElement);
   const scene = new THREE.Scene();
@@ -88,24 +89,6 @@ async function init3d() {
   camera.position.set(cx, cy - 3800, 3600);
   camera.lookAt(cx, cy, 0);
 
-  // Free-look: yaw/pitch of the camera's own facing direction (not an orbit
-  // pivot far away), same sign convention as renderPreview's aim direction
-  // (positive pitch looks down) so flyTo() can hand this lineup pitch/yaw
-  // straight through with no conversion. Derived from the initial lookAt()
-  // above rather than duplicated math, so both stay in lockstep.
-  const initDir = new THREE.Vector3();
-  camera.getWorldDirection(initDir);
-  let yaw = Math.atan2(initDir.y, initDir.x);
-  let pitch = -Math.asin(THREE.MathUtils.clamp(initDir.z, -1, 1));
-  const PITCH_LIMIT = 89 * Math.PI / 180;
-  const lookDir = new THREE.Vector3(), lookAt = new THREE.Vector3();
-  function applyLook() {
-    pitch = Math.max(-PITCH_LIMIT, Math.min(PITCH_LIMIT, pitch));
-    const cp = Math.cos(pitch);
-    lookDir.set(cp * Math.cos(yaw), cp * Math.sin(yaw), -Math.sin(pitch));
-    camera.lookAt(lookAt.copy(camera.position).add(lookDir));
-    dirty = true;
-  }
 
   const geo = new THREE.BufferGeometry();
   geo.setAttribute("position", new THREE.BufferAttribute(verts, 3));
@@ -179,27 +162,7 @@ async function init3d() {
     return hit.length > 0 ? hit[0].point.z : null;
   }
 
-  // Free camera: left-drag looks around from the current spot (rotates the
-  // camera in place, like turning your head - not orbiting a distant pivot,
-  // which used to swing the whole view when navigating up close to a wall).
-  // Right-drag pans (translates without rotating); scroll dollies forward/
-  // back along the view direction. A held button that never moves past the
-  // 4px threshold still falls through to the click-to-pick handler below.
-  const LOOK_SENSITIVITY = 0.0035;
-  const PAN_SENSITIVITY = 1.35;
-  const DOLLY_SENSITIVITY = 1.4;
-  const PINCH_DOLLY_SENSITIVITY = 4.5;
-  const LONG_PRESS_MS = 450, LONG_PRESS_SLOP_PX = 8;
-  const panRight = new THREE.Vector3(), panUp = new THREE.Vector3(0, 0, 1), dollyDir = new THREE.Vector3();
-  let down = null;
-  let dragButton = -1;
-  let lastX = 0, lastY = 0;
-  let pressTimer = 0, pressConsumed = false;
-  // Touch: one finger looks, two fingers pan (centroid) and dolly (pinch).
-  // Without this, pan and dolly were mouse-only - touch can never produce a
-  // secondary button or a wheel event.
-  const touches = new Map();
-  let pinchDist = 0, pinchX = 0, pinchY = 0;
+
 
   // The terrain point under a screen position, or null. Markers win when
   // `preferMarkers` so tapping a dot near the ground selects, not re-solves.
@@ -225,126 +188,33 @@ async function init3d() {
       callbacks.onSetTarget([p.x, p.y, p.z], `target ${p.x.toFixed(0)}, ${p.y.toFixed(0)}, ${p.z.toFixed(0)} (3D)`);
     }
   }
-  function cancelLongPress() {
-    if (pressTimer) {
-      clearTimeout(pressTimer);
-      pressTimer = 0;
-    }
-  }
-
-  renderer.domElement.addEventListener("contextmenu", e => e.preventDefault());
-  renderer.domElement.addEventListener("pointerdown", e => {
-    if (e.pointerType === "touch") {
-      touches.set(e.pointerId, [e.clientX, e.clientY]);
-      if (touches.size === 2) {
-        renderer.domElement.setPointerCapture(e.pointerId);
-        cancelLongPress();
-        dragButton = -1;
-        down = null; // a pinch is never also a click
-        renderer.domElement.classList.remove("looking");
-        const [a, b] = [...touches.values()];
-        pinchDist = Math.hypot(a[0] - b[0], a[1] - b[1]);
-        pinchX = (a[0] + b[0]) / 2;
-        pinchY = (a[1] + b[1]) / 2;
-        renderer.domElement.classList.add("panning");
+  const cam = createFlyCamera(camera, renderer.domElement, {
+    requestRender: () => { dirty = true; },
+    onLongPress: setTargetAt,
+    // A tap's MEANING lives here, not in the camera module: right-click (or
+    // long-press above) always sets/moves the target; a plain click selects a
+    // marker, bootstraps the first target, or probes a throw origin.
+    onTap: ({ x, y, button }) => {
+      if (button === 2) {
+        setTargetAt(x, y);
         return;
       }
-      pressConsumed = false;
-      pressTimer = setTimeout(() => {
-        pressTimer = 0;
-        pressConsumed = true;
-        navigator.vibrate?.(10);
-        setTargetAt(e.clientX, e.clientY);
-      }, LONG_PRESS_MS);
-    }
-    down = [e.clientX, e.clientY];
-    if (e.button === 0 || e.button === 2) {
-      dragButton = e.button;
-      lastX = e.clientX;
-      lastY = e.clientY;
-      renderer.domElement.setPointerCapture(e.pointerId);
-      renderer.domElement.classList.add(dragButton === 0 ? "looking" : "panning");
-    }
-  });
-  renderer.domElement.addEventListener("pointermove", e => {
-    if (e.pointerType === "touch" && touches.has(e.pointerId)) {
-      touches.set(e.pointerId, [e.clientX, e.clientY]);
-      if (touches.size === 2) {
-        const [a, b] = [...touches.values()];
-        const dist = Math.hypot(a[0] - b[0], a[1] - b[1]);
-        const cx = (a[0] + b[0]) / 2, cy = (a[1] + b[1]) / 2;
-        panRight.set(Math.sin(yaw), -Math.cos(yaw), 0);
-        camera.position.addScaledVector(panRight, (cx - pinchX) * PAN_SENSITIVITY);
-        camera.position.addScaledVector(panUp, (cy - pinchY) * PAN_SENSITIVITY);
-        camera.getWorldDirection(dollyDir);
-        camera.position.addScaledVector(dollyDir, (dist - pinchDist) * PINCH_DOLLY_SENSITIVITY);
-        pinchDist = dist;
-        pinchX = cx;
-        pinchY = cy;
-        dirty = true;
+      const hit = pickAt(x, y, true);
+      if (!hit) { return; }
+      if (hit.markerIdx !== undefined) {
+        callbacks.onSelect(hit.markerIdx);
         return;
       }
-    }
-    if (pressTimer && down && Math.hypot(e.clientX - down[0], e.clientY - down[1]) > LONG_PRESS_SLOP_PX) {
-      cancelLongPress();
-    }
-    if (dragButton === -1) { return; }
-    const dx = e.clientX - lastX, dy = e.clientY - lastY;
-    lastX = e.clientX;
-    lastY = e.clientY;
-    if (dragButton === 0) {
-      yaw -= dx * LOOK_SENSITIVITY;
-      // Positive pitch looks down (dir.z = -sin(pitch)), so dragging the
-      // mouse down (dy > 0) - standard non-inverted mouselook - must
-      // increase pitch, not decrease it.
-      pitch += dy * LOOK_SENSITIVITY;
-      applyLook();
-    } else {
-      panRight.set(Math.sin(yaw), -Math.cos(yaw), 0);
-      camera.position.addScaledVector(panRight, dx * PAN_SENSITIVITY);
-      camera.position.addScaledVector(panUp, dy * PAN_SENSITIVITY);
-      dirty = true;
-    }
+      const pnt = hit.point;
+      if (state.picking || !state.target) {
+        callbacks.onSetTarget([pnt.x, pnt.y, pnt.z], `target ${pnt.x.toFixed(0)}, ${pnt.y.toFixed(0)}, ${pnt.z.toFixed(0)} (3D)`);
+      } else if (!state.heatOn) {
+        callbacks.onRunQuery({ target: state.target, origin: [pnt.x, pnt.y, pnt.z] });
+      }
+    },
+    ignoreKeys: e => e.target instanceof Element &&
+      e.target.closest("#controls, .panel, input, select, button, summary, details"),
   });
-  const endPointer = e => {
-    touches.delete(e.pointerId);
-    cancelLongPress();
-    dragButton = -1;
-    renderer.domElement.classList.remove("looking", "panning");
-  };
-  renderer.domElement.addEventListener("pointercancel", endPointer);
-  renderer.domElement.addEventListener("pointerup", e => {
-    const wasPinching = e.pointerType === "touch" && touches.size >= 2;
-    endPointer(e);
-    if (pressConsumed || wasPinching) { pressConsumed = false; return; }
-    if (!down || isDrag(down[0], down[1], e.clientX, e.clientY)) { down = null; return; }
-    down = null;
-    // Right-click always sets/moves the target - its own dedicated input, so
-    // re-aiming never fights marker selection or origin probing (which stay
-    // on plain click, same contextual model as the 2D map).
-    if (e.button === 2) {
-      setTargetAt(e.clientX, e.clientY);
-      return;
-    }
-    const hit = pickAt(e.clientX, e.clientY, true);
-    if (!hit) { return; }
-    if (hit.markerIdx !== undefined) {
-      callbacks.onSelect(hit.markerIdx);
-      return;
-    }
-    const pnt = hit.point;
-    if (state.picking || !state.target) {
-      callbacks.onSetTarget([pnt.x, pnt.y, pnt.z], `target ${pnt.x.toFixed(0)}, ${pnt.y.toFixed(0)}, ${pnt.z.toFixed(0)} (3D)`);
-    } else if (!state.heatOn) {
-      callbacks.onRunQuery({ target: state.target, origin: [pnt.x, pnt.y, pnt.z] });
-    }
-  });
-  renderer.domElement.addEventListener("wheel", e => {
-    e.preventDefault();
-    camera.getWorldDirection(dollyDir);
-    camera.position.addScaledVector(dollyDir, -e.deltaY * DOLLY_SENSITIVITY);
-    dirty = true;
-  }, { passive: false });
 
   function resize3d() {
     const w2 = stage3d.clientWidth, h2 = stage3d.clientHeight;
@@ -360,89 +230,6 @@ async function init3d() {
   }
   window.addEventListener("resize", resize3d);
 
-  // WASD freecam: fly relative to the camera heading; Space/E for up,
-  // Ctrl/Q/C for down (matching CS2's own spectator free-cam scheme), shift
-  // for 4x speed. Works alongside look (left-drag) and pan (right-drag).
-  // Key listeners bind in start() and unbind in stop() so 2D mode never
-  // sees them; UI interactions (controls, panel, any form control) are
-  // ignored so typing or toggling never flies the camera (M13).
-  // Every code here must be preventDefault()'d: the browser owns several of
-  // these as chords before our handler ever runs them as game input - Space
-  // scrolls the page, and Ctrl+W (an entirely plausible chord once Ctrl means
-  // "down," since flying down-and-forward is a completely normal combined
-  // move) closes the whole browser tab.
-  const FLY_KEYS = new Set([
-    "KeyW", "KeyA", "KeyS", "KeyD", "KeyQ", "KeyE", "KeyC", "Space",
-    "ControlLeft", "ControlRight", "ShiftLeft", "ShiftRight",
-  ]);
-  const keys = new Set();
-  const onKeyDown = e => {
-    if (e.target instanceof Element &&
-        e.target.closest("#controls, .panel, input, select, button, summary, details")) {
-      return;
-    }
-    if (FLY_KEYS.has(e.code)) {
-      e.preventDefault();
-    }
-    keys.add(e.code);
-  };
-  const onKeyUp = e => keys.delete(e.code);
-  const onBlur = () => keys.clear();
-
-  // Units per second, not per frame. The old code added a fixed step straight to
-  // the position every frame, which made the camera travel 2.4x further on a
-  // 144Hz monitor than a 60Hz one for the same key press.
-  const SPEED = 430;
-  const FAST_SPEED = 1500;
-  // Rate the velocity closes on the speed the keys are asking for. Instant
-  // velocity is what made this feel like it teleported rather than flew.
-  // Deceleration is deliberately snappier than acceleration (the editor-
-  // viewport convention): in a measuring tool, releasing a key means "my eye
-  // goes exactly here" - coasting past the spot fights the whole point.
-  const ACCEL_RESPONSIVENESS = 11;
-  const DECEL_RESPONSIVENESS = 24;
-  const STOPPED = 1;
-
-  // Reused across frames; fly() runs every frame while the camera still has
-  // velocity, which outlasts the key press now that it eases to a stop.
-  const fwd = new THREE.Vector3(), right = new THREE.Vector3();
-  const wanted = new THREE.Vector3(), velocity = new THREE.Vector3();
-  let lastFrame = 0;
-  function fly(now) {
-    const dt = Math.min((now - lastFrame) / 1000, 0.1);
-    lastFrame = now;
-    if (keys.size === 0 && velocity.lengthSq() < STOPPED) {
-      velocity.set(0, 0, 0);
-      return;
-    }
-    camera.getWorldDirection(fwd);
-    fwd.z = 0;
-    if (fwd.lengthSq() < 1e-6) { fwd.set(0, 1, 0); }
-    fwd.normalize();
-    right.set(fwd.y, -fwd.x, 0);
-    wanted.set(0, 0, 0);
-    if (keys.has("KeyW")) { wanted.add(fwd); }
-    if (keys.has("KeyS")) { wanted.sub(fwd); }
-    if (keys.has("KeyD")) { wanted.add(right); }
-    if (keys.has("KeyA")) { wanted.sub(right); }
-    if (keys.has("KeyE") || keys.has("Space")) { wanted.z += 1; }
-    if (keys.has("KeyQ") || keys.has("KeyC") || keys.has("ControlLeft") || keys.has("ControlRight")) { wanted.z -= 1; }
-    if (wanted.lengthSq() > 0) {
-      const fast = keys.has("ShiftLeft") || keys.has("ShiftRight");
-      wanted.normalize().multiplyScalar(fast ? FAST_SPEED : SPEED);
-    }
-    // Frame-rate independent exponential approach: the fraction of the remaining
-    // gap closed depends on elapsed time, not on how many frames elapsed.
-    const responsiveness = wanted.lengthSq() > 0 ? ACCEL_RESPONSIVENESS : DECEL_RESPONSIVENESS;
-    velocity.lerp(wanted, 1 - Math.exp(-responsiveness * dt));
-    if (velocity.lengthSq() < STOPPED) {
-      velocity.set(0, 0, 0);
-      return;
-    }
-    camera.position.addScaledVector(velocity, dt);
-    dirty = true;
-  }
-
   let live = false;
   // The loop used to call renderer.render() unconditionally every frame for
   // as long as the 3D view was open, even sitting perfectly still - a real
@@ -457,7 +244,7 @@ async function init3d() {
   let activeScene = scene;
   function loop(now = performance.now()) {
     if (!live) { return; }
-    fly(now);
+    cam.tick(now);
     if (dirty) {
       renderer.render(activeScene, camera);
       dirty = false;
@@ -478,18 +265,13 @@ async function init3d() {
       // size - it can still be display:none mid-transition right here, so
       // set it directly too rather than relying on that as the only path.
       dirty = true;
-      window.addEventListener("keydown", onKeyDown);
-      window.addEventListener("keyup", onKeyUp);
-      window.addEventListener("blur", onBlur);
+      cam.start();
       resize3d();
       loop();
     },
     stop() {
       live = false;
-      keys.clear();
-      window.removeEventListener("keydown", onKeyDown);
-      window.removeEventListener("keyup", onKeyUp);
-      window.removeEventListener("blur", onBlur);
+      cam.stop();
     },
     // Switches the interactive (free-look + WASD) view between the flat
     // collision mesh and the real-textured GLB. Markers/target/progress follow
@@ -518,15 +300,12 @@ async function init3d() {
     // Drops the free camera directly into a lineup's exact throw position
     // and aim - "go stand there" rather than a single static preview frame,
     // so the player can then free-look/WASD around from that exact spot.
-    // Reuses the same yaw/pitch sign convention applyLook() already uses
-    // (see its derivation above), so the solver's raw pitch/yaw degrees
-    // pass straight through with no conversion.
+    // The camera module shares the solver's yaw/pitch sign convention, so
+    // the lineup's raw angles pass straight through with no conversion.
     flyTo({ feet, type, pitchDeg, yawDeg }) {
       const eyeHeight = EYE_HEIGHT_BY_TYPE[type] ?? DEFAULT_EYE_HEIGHT;
       camera.position.set(feet[0], feet[1], feet[2] + eyeHeight);
-      yaw = yawDeg * Math.PI / 180;
-      pitch = pitchDeg * Math.PI / 180;
-      applyLook();
+      cam.setLook(yawDeg * Math.PI / 180, pitchDeg * Math.PI / 180);
     },
     // Straight down over the middle of the map, pulled back far enough that the
     // whole radar footprint fits the narrower of the two view angles.
@@ -537,12 +316,9 @@ async function init3d() {
         (RY1 - RY0) / 2 / Math.tan(halfFovY),
         (RX1 - RX0) / 2 / Math.tan(halfFovX));
       camera.position.set(cx, cy, height * 1.05);
-      // Positive pitch looks down (lookDir.z = -sin(pitch)). applyLook() clamps
-      // to 89 degrees, which is what keeps the view matrix from degenerating
-      // when the look direction lines up with camera.up.
-      yaw = -Math.PI / 2;
-      pitch = Math.PI / 2;
-      applyLook();
+      // Straight down: the camera module clamps pitch short of 90 degrees so
+      // the view matrix cannot degenerate against camera.up.
+      cam.setLook(-Math.PI / 2, Math.PI / 2);
     },
   };
   return three;
