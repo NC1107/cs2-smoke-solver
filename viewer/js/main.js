@@ -5,7 +5,9 @@
 import { state, filtered, esc } from "./state.js";
 import { loadMapList, loadMapData, runQuery as postLineupQuery, fetchTrajectory } from "./api.js";
 import { loadRadar, readColors, recolorRadar, draw, scheduleDraw, resize, resetView, initMap2d } from "./map2d.js";
-import { ensure3d, resetEnsure3d, resetEnsureTexturedScene, teardown3d, current3d, sync3d, syncProgress3d, set3dCallbacks, applyTheme3d, capturePreview } from "./view3d.js";
+import { ensure3d, resetEnsure3d, teardown3d, current3d, sync3d, syncProgress3d, set3dCallbacks, applyTheme3d } from "./view3d.js";
+import { resetEnsureTexturedScene } from "./textured-scene.js";
+import { capturePreview } from "./preview.js";
 import { renderLineups, initPanel, revealSelected, resultStatusText } from "./panel.js";
 
 (async () => {

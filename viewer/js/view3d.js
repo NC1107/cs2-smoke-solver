@@ -4,7 +4,8 @@
 // registers, so this module never imports the orchestrator.
 
 import { state, filtered, clickClass, isDrag, SMOKE_BLOOM_RADIUS, EYE_HEIGHT_BY_TYPE, DEFAULT_EYE_HEIGHT } from "./state.js";
-import { fetchMesh, cacheBust } from "./api.js";
+import { fetchMesh } from "./api.js";
+import { loadScript, ensureTexturedScene, currentTexturedScene, disposeSceneContents, disposeTexturedScene } from "./textured-scene.js";
 
 const stage3d = state.stage3d;
 let three = null;
@@ -32,15 +33,6 @@ export function current3d() {
   return three;
 }
 
-function disposeSceneContents(scene) {
-  scene?.traverse(obj => {
-    obj.geometry?.dispose();
-    for (const m of [].concat(obj.material ?? [])) {
-      m.map?.dispose();
-      m.dispose?.();
-    }
-  });
-}
 
 // A different map means entirely different geometry/nav/lineups, so the
 // whole WebGL scene (built once in init3d() for whichever mesh was current
@@ -54,27 +46,14 @@ export function teardown3d() {
   if (three) {
     three.stop();
     disposeSceneContents(three.scene);
-    disposeSceneContents(texturedScene);
     three.renderer.dispose();
     three.renderer.domElement.remove();
   }
   three = null;
   threePromise = null;
-  texturedScene = null;
-  texturedScenePromise = null;
+  disposeTexturedScene();
 }
 
-const scriptPromises = {};
-function loadScript(src) {
-  scriptPromises[src] ??= new Promise((resolve, reject) => {
-    const s = document.createElement("script");
-    s.src = src;
-    s.onload = resolve;
-    s.onerror = () => { delete scriptPromises[src]; s.remove(); reject(new Error(`failed to load ${src}`)); };
-    document.head.appendChild(s);
-  });
-  return scriptPromises[src];
-}
 
 async function init3d() {
   // three.js is opt-in, so keep its ~740 KB off the 2D-only load path.
@@ -518,7 +497,7 @@ async function init3d() {
     async setTextured(on) {
       if (on === this.isTextured) { return; }
       const dest = on ? await ensureTexturedScene() : scene;
-      const src = on ? scene : texturedScene;
+      const src = on ? scene : currentTexturedScene();
       for (const g of [markerGroup, targetGroup, progressGroup]) {
         src?.remove(g);
         dest.add(g);
@@ -577,13 +556,13 @@ async function init3d() {
 // PerspectiveCamera.fov is vertical, so deriving and holding *that* fixed
 // while letting camera.aspect drive the projection matrix reproduces the
 // same widening automatically - no per-aspect-ratio special-casing needed.
-function verticalFovFromDesired(fovDesiredDeg) {
+export function verticalFovFromDesired(fovDesiredDeg) {
   const hHalf = fovDesiredDeg * Math.PI / 360;
   return 2 * Math.atan(Math.tan(hHalf) / (4 / 3)) * 180 / Math.PI;
 }
 
 let crosshairEl = null;
-function ensureCrosshair() {
+export function ensureCrosshair() {
   if (crosshairEl) {
     return;
   }
@@ -593,268 +572,7 @@ function ensureCrosshair() {
   stage3d.appendChild(crosshairEl);
 }
 
-// Textured scene, shared by lineup previews and the interactive view's
-// "Textured" toggle. A separate GLB per map, exported straight from the
-// game's VPK with real materials/UVs (data/{map}_textured.glb, built via
-// exportgltf + rig/optimize-textured-glb.mjs), loaded lazily since it is
-// tens of MB.
-let texturedScene = null;
-let texturedScenePromise = null;
-// Mirrors resetEnsure3d(): a failed load (e.g. called before ensure3d() has
-// loaded THREE) would otherwise cache the rejected promise forever, so every
-// later retry in the same page session replays the same stale failure.
-export function resetEnsureTexturedScene() {
-  texturedScenePromise = null;
-}
-export function ensureTexturedScene(url = `data/${state.currentMap}_textured.glb`) {
-  texturedScenePromise ??= (async () => {
-    await loadScript("viewer/lib/GLTFLoader.js");
-    await loadScript("viewer/lib/DRACOLoader.js");
-    const draco = new THREE.DRACOLoader();
-    draco.setDecoderPath("viewer/lib/draco/");
-    const loader = new THREE.GLTFLoader();
-    loader.setDRACOLoader(draco);
-    const gltf = await new Promise((resolve, reject) => {
-      loader.load(cacheBust(url), resolve, progress => {
-        // The first preview or Textured click starts an 18-46MB one-time
-        // download; without numbers it reads as a hang on a slow connection.
-        if (progress.lengthComputable) {
-          state.statusEl.textContent =
-            `loading map textures: ${(progress.loaded / 1e6).toFixed(0)} / ${(progress.total / 1e6).toFixed(0)} MB (one-time per map)`;
-        }
-      }, reject);
-    });
-    const root = gltf.scene;
-    // VRF exports in meters with a cyclic axis permutation, not a plain
-    // Y-up/Z-up swap: raw (x,y,z) maps to Hammer (z,y,x) - Hammer_X=raw_z,
-    // Hammer_Y=raw_x, Hammer_Z=raw_y (all times 1/0.0254), confirmed by
-    // comparing this GLB's bounding box against the map's known Hammer-unit
-    // region (viewer-map.json). A single Euler rotation can't express this
-    // axis permutation without ambiguity over axis order - e.g. rotation.x =
-    // 90deg only swaps two axes, leaving the frame rotated 90 degrees off
-    // the collision mesh/solver frame - so the basis is set directly as a
-    // matrix instead.
-    const s = 1 / 0.0254;
-    root.matrixAutoUpdate = false;
-    root.matrix.set(
-      0, 0, s, 0,
-      s, 0, 0, 0,
-      0, s, 0, 0,
-      0, 0, 0, 1);
-    root.updateMatrixWorld(true);
 
-    // Render unlit rather than PBR-lit. CS2's own bake already puts lighting
-    // into the textures/vertex tints, and the exporter can't classify
-    // roughness/metalness channels for this game build's shader format (a
-    // version-support gap in the VRF library) - the combination sent PBR
-    // materials to both extremes (pitch black roof undersides, blown-out
-    // white walls) depending on viewing angle. A flat, unlit material is
-    // both simpler and closer to what the game itself would show here.
-    // Source's compiler/editor-only materials (invisible clip brushes, light
-    // helpers, nodraw, etc.) are all named "tools*" by convention and were
-    // never meant to be seen in-game - the exporter includes them anyway,
-    // and at least one (a giant "toolssolidblocklight"/"toolsblocklight"
-    // ground-covering plane, its own debug texture reading "Solid"/"Block
-    // Light" across the whole map) sat on top of the real geometry and made
-    // the world look misaligned/rotated depending on the viewing angle.
-    // A second junk category: materials/effects/smoke/* (dust motes, window
-    // lightshafts, steam wisps - csgo_effects.vfx, GLTFLoader preserves the
-    // source .vmat path/shader name on material.userData via extras). These
-    // are additive particle-card VFX meant to render as faint animated
-    // overlays; rendered as solid unlit geometry they show up as stark white
-    // wedges and orange planes floating over rooftops, useless for a static
-    // lineup reference, so they are dropped entirely rather than shaded.
-    // A third junk category found across every map (not just one): the
-    // "tools" naming convention isn't always reflected in the glTF material's
-    // display name - some editor-only materials keep a friendly name (e.g.
-    // Mirage's Retake-mode "Wrong Way" site markers are named "wrongway_timer"
-    // but live at materials/tools/wrongway_timer.vmat) or live under
-    // materials/dev/ instead of materials/tools/ (a level-wide "black_simple"
-    // placeholder present on every single map checked, plus per-map lighting
-    // reflectivity checkers like materials/dev/reflectivity_30.vmat on Nuke
-    // and Ancient), or under models/ui/ (Nuke's solid red "retakes_blocker" -
-    // a Retake-game-mode-only wall) - matched by the vmat path prefix instead
-    // of the display name so these are caught regardless of what the
-    // material happens to be called.
-    const toRemove = [];
-    root.traverse(o => {
-      if (!o.isMesh || !o.material) {
-        return;
-      }
-      const vmat = o.material.userData?.vmat;
-      const vmatName = vmat?.Name ?? "";
-      if (o.material.name?.toLowerCase().startsWith("tools") ||
-          vmatName.startsWith("materials/effects/") ||
-          vmatName.startsWith("materials/tools/") ||
-          vmatName.startsWith("materials/dev/") ||
-          vmatName.startsWith("models/ui/")) {
-        toRemove.push(o);
-        return;
-      }
-      // A few meshes (flags, banners) carry no diffuse texture at all and
-      // rely on baked per-vertex color instead; without vertexColors those
-      // fall back to material.color, which is white by default and paints
-      // them as flat white triangles.
-      const hasVertexColor = !!o.geometry.getAttribute("color");
-      // Water and glass are procedural shaders (reflection/refraction/
-      // caustics computed at runtime) with no baseColorTexture and no
-      // baseColorFactor at all - GLTFLoader leaves material.color at its
-      // default white, so every water/glass surface on every map rendered as
-      // a flat opaque white plane. There is no static texture to fall back
-      // to (it doesn't exist even in the raw export), so approximate each
-      // with a translucent tint - water uses its own g_vWaterFogColor vmat
-      // param (already per-map art-directed, e.g. muddy tan for Ancient's
-      // jungle water vs. clear blue elsewhere) when present.
-      let color = o.material.color;
-      let { transparent, opacity } = o.material;
-      const shaderName = vmat?.ShaderName ?? "";
-      if (!o.material.map && shaderName === "csgo_water_fancy.vfx") {
-        const fog = vmat?.VectorParams?.g_vWaterFogColor;
-        color = fog ? new THREE.Color(fog[0], fog[1], fog[2]) : new THREE.Color(0x2f5f6b);
-        transparent = true;
-        opacity = 0.75;
-      } else if (!o.material.map && shaderName === "csgo_glass.vfx") {
-        color = new THREE.Color(0xbfd9e0);
-        transparent = true;
-        opacity = 0.35;
-      }
-      // Alpha-cutout meshes (fences, window bars, rusty grates) lose their
-      // cutout pattern and render as solid colored quads unless the MASK
-      // alphaTest GLTFLoader already computed from the glTF material is
-      // carried over onto the replacement material.
-      o.material = new THREE.MeshBasicMaterial({
-        map: o.material.map,
-        color,
-        vertexColors: !o.material.map && hasVertexColor,
-        transparent,
-        alphaTest: o.material.alphaTest,
-        opacity,
-        side: o.material.side,
-      });
-    });
-    for (const o of toRemove) {
-      o.parent.remove(o);
-    }
-
-    const scene = new THREE.Scene();
-    scene.background = new THREE.Color(state.colors.surface);
-    scene.add(root);
-
-    texturedScene = scene;
-    return scene;
-  })();
-  return texturedScenePromise;
-}
-
-// Renders one first-person frame from a lineup's exact throw position and
-// angle - what the player would line their crosshair against, not the
-// orbiting overview camera. Used for headless preview capture (screenshots
-// are taken by the automation driving the browser, not by this function).
-// fovDesiredDeg matches the client's fov_desired convar (90 is the CS2/CS:GO
-// default); pass the player's actual setting if they have changed it.
-export function renderPreview({ feet, type, pitchDeg, yawDeg, fovDesiredDeg = 90 }) {
-  if (!three) {
-    throw new Error("renderPreview called before ensure3d()");
-  }
-  // The interactive view's own requestAnimationFrame loop (started by
-  // three.start(), e.g. from clicking the 3D button) keeps re-rendering the
-  // flat scene every frame with whatever camera state currently exists -
-  // it will silently clobber this function's render within milliseconds if
-  // left running, overwriting it before a screenshot can ever see it.
-  three.stop();
-  const { renderer, camera, markerGroup, targetGroup } = three;
-  // Prefer the real-textured scene once ensureTexturedScene() has resolved;
-  // fall back to the flat collision mesh otherwise so this still works
-  // stand-alone (e.g. tests, or a map with no textured export yet).
-  const scene = texturedScene ?? three.scene;
-  const eyeHeight = EYE_HEIGHT_BY_TYPE[type] ?? DEFAULT_EYE_HEIGHT;
-  const eye = new THREE.Vector3(feet[0], feet[1], feet[2] + eyeHeight);
-  const pr = pitchDeg * Math.PI / 180, yr = yawDeg * Math.PI / 180;
-  // Same convention as GrenadeTrajectory/AimReference: yaw around Z, pitch
-  // tilts toward +Z as it goes negative (throws aim "down" at negative pitch).
-  const dir = new THREE.Vector3(
-    Math.cos(pr) * Math.cos(yr), Math.cos(pr) * Math.sin(yr), -Math.sin(pr));
-
-  camera.fov = verticalFovFromDesired(fovDesiredDeg);
-  camera.position.copy(eye);
-  camera.lookAt(eye.clone().add(dir));
-  camera.updateProjectionMatrix();
-
-  // A clean shot of the world only: our own marker/target overlays would
-  // never appear in a real player's view.
-  const wasMarkerVisible = markerGroup.visible, wasTargetVisible = targetGroup.visible;
-  markerGroup.visible = false;
-  targetGroup.visible = false;
-  renderer.render(scene, camera);
-  markerGroup.visible = wasMarkerVisible;
-  targetGroup.visible = wasTargetVisible;
-
-  // The crosshair sits at the exact viewport center regardless of resolution,
-  // matching where CS2 always draws it: it represents the aim direction the
-  // camera is already looking along, not a 3D-projected world point.
-  ensureCrosshair();
-}
-
-// Client-side lineup preview: everything renderPreview() needs already runs
-// in the user's own browser, so no server or headless automation is needed
-// to show one. Temporarily borrows the shared camera/canvas, snapshots it as
-// a PNG data URL, then restores whatever the user was looking at (position,
-// FOV, and the interactive loop if it was running) exactly as it was.
-//
-// The crosshair itself is an HTML overlay (ensureCrosshair()), not part of
-// the canvas's own pixels, so a page-level screenshot (the headless capture
-// path) picks it up for free but canvas.toDataURL() here would not - it is
-// redrawn with 2D primitives onto a copy of the frame instead.
-// Fixed 16:9 capture resolution: stage3d is usually display:none at this
-// point (no one has opened the 3D view), so its clientWidth/Height read 0
-// and resize3d() would leave the canvas at its tiny default size. A fixed
-// size also makes every preview the same shape regardless of the browser
-// window, rather than however wide the page happened to be.
-const PREVIEW_WIDTH = 1600, PREVIEW_HEIGHT = 900;
-
-export async function capturePreview({ feet, type, pitchDeg, yawDeg, fovDesiredDeg = 90 }) {
-  await ensure3d();
-  await ensureTexturedScene();
-  const wasLive = three.isLive;
-  const cam = three.camera;
-  const savedPos = cam.position.clone();
-  const savedQuat = cam.quaternion.clone();
-  const savedFov = cam.fov;
-  const savedAspect = cam.aspect;
-
-  three.renderer.setSize(PREVIEW_WIDTH, PREVIEW_HEIGHT, false);
-  cam.aspect = PREVIEW_WIDTH / PREVIEW_HEIGHT;
-  renderPreview({ feet, type, pitchDeg, yawDeg, fovDesiredDeg });
-  const src = three.renderer.domElement;
-  const out = document.createElement("canvas");
-  out.width = src.width;
-  out.height = src.height;
-  const ctx = out.getContext("2d");
-  ctx.drawImage(src, 0, 0);
-  const cx = out.width / 2, cy = out.height / 2, r = out.width / 120;
-  ctx.strokeStyle = "#00ff00";
-  ctx.lineWidth = Math.max(1, out.width / 900);
-  ctx.beginPath();
-  ctx.moveTo(cx - r, cy); ctx.lineTo(cx + r, cy);
-  ctx.moveTo(cx, cy - r); ctx.lineTo(cx, cy + r);
-  ctx.stroke();
-  const dataUrl = out.toDataURL("image/png");
-
-  cam.position.copy(savedPos);
-  cam.quaternion.copy(savedQuat);
-  cam.fov = savedFov;
-  cam.aspect = savedAspect;
-  cam.updateProjectionMatrix();
-  // Resyncs the canvas to stage3d's real size (0 if the interactive 3D view
-  // was never opened, in which case this is a harmless no-op - resize3d()
-  // itself guards on that and start() will size it again if 3D mode opens
-  // later).
-  three.resize3d();
-  if (wasLive) {
-    three.start();
-  }
-  return dataUrl;
-}
 
 // Re-applies palette-dependent colors after a prefers-color-scheme flip
 // (M45). The terrain's per-vertex height tint stays baked from init; a rare

@@ -87,7 +87,7 @@ def main() -> int:
     print("loading textured scene (~300MB, one-time)...", file=sys.stderr)
     texture_result = run_axi(
         "eval",
-        "async () => { const {ensureTexturedScene} = await import('/viewer/js/view3d.js'); "
+        "async () => { const {ensureTexturedScene} = await import('/viewer/js/textured-scene.js'); "
         "try { await ensureTexturedScene(); return 'loaded'; } "
         "catch (e) { return 'failed: ' + e.message; } }",
         timeout=180)
@@ -103,7 +103,7 @@ def main() -> int:
 
     for i, l in enumerate(candidates):
         call = (
-            "async () => { const {renderPreview} = await import('/viewer/js/view3d.js'); "
+            "async () => { const {renderPreview} = await import('/viewer/js/preview.js'); "
             f"renderPreview({{feet:{json.dumps(l['feet'])}, type:{json.dumps(l['type'])}, "
             f"pitchDeg:{l['pitch']}, yawDeg:{l['yaw']}, fovDesiredDeg:{args.fov}}}); return 'rendered'; }}"
         )
