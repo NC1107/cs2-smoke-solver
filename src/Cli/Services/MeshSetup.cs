@@ -29,6 +29,22 @@ namespace SmokeSolver.Cli;
 
 public static class MeshSetup
 {
+    // The default solid set for single-target commands (bestlineup, plineup,
+    // validate). Read via GetValueOrDefault rather than written back into the
+    // caller's options dictionary - three commands used to each mutate their
+    // input with their own copy of this string.
+    public const string SingleTargetDefaultAttrs = "Default,default,EntitySolid";
+
+    // The canonical grenade-solid collider for a bounds; five commands each
+    // spelled this constructor call out.
+    public static TriangleCollider BuildGrenadeCollider(CollisionMesh mesh, Vector3 min, Vector3 max) =>
+        new(mesh, min, max, mesh.GrenadeSolidFilter());
+
+    // extract always writes <map>.navareas.json next to the .s2geo, so every
+    // command can find nav data by convention instead of demanding --nav.
+    public static string DefaultNavAreasPath(Dictionary<string, string> options, CollisionMesh mesh) =>
+        Path.Combine(Path.GetDirectoryName(Path.GetFullPath(Require(options, "geo"))) ?? ".", $"{mesh.MapName}.navareas.json");
+
     public static (CollisionMesh Mesh, float VoxelSize, SmokeParams Params, Func<byte, bool>? AttributeFilter) LoadCommon(
         Dictionary<string, string> options)
     {

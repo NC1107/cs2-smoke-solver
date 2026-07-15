@@ -6,7 +6,7 @@ import { state, filtered, esc } from "./state.js";
 import { loadMapList, loadMapData, runQuery as postLineupQuery, fetchTrajectory } from "./api.js";
 import { loadRadar, readColors, recolorRadar, draw, scheduleDraw, resize, resetView, initMap2d } from "./map2d.js";
 import { ensure3d, resetEnsure3d, resetEnsureTexturedScene, teardown3d, current3d, sync3d, syncProgress3d, set3dCallbacks, applyTheme3d, capturePreview } from "./view3d.js";
-import { renderLineups, initPanel, revealSelected } from "./panel.js";
+import { renderLineups, initPanel, revealSelected, resultStatusText } from "./panel.js";
 
 (async () => {
   // Map switching means a failed load is no longer necessarily terminal (the
@@ -34,6 +34,7 @@ import { renderLineups, initPanel, revealSelected } from "./panel.js";
   const searchBtn = document.getElementById("search-all");
   const heatBtn = document.getElementById("heat");
   const view3dBtn = document.getElementById("view3d");
+  const resetViewBtn = document.getElementById("reset-view");
   const texturedBtn = document.getElementById("textured3d");
   const topDownBtn = document.getElementById("topdown");
   const clearBtn = document.getElementById("clear");
@@ -98,6 +99,8 @@ import { renderLineups, initPanel, revealSelected } from "./panel.js";
     heatBtn.classList.toggle("active", state.heatOn);
 
     view3dBtn.classList.toggle("active", in3d);
+    // 2D's "recenter" is Reset view; 3D's is Top-down. Only the live one shows.
+    resetViewBtn.hidden = in3d;
     texturedBtn.hidden = !in3d;
     topDownBtn.hidden = !in3d;
     document.body.classList.toggle("crosshair-3d", in3d);
@@ -128,6 +131,20 @@ import { renderLineups, initPanel, revealSelected } from "./panel.js";
     syncControls();
   }
 
+  // The one definition of "clear the search state": every field added here
+  // (picking, results, selection, heat) used to be reset by hand at three
+  // call sites, which is exactly how a new field gets missed at one of them.
+  function resetSearch({ keepTarget = false } = {}) {
+    state.picking = false;
+    if (!keepTarget) {
+      state.target = null;
+    }
+    state.result = null;
+    state.selected = -1;
+    state.heatOn = false;
+    canvas.classList.remove("picking");
+  }
+
   // A different map is entirely different geometry/nav/lineups, so this is a
   // full reset (target, results, 3D scene) rather than an incremental swap -
   // there is only ever "the current map," never a per-map cache to switch
@@ -141,12 +158,7 @@ import { renderLineups, initPanel, revealSelected } from "./panel.js";
     texturedBtn.classList.remove("active");
     state.currentMap = name;
     localStorage.setItem("smokesolver.lastMap", name);
-    state.picking = false;
-    state.target = null;
-    state.result = null;
-    state.selected = -1;
-    state.heatOn = false;
-    canvas.classList.remove("picking");
+    resetSearch();
     syncControls();
 
     try {
@@ -256,20 +268,30 @@ import { renderLineups, initPanel, revealSelected } from "./panel.js";
   // front left every returning visitor, and every ?map= link, with the filters
   // stranded inside a hidden dialog and an empty filters card.
   const filterEls = Object.values(state.filters);
+  const filterRowsHtml = () => filterEls
+    .map(f => `<div class="filter-row" data-for="${f.id}">` +
+      `<label class="filter-head" for="${f.id}"><b>${esc(f.dataset.label)}:</b><span class="filter-slot"></span></label>` +
+      `<p class="filter-desc">${esc(f.dataset.desc)}</p></div>`)
+    .join("");
+  // The label+description rows render in the sidebar too, permanently - they
+  // used to exist only inside the intro, so the one explanation of what
+  // "reliability" or "sky aim" means vanished forever the moment it closed
+  // (and returning visitors never saw it at all).
+  filterBody.innerHTML = filterRowsHtml();
+  const slotFor = (container, f) => container.querySelector(`.filter-row[data-for="${f.id}"] .filter-slot`);
+  for (const f of filterEls) {
+    slotFor(filterBody, f).appendChild(f);
+  }
   function mountIntroFilters() {
-    document.getElementById("intro-filter-rows").innerHTML = filterEls
-      .map(f => `<div class="filter-row" data-for="${f.id}">` +
-        `<label class="filter-head" for="${f.id}"><b>${esc(f.dataset.label)}:</b><span class="filter-slot"></span></label>` +
-        `<p class="filter-desc">${esc(f.dataset.desc)}</p></div>`)
-      .join("");
+    document.getElementById("intro-filter-rows").innerHTML = filterRowsHtml();
     for (const f of filterEls) {
-      document.querySelector(`.filter-row[data-for="${f.id}"] .filter-slot`).appendChild(f);
+      slotFor(document.getElementById("intro-filter-rows"), f).appendChild(f);
     }
   }
 
   function closeIntro() {
     for (const f of filterEls) {
-      filterBody.appendChild(f);
+      slotFor(filterBody, f).appendChild(f);
     }
     closeModal(intro);
     syncControls();
@@ -389,11 +411,7 @@ import { renderLineups, initPanel, revealSelected } from "./panel.js";
 
   function setTarget(t, note) {
     state.target = t;
-    state.picking = false;
-    state.result = null;
-    state.selected = -1;
-    state.heatOn = false;
-    canvas.classList.remove("picking");
+    resetSearch({ keepTarget: true });
     // Lead with the action most users want next (the full sweep); the
     // narrower solve-one-spot click is the refinement, not the default.
     statusEl.textContent = `${note} - "Search map" finds every throw spot · or click one spot to solve just it · right-click/long-press moves the target`;
@@ -417,6 +435,7 @@ import { renderLineups, initPanel, revealSelected } from "./panel.js";
       syncControls();
     }
   });
+  resetViewBtn.addEventListener("click", resetView);
   searchBtn.addEventListener("click", () => {
     if (state.target && !state.busy) {
       statusEl.textContent = "searching map…";
@@ -424,12 +443,7 @@ import { renderLineups, initPanel, revealSelected } from "./panel.js";
     }
   });
   clearBtn.addEventListener("click", () => {
-    state.picking = false;
-    state.target = null;
-    state.result = null;
-    state.selected = -1;
-    state.heatOn = false;
-    canvas.classList.remove("picking");
+    resetSearch();
     statusEl.textContent = "";
     syncControls();
     renderLineups();
@@ -439,7 +453,7 @@ import { renderLineups, initPanel, revealSelected } from "./panel.js";
     setHeat(!state.heatOn);
     statusEl.textContent = state.heatOn
       ? "heatmap: where a throw reaches, and where nothing does - see legend"
-      : `${filtered().length} lineups - click a marker or use the list`;
+      : resultStatusText(filtered().length);
     draw();
   });
   for (const f of Object.values(state.filters)) {

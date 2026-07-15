@@ -9,24 +9,15 @@ import calibipc
 req = json.loads(sys.argv[1])
 name = req["name"]
 
-try:
-    res = json.loads(sys.argv[2])
-except (IndexError, json.JSONDecodeError):
-    calibipc.log.error("bestlineup produced no parseable result for %r: argv=%r",
-                       name, sys.argv[2:])
-    calibipc.send_chat(f"solver error while finding a lineup for '{name}' - check rig.log")
-    sys.exit(1)
+res = calibipc.parse_solver_result(sys.argv, name, "finding a lineup for")
 
 if not res.get("found"):
     calibipc.send_chat(f"no lineups reach '{name}'")
     sys.exit(0)
 
-strength = res["strength"]
-click = "left" if strength >= 0.99 else ("left+right" if strength >= 0.49 else "right")
 feet = res["feet"]
 pitch, yaw = res["pitch"], res["yaw"]
-hint = f"{res['type']} {click} click"
-aim = list(res["aim"]) + [yaw]
+hint, aim = calibipc.click_hint_aim(res)
 calibipc.send({
     "chat": [
         f" [calib] best lineup for {name}: {res['dist']:.0f}u from you ({res['candidates']} candidates)",

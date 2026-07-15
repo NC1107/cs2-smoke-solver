@@ -29,6 +29,11 @@ def run_axi(*args: str, timeout: float = 60) -> str:
     result = subprocess.run(
         ["npx", "-y", "chrome-devtools-axi", *args],
         capture_output=True, text=True, timeout=timeout)
+    # A missing Chrome or a crashed bridge otherwise "succeeds" with empty
+    # stdout, and the run ends with zero previews and no explanation.
+    if result.returncode != 0:
+        raise RuntimeError(
+            f"chrome-devtools-axi {args[0]} failed (exit {result.returncode}): {result.stderr.strip()[:500]}")
     return result.stdout
 
 
@@ -87,6 +92,10 @@ def main() -> int:
         "catch (e) { return 'failed: ' + e.message; } }",
         timeout=180)
     print(f"  {texture_result.strip()}", file=sys.stderr)
+    # A failed texture load means every subsequent render is the flat mesh, not
+    # the previews this run exists to produce - stop instead of shipping them.
+    if "failed:" in texture_result:
+        raise RuntimeError(f"textured scene load failed: {texture_result.strip()}")
 
     slug = f"{target[0]:.0f}_{target[1]:.0f}"
     outdir = os.path.join(args.out, slug)

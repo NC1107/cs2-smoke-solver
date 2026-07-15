@@ -5,7 +5,7 @@ namespace SmokeSolver.Sim;
 /// <summary>
 /// Triangle vs axis-aligned box separating-axis test (Akenine-Möller).
 /// </summary>
-static class TriBoxOverlap
+public static class TriBoxOverlap
 {
     public static bool Test(Vector3 boxCenter, Vector3 boxHalf, Vector3 a, Vector3 b, Vector3 c)
     {

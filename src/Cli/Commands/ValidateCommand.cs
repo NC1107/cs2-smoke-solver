@@ -56,12 +56,12 @@ public static class ValidateCommand
             return failures == 0 ? 0 : 1;
         }
 
-        if (!options.ContainsKey("attrs"))
-        {
-            options["attrs"] = "Default,default,EntitySolid";
-        }
+        // Defaults land on a local clone: the caller's dictionary is shared
+        // state and must not be mutated (--markers already clones for this).
+        options = new Dictionary<string, string>(options);
+        options.TryAdd("attrs", SingleTargetDefaultAttrs);
         var (mesh, _, _, attributeFilter) = LoadCommon(options);
-        var navAreas = LoadJson<List<NavAreaJson>>(Require(options, "nav"), "nav areas");
+        var navAreas = LoadJson<List<NavAreaJson>>(options.GetValueOrDefault("nav", DefaultNavAreasPath(options, mesh)), "nav areas");
         var constants = LoadConstants(options);
 
         Vector3 target;

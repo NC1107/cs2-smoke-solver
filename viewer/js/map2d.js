@@ -3,7 +3,8 @@
 // actions (set target, select, run query) go through callbacks that main.js
 // registers, so this module never imports the orchestrator.
 
-import { state, filtered, typeShort, clickShort, clickClass, esc, SMOKE_BLOOM_RADIUS, PICK_RADIUS_PX, HEAT_CELL } from "./state.js";
+import { cacheBust } from "./api.js";
+import { isDrag, state, filtered, typeShort, clickShort, clickClass, esc, SMOKE_BLOOM_RADIUS, PICK_RADIUS_PX, TOUCH_PICK_RADIUS_PX, HEAT_CELL } from "./state.js";
 
 const canvas = state.canvas;
 const ctx = canvas.getContext("2d");
@@ -42,14 +43,10 @@ const radarCanvas = document.createElement("canvas");
 // Loads the radar image and caches the map region; rejects on a missing
 // image so main.js can show the boot error box and abort.
 export async function loadRadar() {
-  // Cache-bust with the map build so a re-processed radar is fetched fresh past
-  // both Cloudflare (which caches this static PNG at the edge) and the browser,
-  // instead of showing the stale image - the 2D twin of the mesh cache issue.
-  const bust = state.mapData.build ? "?v=" + state.mapData.build : "";
   await new Promise((resolve, reject) => {
     radar.onload = resolve;
     radar.onerror = reject;
-    radar.src = "data/" + state.mapData.image + bust;
+    radar.src = cacheBust("data/" + state.mapData.image);
   });
   radarCanvas.width = radar.width;
   radarCanvas.height = radar.height;
@@ -309,7 +306,7 @@ export function initMap2d(cb) {
     panning = false;
     canvas.classList.remove("panning");
     cancelLongPress();
-    if (pressConsumed || Math.hypot(e.clientX - downX, e.clientY - downY) > 4 || state.busy) {
+    if (pressConsumed || isDrag(downX, downY, e.clientX, e.clientY) || state.busy) {
       return;
     }
     if (e.button === 2) {
@@ -325,7 +322,9 @@ export function initMap2d(cb) {
     }
     const rect = canvas.getBoundingClientRect();
     const [wx, wy] = worldOf(e.clientX - rect.left, e.clientY - rect.top);
-    const bestIdx = nearestLineup(wx, wy, PICK_RADIUS_PX / scale);
+    // Fingers are not mouse pointers: give touch a fatter marker grab zone.
+    const pickPx = e.pointerType === "touch" ? TOUCH_PICK_RADIUS_PX : PICK_RADIUS_PX;
+    const bestIdx = nearestLineup(wx, wy, pickPx / scale);
     if (bestIdx >= 0) {
       callbacks.onSelect(bestIdx);
       return;

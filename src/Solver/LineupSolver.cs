@@ -32,6 +32,13 @@ public static partial class LineupSolver
     const int RefineHalfSpan = 2;
     static readonly float[] Strengths = [1f, 0.5f, 0f];
 
+    // A throw that ran out the full flight budget never came to rest - its
+    // "rest point" is wherever the integrator gave up. The 0.01s slack absorbs
+    // float accumulation in the per-tick time sum. Shared by the coarse sweep
+    // and VerifyExact, which used to carry inverted copies of this comparison.
+    static bool Settled(TrajectoryResult r) =>
+        !r.Lost && r.FlightTime < GrenadeTrajectory.MaxFlightSeconds - 0.01f;
+
     // Loose upper bounds used only to prune hopeless origins; a real measured
     // jumpthrow covers 2286u, so err generously.
     static float MaxRange(ThrowType type) => type switch
@@ -90,7 +97,7 @@ public static partial class LineupSolver
             float Evaluate(Vector3 eye, float yaw, float pitch, ThrowType type, float strength)
             {
                 var result = GrenadeTrajectory.Simulate(grid, new ThrowSpec(eye, yaw, pitch, type, strength), constants);
-                if (result.Lost || result.FlightTime >= GrenadeTrajectory.MaxFlightSeconds - 0.01f)
+                if (!Settled(result))
                 {
                     return float.MaxValue;
                 }
@@ -212,8 +219,6 @@ public static partial class LineupSolver
                 return result;
             }
 
-            bool Settles(TrajectoryResult r) =>
-                !r.Lost && r.FlightTime < GrenadeTrajectory.MaxFlightSeconds - 0.01f;
 
             float StabilityAround(int cYaw, int cPitch)
             {
@@ -221,7 +226,7 @@ public static partial class LineupSolver
                 foreach (var (dYaw, dPitch) in offsets)
                 {
                     var result = SimAt(cYaw + dYaw, cPitch + dPitch);
-                    if (Settles(result) && InZone(grid, zoneCrossings, result.RestPoint))
+                    if (Settled(result) && InZone(grid, zoneCrossings, result.RestPoint))
                     {
                         hits++;
                     }
@@ -243,7 +248,7 @@ public static partial class LineupSolver
                     for (var dPitch = -AimReach; dPitch <= AimReach; dPitch++)
                     {
                         var result = SimAt(dYaw, dPitch);
-                        if (!Settles(result) || !InZone(grid, zoneCrossings, result.RestPoint))
+                        if (!Settled(result) || !InZone(grid, zoneCrossings, result.RestPoint))
                         {
                             continue;
                         }
@@ -274,7 +279,7 @@ public static partial class LineupSolver
             // actually describes takes 5 and 4.6s - visible now that the viewer
             // draws the real path, and quietly wrong before that, because the
             // bounce and flight-time filters were sifting on the approximation.
-            var settled = Settles(best) && InZone(grid, zoneCrossings, best.RestPoint);
+            var settled = Settled(best) && InZone(grid, zoneCrossings, best.RestPoint);
             verified.Add(lineup with
             {
                 YawDeg = Normalize(lineup.YawDeg + aimYaw * StepDeg),

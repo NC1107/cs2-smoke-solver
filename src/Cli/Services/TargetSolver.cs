@@ -102,7 +102,7 @@ public static class TargetSolver
 
         // Built before the origins, not after: they are snapped onto its triangles
         // so that the spot a lineup names is the spot the player actually stands on.
-        var collider = new TriangleCollider(mesh, min, max, mesh.GrenadeSolidFilter());
+        var collider = BuildGrenadeCollider(mesh, min, max);
 
         var origins = LineupSolver.OriginsFromNavAreas(
                 grid,
@@ -134,8 +134,6 @@ public static class TargetSolver
             origins.Count,
             [.. coverage.Select(kv => new[] { kv.Key.X, kv.Key.Y, kv.Value })],
             lineups,
-            min,
-            max,
             collider);
     }
 

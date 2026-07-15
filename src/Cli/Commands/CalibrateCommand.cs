@@ -47,13 +47,7 @@ public static class CalibrateCommand
             var strength = entry.TryGetProperty("strength", out var strengthEl) ? strengthEl.GetSingle() : 1f;
             var impact = entry.TryGetProperty("measure", out var measureEl) && measureEl.GetString() == "impact";
             samples.Add((
-                new ThrowSpec(eye, yaw, pitch, type switch
-                {
-                    "stand" => ThrowType.Stand,
-                    "jump" => ThrowType.JumpThrow,
-                    "runjump" => ThrowType.RunJumpThrow,
-                    var other => throw new ArgumentException($"unknown throw type '{other}'"),
-                }, strength),
+                new ThrowSpec(eye, yaw, pitch, ParseThrowType(type), strength),
                 landingEye - new Vector3(0, 0, 64),
                 impact));
         }
@@ -69,7 +63,7 @@ public static class CalibrateCommand
         var (meshMin, meshMax) = mesh.ComputeBounds();
         min = Vector3.Max(min - new Vector3(600, 600, 0), meshMin) with { Z = meshMin.Z };
         max = Vector3.Min(max + new Vector3(600, 600, 0), meshMax) with { Z = MathF.Min(meshMax.Z + 64, max.Z + 1300) };
-        var collider = new TriangleCollider(mesh, min, max, mesh.GrenadeSolidFilter());
+        var collider = BuildGrenadeCollider(mesh, min, max);
 
         float Error(ThrowConstants k)
         {

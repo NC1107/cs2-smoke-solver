@@ -3,8 +3,8 @@
 // wraps init/sync. Raycast picks route through callbacks that main.js
 // registers, so this module never imports the orchestrator.
 
-import { state, filtered, clickClass, SMOKE_BLOOM_RADIUS, EYE_HEIGHT_BY_TYPE, DEFAULT_EYE_HEIGHT } from "./state.js";
-import { fetchMesh } from "./api.js";
+import { state, filtered, clickClass, isDrag, SMOKE_BLOOM_RADIUS, EYE_HEIGHT_BY_TYPE, DEFAULT_EYE_HEIGHT } from "./state.js";
+import { fetchMesh, cacheBust } from "./api.js";
 
 const stage3d = state.stage3d;
 let three = null;
@@ -337,7 +337,7 @@ async function init3d() {
     const wasPinching = e.pointerType === "touch" && touches.size >= 2;
     endPointer(e);
     if (pressConsumed || wasPinching) { pressConsumed = false; return; }
-    if (!down || Math.hypot(e.clientX - down[0], e.clientY - down[1]) > 4) { down = null; return; }
+    if (!down || isDrag(down[0], down[1], e.clientX, e.clientY)) { down = null; return; }
     down = null;
     // Right-click always sets/moves the target - its own dedicated input, so
     // re-aiming never fights marker selection or origin probing (which stay
@@ -614,14 +614,15 @@ export function ensureTexturedScene(url = `data/${state.currentMap}_textured.glb
     draco.setDecoderPath("viewer/lib/draco/");
     const loader = new THREE.GLTFLoader();
     loader.setDRACOLoader(draco);
-    // Cache-bust the URL with the map build so a re-processed GLB is fetched
-    // fresh past both Cloudflare (which caches these static files at the edge,
-    // ignoring a client fetch's cache mode) and the browser. The loader streams
-    // the file rather than buffering the whole 18MB - fetching it into a blob
-    // first failed intermittently, a real risk on memory-limited mobile.
-    const bust = state.mapData?.build ? `?v=${state.mapData.build}` : "";
     const gltf = await new Promise((resolve, reject) => {
-      loader.load(url + bust, resolve, undefined, reject);
+      loader.load(cacheBust(url), resolve, progress => {
+        // The first preview or Textured click starts an 18-46MB one-time
+        // download; without numbers it reads as a hang on a slow connection.
+        if (progress.lengthComputable) {
+          state.statusEl.textContent =
+            `loading map textures: ${(progress.loaded / 1e6).toFixed(0)} / ${(progress.total / 1e6).toFixed(0)} MB (one-time per map)`;
+        }
+      }, reject);
     });
     const root = gltf.scene;
     // VRF exports in meters with a cyclic axis permutation, not a plain

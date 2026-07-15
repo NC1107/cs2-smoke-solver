@@ -28,6 +28,9 @@
     /* Darker than --heat-none: the SKY badge renders 10px text on --panel,
        where #EA580C only reaches 3.37:1 (AA needs 4.5). 4.90:1. */
     --ref-sky-ink: #C2410C;
+    --border: 1px solid var(--line);
+    --glass: color-mix(in srgb, var(--panel) 92%, transparent);
+    --glass-heavy: color-mix(in srgb, var(--panel) 96%, transparent);
     --btn-font-size: 12px;
     --btn-pad: 3px 10px;
     --btn-radius: 4px;
@@ -67,28 +70,20 @@
     gap: 10px;
     flex-wrap: wrap;
     padding: 7px 12px;
-    border-bottom: 1px solid var(--line);
+    border-bottom: var(--border);
     font-size: 12px;
   }
   .toolbar .brand { font-weight: 650; font-size: 13px; margin-right: 2px; }
-  #map-select {
-    font: inherit;
-    font-size: 12px;
-    font-weight: 600;
-    color: var(--ink);
-    background: var(--panel);
-    border: 1px solid var(--line);
-    border-radius: 4px;
-    padding: 3px 8px;
-    cursor: pointer;
-  }
-  .btn {
+  #map-select { font-weight: 600; --btn-pad: 3px 8px; }
+  /* Selects share the button look wholesale; each context below overrides
+     only what genuinely differs (weight, size, background). */
+  :is(.btn, select) {
     font: inherit;
     font-family: ui-sans-serif, system-ui, "Segoe UI", sans-serif;
     font-size: var(--btn-font-size);
     color: var(--ink);
     background: var(--panel);
-    border: 1px solid var(--line);
+    border: var(--border);
     border-radius: var(--btn-radius);
     padding: var(--btn-pad);
     cursor: pointer;
@@ -130,8 +125,8 @@
     width: 158px;
   }
   #controls .card {
-    background: color-mix(in srgb, var(--panel) 92%, transparent);
-    border: 1px solid var(--line);
+    background: var(--glass);
+    border: var(--border);
     border-radius: 6px;
     padding: 8px;
   }
@@ -161,24 +156,20 @@
     width: 100%;
     text-align: left;
   }
-  #controls select {
-    font: inherit;
-    font-size: 12px;
-    color: var(--ink);
-    background: var(--panel);
-    border: 1px solid var(--line);
-    border-radius: 4px;
-    padding: 4px 8px;
-    cursor: pointer;
-  }
+  /* The filter rows (label + description) also render inside the narrow
+     sidebar card; there the label sits above its select and the description
+     hugs the left edge - the intro's wide two-column metrics don't fit. */
+  #controls .filter-head { flex-direction: column; align-items: stretch; gap: 2px; }
+  #controls .filter-head b { min-width: 0; }
+  #controls .filter-desc { margin-left: 0; }
   :is(button, input, select, summary):focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
   #status { color: var(--muted); }
   #tip {
     position: absolute;
     display: none;
     pointer-events: none;
-    background: color-mix(in srgb, var(--panel) 96%, transparent);
-    border: 1px solid var(--line);
+    background: var(--glass-heavy);
+    border: var(--border);
     border-radius: 5px;
     padding: 6px 9px;
     font-size: 11px;
@@ -243,8 +234,8 @@
     bottom: 10px;
     font-size: 11px;
     color: var(--muted);
-    background: color-mix(in srgb, var(--panel) 92%, transparent);
-    border: 1px solid var(--line);
+    background: var(--glass);
+    border: var(--border);
     border-radius: 5px;
     max-width: min(420px, calc(100% - 20px));
   }
@@ -258,8 +249,8 @@
   .key > summary::-webkit-details-marker { display: none; }
   .key > summary::before { content: "?"; display: inline-flex; align-items: center; justify-content: center;
     width: 13px; height: 13px; margin-right: 6px; vertical-align: -2px;
-    border: 1px solid var(--line); border-radius: 50%; font-size: 9px; font-weight: 700; }
-  .key[open] > summary { border-bottom: 1px solid var(--line); }
+    border: var(--border); border-radius: 50%; font-size: 9px; font-weight: 700; }
+  .key[open] > summary { border-bottom: var(--border); }
   .key-body { padding: 7px 10px; display: grid; gap: 5px; }
   /* Two independent variables (color = click, shape = movement) read as two
      labeled rows; as one nine-item strip they read as noise. */
@@ -270,7 +261,7 @@
   .key.heat #key-heat { display: grid; gap: 5px; }
   .key .swatch { width: 10px; height: 10px; display: inline-block; vertical-align: -1px; }
   .key .swatch.ok { background: var(--heat-ok); opacity: 0.75; }
-  .key .swatch.raw { background: var(--heat-ok); opacity: 0.18; outline: 1px solid var(--line); }
+  .key .swatch.raw { background: var(--heat-ok); opacity: 0.18; outline: var(--border); }
   .key .swatch.none { border: 2px solid var(--heat-none); }
   .key .cross { color: var(--target); font-weight: 700; }
   /* 3D controls legend: same chip idiom as the marker legend, opposite corner
@@ -293,8 +284,8 @@
     right: 10px;
     top: 10px;
     width: min(320px, calc(100% - 20px));
-    background: color-mix(in srgb, var(--panel) 96%, transparent);
-    border: 1px solid var(--line);
+    background: var(--glass-heavy);
+    border: var(--border);
     border-radius: 6px;
     font-size: 12px;
     max-height: calc(100% - 20px);
@@ -322,7 +313,7 @@
     font: 10.5px ui-monospace, Menlo, monospace;
     color: var(--ink);
     background: var(--surface);
-    border: 1px solid var(--line);
+    border: var(--border);
     border-radius: 4px;
     padding: 4px 6px;
   }
@@ -331,7 +322,7 @@
   .cmd {
     position: relative;
     background: var(--surface);
-    border: 1px solid var(--line);
+    border: var(--border);
     border-radius: 4px;
     padding: 5px 7px;
     font-family: ui-monospace, Menlo, monospace;
@@ -353,7 +344,7 @@
   #lineup-list { display: grid; gap: 6px; align-content: start; }
   #lineup-list:empty { display: none; }
   .lineup {
-    border: 1px solid var(--line);
+    border: var(--border);
     border-radius: 4px;
     padding: 5px 7px;
     cursor: pointer;
@@ -375,7 +366,7 @@
     aspect-ratio: 16 / 9;
     border-radius: 4px;
     background: var(--surface);
-    border: 1px solid var(--line);
+    border: var(--border);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -416,7 +407,7 @@
   .intro[hidden] { display: none; }
   .intro-card {
     background: var(--panel);
-    border: 1px solid var(--line);
+    border: var(--border);
     border-radius: 10px;
     padding: 16px 18px;
     width: min(520px, 100%);
@@ -437,7 +428,7 @@
     font-weight: 600;
     color: var(--ink);
     background: var(--surface);
-    border: 1px solid var(--line);
+    border: var(--border);
     border-radius: 6px;
     padding: 11px 10px;
     cursor: pointer;
@@ -466,14 +457,9 @@
      stepping in and out with the length of each name. */
   .filter-head b { font-size: 12px; white-space: nowrap; min-width: 88px; }
   .filter-row select {
-    font: inherit;
-    font-size: 11.5px;
-    color: var(--ink);
+    --btn-font-size: 11.5px;
+    --btn-pad: 2px 6px;
     background: var(--surface);
-    border: 1px solid var(--line);
-    border-radius: 4px;
-    padding: 2px 6px;
-    cursor: pointer;
   }
   /* Aligned under the dropdown rather than the label: the line explains the
      control, so it reads as attached to it. */
@@ -493,7 +479,7 @@
     font-size: 11px;
     color: var(--ink);
     background: transparent;
-    border: 1px solid var(--line);
+    border: var(--border);
     border-radius: 4px;
     padding: 4px 7px;
     cursor: pointer;
@@ -505,11 +491,15 @@
   .lineup-option b, .lineup-option span:not(.pct) { white-space: nowrap; }
   .ref.sky { color: var(--ref-sky-ink); border: 1px solid var(--ref-sky-ink); font-weight: 700; }
   .ref.reticle { color: var(--target); border: 1px solid var(--target); }
-  .ref.flat { color: var(--muted); border: 1px solid var(--line); }
+  .ref.flat { color: var(--muted); border: var(--border); }
   .ref.edge { color: var(--accent); border: 1px solid var(--accent); }
   .ref.fav { color: var(--target); border: none; padding: 0; }
   @media (max-width: 640px) {
-    #controls { width: 148px; }
+    /* Finger-sized controls: the desktop paddings produce ~20px-tall hit
+       targets, well under the ~44px touch minimum. */
+    :is(.btn, select) { --btn-font-size: 13px; }
+    #controls .btn, #controls select { --btn-pad: 11px 10px; }
+    #controls { width: 168px; }
     #controls summary { display: list-item; }
     #controls details[open] > .card-body { margin-top: 6px; }
     .key { left: auto; right: 10px; top: 10px; bottom: auto; max-width: calc(100% - 178px); }

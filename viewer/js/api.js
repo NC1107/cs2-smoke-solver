@@ -1,5 +1,14 @@
 // Fetch wrappers. No DOM access here; callers own status text and overlays.
 
+import { state } from "./state.js";
+
+// Cache-bust a data URL with the map build: re-processed radars/GLBs change
+// content without changing name, and the query string gets a fresh copy past
+// both the browser cache and any CDN edge in front of the origin.
+export function cacheBust(url) {
+  return state.mapData?.build ? `${url}?v=${state.mapData.build}` : url;
+}
+
 // Every extracted map leaves data/{map}.viewer-map.json/.png behind (see
 // ViewerDataCommand); this lists them so the viewer's map picker never has
 // to hardcode a map list.

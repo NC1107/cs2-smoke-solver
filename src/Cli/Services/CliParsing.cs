@@ -127,15 +127,34 @@ public static class CliParsing
     public static string ClickName(float strength) =>
         strength >= 0.99f ? "left" : strength >= 0.49f ? "left+right" : "right";
 
+    // One switch for the CLI's --type values; three commands each carried a
+    // copy, so adding a crouch variant to one surface silently skipped the rest.
+    public static ThrowType ParseThrowType(string raw) => raw.ToLowerInvariant() switch
+    {
+        "stand" => ThrowType.Stand,
+        "jump" => ThrowType.JumpThrow,
+        "runjump" => ThrowType.RunJumpThrow,
+        var other => throw new ArgumentException($"unknown throw type '{other}'"),
+    };
+
+    // The console command handed to players. Z + 1 keeps the teleport just above
+    // the floor so the game settles the player down onto it instead of into it.
+    public static string SetposCommand(Vector3 feet, float pitchDeg, float yawDeg) =>
+        $"setpos {feet.X:F0} {feet.Y:F0} {feet.Z + 1:F0}; setang {pitchDeg:F1} {yawDeg:F1} 0";
+
     public static string Describe(ThrowType type, float strength = 1f)
     {
+        // "jumpthrow bind" is dead advice: Valve disabled multi-input binds on
+        // official servers (Aug 2024, cl_allow_multi_input_binds 0). What players
+        // actually do post-subtick is hold the click and tap jump - the release
+        // samples the same tick window a bind used to hit.
         var movement = type switch
         {
             ThrowType.Stand => "stand still",
             ThrowType.Crouch => "crouch (hold ctrl)",
-            ThrowType.JumpThrow => "jumpthrow bind",
-            ThrowType.CrouchJumpThrow => "crouch + jumpthrow bind",
-            _ => "run forward (W) + jumpthrow bind",
+            ThrowType.JumpThrow => "hold click, tap jump, release",
+            ThrowType.CrouchJumpThrow => "crouch + hold click, tap jump, release",
+            _ => "run forward (W) + hold click, tap jump, release",
         };
         var buttons = strength switch
         {

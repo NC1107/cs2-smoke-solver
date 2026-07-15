@@ -123,6 +123,8 @@ public static class GrenadeTrajectory
 
     // A contact normal with z at or above this is "floor" for bounce and rest
     // decisions; below it the surface is a wall/ramp.
+    // Source's slope limit (sv_standable_normal, 45.57 deg). The same physical
+    // value appears as LineupSolver.StandableNormalZ - update both together.
     const float FloorNormalZ = 0.7f;
 
     // Floor-impact angle damp, the ONE copy both integrators share. It applies
@@ -214,7 +216,7 @@ public static class GrenadeTrajectory
     // flatgrass ground), and box corners catch surface edges that a same-size
     // sphere misses.
     public const float GrenadeRadius = 2f;
-    static readonly Vector3 HullHalfExtents = new(2f, 2f, 2f);
+    static readonly Vector3 HullHalfExtents = new(GrenadeRadius, GrenadeRadius, GrenadeRadius);
 
     /// <summary>
     /// Initial projectile state for a throw spec: release position (eye plus
@@ -223,16 +225,25 @@ public static class GrenadeTrajectory
     /// the live validation pipeline, which feeds these exact values to the
     /// real server so sim and game start from identical conditions.
     /// </summary>
+    // Source's angle convention: yaw around Z, negative pitch aims up
+    // (dir.z = -sin(pitch)). The one copy of this trig - the camera model
+    // (AimReference) calls it with the raw pitch, the launch model below with
+    // the bias-corrected pitch; they diverge in INPUT, never in the formula.
+    public static Vector3 ForwardFromAngles(float pitchDeg, float yawDeg)
+    {
+        var pitch = pitchDeg * MathF.PI / 180f;
+        var yaw = yawDeg * MathF.PI / 180f;
+        return new Vector3(
+            MathF.Cos(pitch) * MathF.Cos(yaw),
+            MathF.Cos(pitch) * MathF.Sin(yaw),
+            -MathF.Sin(pitch));
+    }
+
     public static (Vector3 Position, Vector3 Velocity) DeriveInitial(ThrowSpec spec, ThrowConstants? constants = null)
     {
         var k = constants ?? ThrowConstants.Default;
         var effectivePitch = spec.PitchDeg - (90f - MathF.Abs(spec.PitchDeg)) / 90f * 10f;
-        var pitch = effectivePitch * MathF.PI / 180f;
-        var yaw = spec.YawDeg * MathF.PI / 180f;
-        var forward = new Vector3(
-            MathF.Cos(pitch) * MathF.Cos(yaw),
-            MathF.Cos(pitch) * MathF.Sin(yaw),
-            -MathF.Sin(pitch));
+        var forward = ForwardFromAngles(effectivePitch, spec.YawDeg);
 
         var velocity = forward * (k.ThrowSpeed * k.SpeedScale(spec.Strength));
         var release = spec.EyePosition + forward * 16f;
@@ -246,6 +257,7 @@ public static class GrenadeTrajectory
         }
         if (spec.Type is ThrowType.RunJumpThrow)
         {
+            var yaw = spec.YawDeg * MathF.PI / 180f;
             velocity += new Vector3(MathF.Cos(yaw), MathF.Sin(yaw), 0) * k.RunSpeed;
         }
         return (release, velocity);

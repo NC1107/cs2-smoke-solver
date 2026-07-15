@@ -83,6 +83,14 @@ public static class LineupApi
         return Encoding.UTF8.GetBytes(json.ToString());
     }
 
+    // Validation bounds, named so the checks and their error messages cannot
+    // drift apart. The margin allows targets slightly past the mesh AABB
+    // (overhangs at map edges); the reach/tolerance ranges bracket every value
+    // the viewer can produce plus generous CLI headroom.
+    const float MapBoundsMargin = 512f;
+    const float MinOriginReach = 16f, MaxOriginReach = 4000f;
+    const float MinTolerance = 1f, MaxTolerance = 512f;
+
     // Malformed or absurd queries must fail fast with a 400: a NaN or out-of-map
     // coordinate otherwise flows into a minutes-long map-wide solve and a fresh
     // cache file per distinct body.
@@ -107,7 +115,8 @@ public static class LineupApi
         }
         var tx = targetEl[0].GetSingle();
         var ty = targetEl[1].GetSingle();
-        if (tx < meshMin.X - 512 || tx > meshMax.X + 512 || ty < meshMin.Y - 512 || ty > meshMax.Y + 512)
+        if (tx < meshMin.X - MapBoundsMargin || tx > meshMax.X + MapBoundsMargin ||
+            ty < meshMin.Y - MapBoundsMargin || ty > meshMax.Y + MapBoundsMargin)
         {
             return "target is outside the map bounds";
         }
@@ -121,15 +130,15 @@ public static class LineupApi
         }
         if (query.TryGetProperty("originReach", out var reachEl) &&
             (reachEl.ValueKind != JsonValueKind.Number || !float.IsFinite(reachEl.GetSingle()) ||
-             reachEl.GetSingle() is < 16 or > 4000))
+             reachEl.GetSingle() is < MinOriginReach or > MaxOriginReach))
         {
-            return "originReach must be between 16 and 4000";
+            return $"originReach must be between {MinOriginReach} and {MaxOriginReach}";
         }
         if (query.TryGetProperty("tolerance", out var tolEl) &&
             (tolEl.ValueKind != JsonValueKind.Number || !float.IsFinite(tolEl.GetSingle()) ||
-             tolEl.GetSingle() is < 1 or > 512))
+             tolEl.GetSingle() is < MinTolerance or > MaxTolerance))
         {
-            return "tolerance must be between 1 and 512";
+            return $"tolerance must be between {MinTolerance} and {MaxTolerance}";
         }
         return null;
     }
@@ -236,7 +245,7 @@ public static class LineupApi
                     edgeDeg = float.IsFinite(aimRefs[l].NearestSilhouetteDeg) ? (float?)aimRefs[l].NearestSilhouetteDeg : null,
                     reticleDeg = float.IsFinite(aimRefs[l].NearestReticleDeg) ? (float?)aimRefs[l].NearestReticleDeg : null,
                 },
-                console = $"setpos {l.Feet.X:F0} {l.Feet.Y:F0} {l.Feet.Z + 1:F0}; setang {l.PitchDeg:F1} {l.YawDeg:F1} 0",
+                console = SetposCommand(l.Feet, l.PitchDeg, l.YawDeg),
             }),
         });
     }

@@ -48,13 +48,7 @@ public static class LineupsCommand
         var top = int.Parse(options.GetValueOrDefault("top", "12"), CultureInfo.InvariantCulture);
         var types = options.GetValueOrDefault("types", "stand,jump,runjump")
             .Split(',', StringSplitOptions.TrimEntries)
-            .Select(t => t.ToLowerInvariant() switch
-            {
-                "stand" => ThrowType.Stand,
-                "jump" => ThrowType.JumpThrow,
-                "runjump" => ThrowType.RunJumpThrow,
-                var other => throw new ArgumentException($"unknown throw type '{other}'"),
-            })
+            .Select(ParseThrowType)
             .ToList();
 
         // The grid must cover the sightlines (zone), the origin region, and the flight arcs.
@@ -110,7 +104,7 @@ public static class LineupsCommand
 
         var navAreasPath = options.GetValueOrDefault(
             "nav",
-            Path.Combine(Path.GetDirectoryName(Path.GetFullPath(Require(options, "geo"))) ?? ".", $"{mesh.MapName}.navareas.json"));
+            DefaultNavAreasPath(options, mesh));
         if (!File.Exists(navAreasPath))
         {
             Console.Error.WriteLine($"nav areas not found at {navAreasPath}; run extract first (or pass --nav)");
@@ -137,14 +131,14 @@ public static class LineupsCommand
         Console.WriteLine($"candidates: {candidates.Count} distinct origins in {started.ElapsedMilliseconds} ms");
 
         started.Restart();
-        var collider = new TriangleCollider(mesh, min, max, mesh.GrenadeSolidFilter());
+        var collider = BuildGrenadeCollider(mesh, min, max);
         var lineups = LineupSolver.VerifyExact(grid, collider, zoneCrossings, candidates, constants: throwConstants);
         Console.WriteLine($"verified against exact geometry: {lineups.Count}/{candidates.Count} in {started.ElapsedMilliseconds} ms");
 
         foreach (var (l, i) in lineups.Take(top).Select((l, i) => (l, i)))
         {
             Console.WriteLine($"#{i + 1}: {Describe(l.Type, l.Strength)}, {l.Bounces} bounce(s), {l.FlightTime:F1}s flight, stability {l.Stability:P0}, rest ({l.RestPoint.X:F0},{l.RestPoint.Y:F0},{l.RestPoint.Z:F0})");
-            Console.WriteLine($"    setpos {l.Feet.X:F0} {l.Feet.Y:F0} {l.Feet.Z + 1:F0}; setang {l.PitchDeg:F1} {l.YawDeg:F1} 0");
+            Console.WriteLine($"    {SetposCommand(l.Feet, l.PitchDeg, l.YawDeg)}");
         }
 
         if (options.TryGetValue("json", out var jsonPath))
@@ -174,7 +168,7 @@ public static class LineupsCommand
                     flightTime = l.FlightTime,
                     l.RestCrossings,
                     stability = l.Stability,
-                    console = $"setpos {l.Feet.X:F0} {l.Feet.Y:F0} {l.Feet.Z + 1:F0}; setang {l.PitchDeg:F1} {l.YawDeg:F1} 0",
+                    console = SetposCommand(l.Feet, l.PitchDeg, l.YawDeg),
                 }),
             };
             File.WriteAllText(jsonPath, JsonSerializer.Serialize(payload, new JsonSerializerOptions { WriteIndented = true }));

@@ -75,46 +75,15 @@ public sealed partial class TriangleCollider
         return false;
     }
 
-    bool BoxTriangleOverlap(Vector3 center, Vector3 h, int triangleOffset)
-    {
-        var a = Vertex(_indices[triangleOffset]) - center;
-        var b = Vertex(_indices[triangleOffset + 1]) - center;
-        var c = Vertex(_indices[triangleOffset + 2]) - center;
-
-        bool Separated(Vector3 l)
-        {
-            if (l.LengthSquared() < 1e-10f)
-            {
-                return false;
-            }
-            var s0 = Vector3.Dot(a, l);
-            var s1 = Vector3.Dot(b, l);
-            var s2 = Vector3.Dot(c, l);
-            var r = h.X * MathF.Abs(l.X) + h.Y * MathF.Abs(l.Y) + h.Z * MathF.Abs(l.Z);
-            return MathF.Min(s0, MathF.Min(s1, s2)) > r || MathF.Max(s0, MathF.Max(s1, s2)) < -r;
-        }
-
-        if (Separated(Vector3.UnitX) || Separated(Vector3.UnitY) || Separated(Vector3.UnitZ))
-        {
-            return false;
-        }
-        var n = Vector3.Cross(b - a, c - a);
-        if (Separated(n))
-        {
-            return false;
-        }
-        Span<Vector3> edges = [b - a, c - b, a - c];
-        foreach (var e in edges)
-        {
-            if (Separated(Vector3.Cross(Vector3.UnitX, e)) ||
-                Separated(Vector3.Cross(Vector3.UnitY, e)) ||
-                Separated(Vector3.Cross(Vector3.UnitZ, e)))
-            {
-                return false;
-            }
-        }
-        return true;
-    }
+    // Delegates to the voxelizer's SAT test instead of keeping a second,
+    // independently-written copy of the same 13-axis algorithm. Equivalence is
+    // pinned by TriBoxOverlapDifferentialTests (200k randomized cases plus the
+    // degenerate/touching ones where independent SAT code classically drifts).
+    bool BoxTriangleOverlap(Vector3 center, Vector3 h, int triangleOffset) =>
+        TriBoxOverlap.Test(center, h,
+            Vertex(_indices[triangleOffset]),
+            Vertex(_indices[triangleOffset + 1]),
+            Vertex(_indices[triangleOffset + 2]));
 
     (float T, Vector3 Normal)? SweptBoxTriangle(Vector3 origin, Vector3 direction, Vector3 h, int triangleOffset)
     {

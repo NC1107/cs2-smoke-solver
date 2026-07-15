@@ -40,13 +40,7 @@ public static class ThrowCommand
         var angParts = Require(options, "ang").Split(',', ' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
         var pitch = float.Parse(angParts[0], CultureInfo.InvariantCulture);
         var yaw = float.Parse(angParts[1], CultureInfo.InvariantCulture);
-        var type = options.GetValueOrDefault("type", "stand").ToLowerInvariant() switch
-        {
-            "stand" => ThrowType.Stand,
-            "jump" => ThrowType.JumpThrow,
-            "runjump" => ThrowType.RunJumpThrow,
-            var other => throw new ArgumentException($"unknown throw type '{other}'"),
-        };
+        var type = ParseThrowType(options.GetValueOrDefault("type", "stand"));
 
         var strength = float.Parse(options.GetValueOrDefault("strength", "1"), CultureInfo.InvariantCulture);
         var (mesh, voxelSize, _, attributeFilter) = LoadCommon(options);
@@ -65,7 +59,7 @@ public static class ThrowCommand
 
         var result = GrenadeTrajectory.Simulate(grid, new ThrowSpec(eye, yaw, pitch, type, strength), constants);
         var traceLines = options.ContainsKey("trace") ? new List<string>() : null;
-        var exact = GrenadeTrajectory.SimulateExact(new TriangleCollider(mesh, min, max, mesh.GrenadeSolidFilter()), new ThrowSpec(eye, yaw, pitch, type, strength), constants, traceLines);
+        var exact = GrenadeTrajectory.SimulateExact(BuildGrenadeCollider(mesh, min, max), new ThrowSpec(eye, yaw, pitch, type, strength), constants, traceLines);
         if (traceLines != null)
         {
             foreach (var line in traceLines)

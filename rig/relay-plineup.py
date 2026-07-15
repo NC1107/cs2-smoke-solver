@@ -11,13 +11,7 @@ req = json.loads(sys.argv[1])
 name = req["name"]
 player = req["player"]
 
-try:
-    res = json.loads(sys.argv[2])
-except (IndexError, json.JSONDecodeError):
-    calibipc.log.error("pointlineup produced no parseable result for %r: argv=%r",
-                       name, sys.argv[2:])
-    calibipc.send_chat(f"solver error while solving '{name}' from your spot - check rig.log")
-    sys.exit(1)
+res = calibipc.parse_solver_result(sys.argv, name, "solving from your spot")
 
 if not res.get("found"):
     calibipc.send_chat(
@@ -26,11 +20,8 @@ if not res.get("found"):
     )
     sys.exit(0)
 
-strength = res["strength"]
-click = "left" if strength >= 0.99 else ("left+right" if strength >= 0.49 else "right")
 pitch, yaw = res["pitch"], res["yaw"]
-hint = f"{res['type']} {click} click"
-aim = list(res["aim"]) + [yaw]
+hint, aim = calibipc.click_hint_aim(res)
 calibipc.send({
     "chat": [
         f" [calib] '{name}' is throwable from your spot - predicted {res['err']:.1f}u off the marker",

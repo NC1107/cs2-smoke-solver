@@ -45,7 +45,7 @@ public static class ViewerDataCommand
         // geometry above head height never clutters the picture.
         var navAreasPath = options.GetValueOrDefault(
             "nav",
-            Path.Combine(Path.GetDirectoryName(Path.GetFullPath(Require(options, "geo"))) ?? ".", $"{mesh.MapName}.navareas.json"));
+            DefaultNavAreasPath(options, mesh));
         var navAreas = LoadJson<List<NavAreaJson>>(navAreasPath, "nav areas");
 
         const float NavCell = 64f;

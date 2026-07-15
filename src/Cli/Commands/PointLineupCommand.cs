@@ -34,10 +34,10 @@ public static class PointLineupCommand
     // target. Coarse grid aimed at the target, then two refinement passes.
     public static int Run(Dictionary<string, string> options)
     {
-        if (!options.ContainsKey("attrs"))
-        {
-            options["attrs"] = "Default,default,EntitySolid";
-        }
+        // Defaults land on a local clone: the caller's dictionary is shared
+        // state and must not be mutated (--markers already clones for this).
+        options = new Dictionary<string, string>(options);
+        options.TryAdd("attrs", SingleTargetDefaultAttrs);
         var (mesh, _, _, attributeFilter) = LoadCommon(options);
         var constants = LoadConstants(options);
         var feet = ParseVec(Require(options, "from"));
@@ -48,7 +48,7 @@ public static class PointLineupCommand
         var hi = Vector3.Max(feet, target) + new Vector3(700, 700, 950);
         var min = Vector3.Max(lo, meshMin);
         var max = Vector3.Min(hi, meshMax);
-        var collider = new TriangleCollider(mesh, min, max, mesh.GrenadeSolidFilter());
+        var collider = BuildGrenadeCollider(mesh, min, max);
 
         var baseYaw = MathF.Atan2(target.Y - feet.Y, target.X - feet.X) * 180f / MathF.PI;
         var types = new[] { ThrowType.Stand, ThrowType.Crouch, ThrowType.JumpThrow, ThrowType.CrouchJumpThrow };

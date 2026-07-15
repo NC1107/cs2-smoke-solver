@@ -6,7 +6,9 @@ set -euo pipefail
 RIG_ENV="$(dirname "$(readlink -f "$0")")/rig.env"
 set -a; source "$RIG_ENV"; set +a
 
-CLIENT_BIN="$HOME/.local/share/Steam/steamapps/common/Counter-Strike Global Offensive/game/bin/linuxsteamrt64"
+# Overridable like CS2_MAPS_DIR in build-textured-glb.sh: the standard Steam
+# path is only a default, not an assumption.
+CLIENT_BIN="${CS2_CLIENT_DIR:-$HOME/.local/share/Steam/steamapps/common/Counter-Strike Global Offensive/game/bin/linuxsteamrt64}"
 cd "$CS2_RIG_DIR/server/game/bin/linuxsteamrt64"
 export LD_LIBRARY_PATH="$CS2_RIG_DIR/server/game/bin/linuxsteamrt64:$CS2_RIG_DIR/server/game/csgo/bin/linuxsteamrt64:$CLIENT_BIN:${LD_LIBRARY_PATH:-}"
 export SMOKESOLVER_CALIB_DIR

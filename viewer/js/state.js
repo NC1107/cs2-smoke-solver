@@ -81,6 +81,7 @@ export const clickClass = s => s >= 0.99 ? "left" : s >= 0.49 ? "mid" : "right";
 // Shared physical/UI constants (M44); world units unless noted.
 export const SMOKE_BLOOM_RADIUS = 144;
 export const PICK_RADIUS_PX = 12;
+export const TOUCH_PICK_RADIUS_PX = 22; // finger-sized grab zone (~44px diameter)
 export const HEAT_CELL = 24;
 // Eye height above feet by throw type - 64.06 standing, 46.04 crouched,
 // measured from CS2 telemetry (Valve's 64.093811 eye-above-floor minus the
@@ -92,3 +93,10 @@ export const EYE_HEIGHT_BY_TYPE = { Crouch: 46.04, CrouchJumpThrow: 46.04 };
 // Minimal HTML escaper for API-derived strings rendered via innerHTML (L20).
 export const esc = s => String(s).replace(/[&<>"']/g,
   c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#39;" }[c]));
+
+// One tap-vs-drag threshold for every canvas: a pointer that moves further
+// than this between down and up is a camera gesture, not a click.
+export const DRAG_THRESHOLD_PX = 4;
+export function isDrag(downX, downY, x, y) {
+  return Math.hypot(x - downX, y - downY) > DRAG_THRESHOLD_PX;
+}

@@ -59,6 +59,17 @@ function onListKeydown(e) {
 // Detail card for the pinned lineup plus a capped, keyboard-navigable list
 // of the filtered results (H19). The canvas stays the visual index; the
 // list drives the exact same select path as clicking a marker.
+// One copy of the results status line; main.js's heat toggle prints it too.
+// Naming the hidden count matters: the sky filter ships pre-set, so a user's
+// very first solve can silently drop results with no visible cause beyond a
+// small count on a collapsed accordion.
+export function resultStatusText(shown) {
+  const total = state.result ? state.result.lineups.filter(l => !l._removed).length : shown;
+  const hidden = total - shown;
+  return `${shown} lineups - click a marker or use the list` +
+    (hidden > 0 ? ` · ${hidden} hidden by filters` : "");
+}
+
 export function renderLineups() {
   // The panel earns its screen space only once there are results to show;
   // empty it reads as a stray bar of chrome (worst on phones, where it
@@ -72,7 +83,7 @@ export function renderLineups() {
     return;
   }
   const shown = filtered();
-  statusEl.textContent = `${shown.length} lineups - click a marker or use the list`;
+  statusEl.textContent = resultStatusText(shown.length);
 
   // The preview lives in the panel's fixed header, outside the scrolling list,
   // so hunting down the results never scrolls the render you are comparing
@@ -151,18 +162,16 @@ function detailCard(l) {
   el.addEventListener("click", () => callbacks.onSelect(i));
   wireCopyButtons(el);
 
-  el.querySelector(".goto-btn").addEventListener("click", e => {
-    e.stopPropagation();
-    callbacks.onGoTo(l);
-  });
-  el.querySelector(".fav-btn").addEventListener("click", e => {
-    e.stopPropagation();
-    callbacks.onFavorite(l);
-  });
-  el.querySelector(".remove-btn").addEventListener("click", e => {
-    e.stopPropagation();
-    callbacks.onRemove(l);
-  });
+  for (const [selector, action] of [
+    [".goto-btn", callbacks.onGoTo],
+    [".fav-btn", callbacks.onFavorite],
+    [".remove-btn", callbacks.onRemove],
+  ]) {
+    el.querySelector(selector).addEventListener("click", e => {
+      e.stopPropagation();
+      action(l);
+    });
+  }
   return el;
 }
 

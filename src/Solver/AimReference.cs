@@ -191,10 +191,8 @@ public static class AimReference
         return MathF.Sqrt(dx * dx + dy * dy);
     }
 
-    static Vector3 Direction(float pitchDeg, float yawDeg)
-    {
-        var pr = pitchDeg * MathF.PI / 180f;
-        var yr = yawDeg * MathF.PI / 180f;
-        return new Vector3(MathF.Cos(pr) * MathF.Cos(yr), MathF.Cos(pr) * MathF.Sin(yr), -MathF.Sin(pr));
-    }
+    // Raw pitch on purpose: this models what the player's camera looks at,
+    // not where the grenade releases (DeriveInitial applies the pitch bias).
+    static Vector3 Direction(float pitchDeg, float yawDeg) =>
+        GrenadeTrajectory.ForwardFromAngles(pitchDeg, yawDeg);
 }

@@ -50,3 +50,25 @@ def send(payload: dict, timeout: float = 10.0) -> None:
 
 def send_chat(*lines: str) -> None:
     send({"chat": [f" [calib] {line}" for line in lines]})
+
+
+def parse_solver_result(argv, name: str, action_desc: str) -> dict:
+    """Parse the solver's JSON result from argv[2], or report the crash to
+    chat and exit. Shared by the relay scripts so a third relay cannot fork
+    the error-handling (or the wording) again."""
+    try:
+        return json.loads(argv[2])
+    except (IndexError, json.JSONDecodeError):
+        log.error("%s produced no parseable result for %r: argv=%r",
+                  action_desc, name, argv[2:])
+        send_chat(f"solver error while {action_desc} '{name}' - check rig.log")
+        sys.exit(1)
+
+
+def click_hint_aim(res: dict) -> tuple[str, list]:
+    """The player-facing click hint and the aim vector for a solver result.
+    The click bands mirror CliParsing.ClickName - one wording everywhere."""
+    strength = res["strength"]
+    click = "left" if strength >= 0.99 else ("left+right" if strength >= 0.49 else "right")
+    hint = f"{res['type']} {click} click"
+    return hint, list(res["aim"]) + [res["yaw"]]

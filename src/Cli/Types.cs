@@ -103,6 +103,4 @@ public sealed record TargetSolve(
     int OriginCount,
     List<int[]> Coverage,
     List<Lineup> Lineups,
-    Vector3 RegionMin,
-    Vector3 RegionMax,
     TriangleCollider Collider);
