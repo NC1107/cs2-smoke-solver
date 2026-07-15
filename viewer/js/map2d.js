@@ -42,11 +42,24 @@ const radarCanvas = document.createElement("canvas");
 // Loads the radar image and caches the map region; rejects on a missing
 // image so main.js can show the boot error box and abort.
 export async function loadRadar() {
-  await new Promise((resolve, reject) => {
-    radar.onload = resolve;
-    radar.onerror = reject;
-    radar.src = "data/" + state.mapData.image;
-  });
+  // Fetch with revalidation, not a plain <img src>, so a browser holding the
+  // previous radar (cached under the old week-long policy) picks up a
+  // re-processed one at once instead of showing the stale image - the 2D twin
+  // of the mesh cache issue. Decodes from the fetched blob.
+  const resp = await fetch("data/" + state.mapData.image, { cache: "no-cache" });
+  if (!resp.ok) {
+    throw new Error(`radar HTTP ${resp.status}`);
+  }
+  const objectUrl = URL.createObjectURL(await resp.blob());
+  try {
+    await new Promise((resolve, reject) => {
+      radar.onload = resolve;
+      radar.onerror = reject;
+      radar.src = objectUrl;
+    });
+  } finally {
+    URL.revokeObjectURL(objectUrl);
+  }
   radarCanvas.width = radar.width;
   radarCanvas.height = radar.height;
   [RX0, RY0, RX1, RY1] = state.mapData.region;

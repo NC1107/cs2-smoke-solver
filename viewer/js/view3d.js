@@ -526,9 +526,23 @@ export function ensureTexturedScene(url = `data/${state.currentMap}_textured.glb
     draco.setDecoderPath("viewer/lib/draco/");
     const loader = new THREE.GLTFLoader();
     loader.setDRACOLoader(draco);
-    const gltf = await new Promise((resolve, reject) => {
-      loader.load(url, resolve, undefined, reject);
-    });
+    // Fetch the GLB with revalidation before handing it to the loader: a
+    // browser copy cached under the old week-long policy would otherwise keep
+    // rendering a superseded export (e.g. the old wrong-scale props) until that
+    // cache expired. Load from a blob URL so the loader path is unchanged.
+    const glbResp = await fetch(url, { cache: "no-cache" });
+    if (!glbResp.ok) {
+      throw new Error(`glb HTTP ${glbResp.status}`);
+    }
+    const glbUrl = URL.createObjectURL(await glbResp.blob());
+    let gltf;
+    try {
+      gltf = await new Promise((resolve, reject) => {
+        loader.load(glbUrl, resolve, undefined, reject);
+      });
+    } finally {
+      URL.revokeObjectURL(glbUrl);
+    }
     const root = gltf.scene;
     // VRF exports in meters with a cyclic axis permutation, not a plain
     // Y-up/Z-up swap: raw (x,y,z) maps to Hammer (z,y,x) - Hammer_X=raw_z,

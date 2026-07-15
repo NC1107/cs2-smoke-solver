@@ -85,7 +85,12 @@ export async function fetchTrajectory(map, l) {
 }
 
 export async function fetchMesh(map) {
-  const res = await fetch(`/api/mesh?map=${encodeURIComponent(map)}`);
+  // Revalidate rather than trust a browser copy cached under a since-changed
+  // policy: a browser that stored this under the old week-long max-age would
+  // otherwise keep showing the old geometry (e.g. Retake tape that has since
+  // been removed) for the rest of that week. no-cache still returns a 304 when
+  // the mesh is unchanged, so this costs nothing in the common case.
+  const res = await fetch(`/api/mesh?map=${encodeURIComponent(map)}`, { cache: "no-cache" });
   if (!res.ok) {
     throw new Error(`mesh HTTP ${res.status}`);
   }
