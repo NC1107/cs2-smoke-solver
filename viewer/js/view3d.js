@@ -237,6 +237,7 @@ async function init3d() {
     if (e.pointerType === "touch") {
       touches.set(e.pointerId, [e.clientX, e.clientY]);
       if (touches.size === 2) {
+        renderer.domElement.setPointerCapture(e.pointerId);
         cancelLongPress();
         dragButton = -1;
         down = null; // a pinch is never also a click

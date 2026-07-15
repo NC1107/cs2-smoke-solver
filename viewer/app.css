@@ -156,6 +156,9 @@
     width: 100%;
     text-align: left;
   }
+  /* The paste row keeps its own input+button split: the card-wide
+     width:100% above is for stacked buttons, not row members. */
+  #controls .paste .btn { width: auto; }
   /* The filter rows (label + description) also render inside the narrow
      sidebar card; there the label sits above its select and the description
      hugs the left edge - the intro's wide two-column metrics don't fit. */
@@ -310,6 +313,10 @@
   .paste { display: flex; gap: 5px; }
   .paste input {
     flex: 1;
+    /* A flex item's default min-width:auto refuses to shrink below the
+       input's intrinsic ~20-char size, which overflows the narrow actions
+       card the paste row now lives in. */
+    min-width: 0;
     font: 10.5px ui-monospace, Menlo, monospace;
     color: var(--ink);
     background: var(--surface);

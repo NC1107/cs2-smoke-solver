@@ -273,6 +273,13 @@ export function initMap2d(cb) {
   const LONG_PRESS_MS = 450, LONG_PRESS_SLOP_PX = 8;
   let panning = false, lastX = 0, lastY = 0, downX = 0, downY = 0;
   let pressTimer = 0, pressConsumed = false;
+  // Two-finger touch: pinch zooms about the finger centroid, centroid drag
+  // pans. Without this, touch-action:none hands BOTH fingers to the
+  // single-pointer pan above, whose shared lastX/lastY alternates between
+  // the two positions and tears the view apart in huge jumps - and there was
+  // no way to zoom the radar by touch at all (zoom was wheel-only).
+  const touches = new Map();
+  let pinching = false, pinchDist = 0, pinchX = 0, pinchY = 0;
 
   function setTargetAt(clientX, clientY) {
     const rect = canvas.getBoundingClientRect();
@@ -288,6 +295,23 @@ export function initMap2d(cb) {
 
   canvas.addEventListener("contextmenu", e => e.preventDefault());
   canvas.addEventListener("pointerdown", e => {
+    if (e.pointerType === "touch") {
+      touches.set(e.pointerId, [e.clientX, e.clientY]);
+      canvas.setPointerCapture(e.pointerId);
+      if (touches.size === 2) {
+        cancelLongPress();
+        pinching = true;
+        panning = false;
+        const [a, b] = [...touches.values()];
+        pinchDist = Math.hypot(a[0] - b[0], a[1] - b[1]);
+        pinchX = (a[0] + b[0]) / 2;
+        pinchY = (a[1] + b[1]) / 2;
+        return;
+      }
+    }
+    if (pinching) {
+      return;
+    }
     panning = true;
     lastX = downX = e.clientX; lastY = downY = e.clientY;
     canvas.classList.add("panning");
@@ -303,9 +327,17 @@ export function initMap2d(cb) {
     }
   });
   canvas.addEventListener("pointerup", e => {
+    touches.delete(e.pointerId);
     panning = false;
     canvas.classList.remove("panning");
     cancelLongPress();
+    if (pinching) {
+      // Neither finger's lift is a click; the gesture ends when both are up.
+      if (touches.size === 0) {
+        pinching = false;
+      }
+      return;
+    }
     if (pressConsumed || isDrag(downX, downY, e.clientX, e.clientY) || state.busy) {
       return;
     }
@@ -331,9 +363,39 @@ export function initMap2d(cb) {
     }
     callbacks.onRunQuery({ target: state.target, origin: [wx, wy] });
   });
-  canvas.addEventListener("pointercancel", cancelLongPress);
+  canvas.addEventListener("pointercancel", e => {
+    touches.delete(e.pointerId);
+    cancelLongPress();
+    panning = false;
+    canvas.classList.remove("panning");
+    if (touches.size === 0) {
+      pinching = false;
+    }
+  });
   canvas.addEventListener("pointermove", e => {
     const rect = canvas.getBoundingClientRect();
+    if (e.pointerType === "touch" && touches.has(e.pointerId)) {
+      touches.set(e.pointerId, [e.clientX, e.clientY]);
+      if (touches.size === 2) {
+        const [a, b] = [...touches.values()];
+        const dist = Math.hypot(a[0] - b[0], a[1] - b[1]);
+        const cx = (a[0] + b[0]) / 2, cy = (a[1] + b[1]) / 2;
+        // Same zoom-about-a-point math as the wheel handler, anchored on the
+        // finger centroid; centroid drift pans on top.
+        const px = cx - rect.left, py = cy - rect.top;
+        const next = Math.min(Math.max(scale * (pinchDist > 0 ? dist / pinchDist : 1), 0.03), 12);
+        ox = px - (px - ox) * (next / scale);
+        oy = py - (py - oy) * (next / scale);
+        scale = next;
+        ox += cx - pinchX;
+        oy += cy - pinchY;
+        pinchDist = dist;
+        pinchX = cx;
+        pinchY = cy;
+        scheduleDraw();
+        return;
+      }
+    }
     if (pressTimer && Math.hypot(e.clientX - downX, e.clientY - downY) > LONG_PRESS_SLOP_PX) {
       cancelLongPress();
     }
