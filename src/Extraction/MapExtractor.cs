@@ -120,6 +120,17 @@ public static class MapExtractor
     // de_dust2 it seals the mid-doors gap, which is lineup-critical.
     static readonly string[] SolidEntityClasses = ["func_brush", "func_clip_vphysics", "func_door", "func_door_rotating", "func_breakable"];
 
+    // Retake is a separate game mode: its brushes (the tape borders walling off
+    // each bombsite, e.g. de_mirage's [PR#]retake.asite/bsite func_brushes) are
+    // spawned only in Retake and are non-solid in Defusal, so a Defusal lineup
+    // must not bounce grenades off them. They carry the Retake prefab tag in the
+    // targetname ("[PR#]retake...") and in the compiled model path
+    // (entities/retake_...); either marks them for exclusion. The textured GLB
+    // drops the same geometry, but by material path, which the physics mesh lacks.
+    static bool IsRetakeOnly(string targetName, string model) =>
+        targetName.Contains("retake", StringComparison.OrdinalIgnoreCase) ||
+        model.Contains("/retake_", StringComparison.OrdinalIgnoreCase);
+
     static void AppendSolidEntityModels(
         Package package,
         List<float> vertices,
@@ -140,6 +151,10 @@ public static class MapExtractor
                 var className = entity.GetStringProperty("classname") ?? string.Empty;
                 var model = entity.GetStringProperty("model") ?? string.Empty;
                 if (!SolidEntityClasses.Contains(className) || model.Length == 0)
+                {
+                    continue;
+                }
+                if (IsRetakeOnly(entity.GetStringProperty("targetname") ?? string.Empty, model))
                 {
                     continue;
                 }
