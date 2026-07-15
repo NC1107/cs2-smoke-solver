@@ -40,7 +40,7 @@ public static partial class LineupSolver
     // fine sweep at a quarter of the coarse step instead.
     const int MaxRefineSeeds = 8;
     const int RefineHalfSpan = 2;
-    static readonly float[] Strengths = [1f, 0.5f, 0f];
+    static readonly float[] AllStrengths = [1f, 0.5f, 0f];
 
     // A throw that ran out the full flight budget never came to rest - its
     // "rest point" is wherever the integrator gave up. The 0.01s slack absorbs
@@ -73,6 +73,9 @@ public static partial class LineupSolver
         // half a bucket away.
         float dedupeBucketSize = 64f,
         IReadOnlyList<Vector3>? origins = null,
+        // Click strengths to sweep; a player who knows they want a left-click
+        // throw should not pay for simulating the other two from every origin.
+        IReadOnlyList<float>? strengths = null,
         ThrowConstants? constants = null,
         ConcurrentDictionary<(int X, int Y), int>? coverage = null,
         Action<Vector3, int>? onOrigin = null,
@@ -132,7 +135,7 @@ public static partial class LineupSolver
             foreach (var type in types)
             {
                 var eye = feet + new Vector3(0, 0, GrenadeTrajectory.EyeHeight(type));
-                foreach (var strength in Strengths)
+                foreach (var strength in strengths ?? AllStrengths)
                 {
                     // Range scales with the square of throw speed.
                     var speedFactor = (constants ?? ThrowConstants.Default).SpeedScale(strength);

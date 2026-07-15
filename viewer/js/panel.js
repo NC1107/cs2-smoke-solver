@@ -72,8 +72,13 @@ function onListKeydown(e) {
 export function resultStatusText(shown) {
   const total = state.result ? state.result.lineups.filter(l => !l._removed).length : shown;
   const hidden = total - shown;
+  // A scoped solve never computed the other types/clicks; without naming
+  // that, relaxing a filter afterwards looks like results went missing.
+  const scope = state.solveScope
+    ? ` · solved for ${[state.solveScope.types?.[0], state.solveScope.strengths?.map(clickShort)?.[0]].filter(Boolean).join(" + ")} only`
+    : "";
   return `${shown} lineups - click a marker or use the list` +
-    (hidden > 0 ? ` · ${hidden} hidden by filters` : "");
+    (hidden > 0 ? ` · ${hidden} hidden by filters` : "") + scope;
 }
 
 export function renderLineups() {

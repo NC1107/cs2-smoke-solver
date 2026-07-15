@@ -123,6 +123,10 @@
     flex-direction: column;
     gap: 8px;
     width: 158px;
+    /* However tall the open cards get, the sidebar scrolls inside the stage
+       instead of running off the bottom of a phone screen. */
+    max-height: calc(100% - 20px);
+    overflow-y: auto;
   }
   #controls .card {
     background: var(--glass);
@@ -162,9 +166,32 @@
   /* The filter rows (label + description) also render inside the narrow
      sidebar card; there the label sits above its select and the description
      hugs the left edge - the intro's wide two-column metrics don't fit. */
-  #controls .filter-head { flex-direction: column; align-items: stretch; gap: 2px; }
+  /* Stacked sidebar rows: title and its ? chip share the first line, the
+     select fills the second. */
+  #controls .filter-head { flex-flow: row wrap; align-items: center; gap: 2px; }
   #controls .filter-head b { min-width: 0; }
+  #controls .filter-slot { flex-basis: 100%; }
   #controls .filter-desc { margin-left: 0; }
+  /* The per-row "what does this do" chip, same idiom as the legend's ? */
+  .desc-toggle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 15px;
+    height: 15px;
+    padding: 0;
+    margin-left: 5px;
+    border: var(--border);
+    border-radius: 50%;
+    background: transparent;
+    color: var(--muted);
+    font: 700 9px/1 ui-sans-serif, system-ui, sans-serif;
+    cursor: pointer;
+    flex: none;
+  }
+  .desc-toggle[aria-expanded="true"] { color: var(--accent); border-color: var(--accent); }
+  .filter-desc[hidden] { display: none; }
+
   :is(button, input, select, summary):focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
   #status { color: var(--muted); }
   #tip {

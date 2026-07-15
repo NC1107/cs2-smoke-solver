@@ -92,7 +92,7 @@
       <summary>advanced <span class="filter-count" id="advanced-count"></span></summary>
       <div class="card-body" id="advanced-body">
         <div class="filter-row">
-          <label class="filter-head" for="f-sky"><b>Sky aim:</b><span class="filter-slot">
+          <label class="filter-head" for="f-sky"><b>Sky aim:</b><button type="button" class="desc-toggle" aria-expanded="false" aria-label="What does Sky aim do?">?</button><span class="filter-slot">
             <select id="f-sky" aria-label="Maximum upward aim angle for lineups that aim into open sky">
               <option value="">any sky angle</option>
               <option value="65" selected>≤65° up (recommended)</option>
@@ -100,10 +100,10 @@
               <option value="35">≤35° up</option>
               <option value="off">no sky-aimed lineups</option>
             </select></span></label>
-          <p class="filter-desc">How high you'll aim when the crosshair sits on open sky. The default hides near-vertical sky lobs; the status line counts anything hidden. Applies instantly to shown results.</p>
+          <p class="filter-desc" hidden>How high you'll aim when the crosshair sits on open sky. The default hides near-vertical sky lobs; the status line counts anything hidden. Applies instantly to shown results.</p>
         </div>
         <div class="filter-row">
-          <label class="filter-head" for="a-tolerance"><b>Solve tolerance:</b><span class="filter-slot">
+          <label class="filter-head" for="a-tolerance"><b>Solve tolerance:</b><button type="button" class="desc-toggle" aria-expanded="false" aria-label="What does Solve tolerance do?">?</button><span class="filter-slot">
             <select id="a-tolerance" aria-label="Landing tolerance the solver accepts">
               <option value="">80u (recommended)</option>
               <option value="16">16u (surgical)</option>
@@ -111,34 +111,34 @@
               <option value="48">48u</option>
               <option value="128">128u (loose)</option>
             </select></span></label>
-          <p class="filter-desc">How close to the target a throw must land for the solver to keep it at all. Unlike the Precision display filter, this changes what gets computed.</p>
+          <p class="filter-desc" hidden>How close to the target a throw must land for the solver to keep it at all. Unlike the Precision display filter, this changes what gets computed.</p>
         </div>
         <div class="filter-row">
-          <label class="filter-head" for="a-reach"><b>Search radius:</b><span class="filter-slot">
+          <label class="filter-head" for="a-reach"><b>Search radius:</b><button type="button" class="desc-toggle" aria-expanded="false" aria-label="What does Search radius do?">?</button><span class="filter-slot">
             <select id="a-reach" aria-label="Origin search radius around a clicked throw spot">
               <option value="">300u (recommended)</option>
               <option value="50">50u (this exact spot)</option>
               <option value="150">150u</option>
               <option value="600">600u (wide)</option>
             </select></span></label>
-          <p class="filter-desc">How far around a clicked throw spot to look for stand positions. Small = only lineups from right where you clicked.</p>
+          <p class="filter-desc" hidden>How far around a clicked throw spot to look for stand positions. Small = only lineups from right where you clicked.</p>
         </div>
         <div class="filter-row">
-          <label class="filter-head" for="a-stability"><b>Verify gate:</b><span class="filter-slot">
+          <label class="filter-head" for="a-stability"><b>Verify gate:</b><button type="button" class="desc-toggle" aria-expanded="false" aria-label="What does Verify gate do?">?</button><span class="filter-slot">
             <select id="a-stability" aria-label="Minimum stability a candidate needs to survive verification">
               <option value="">40% (recommended)</option>
               <option value="0.2">20% (keep shaky finds)</option>
               <option value="0.6">60% (strict)</option>
             </select></span></label>
-          <p class="filter-desc">Candidates below this stability are discarded during solving, before you ever see them. Lower it to surface touchy-but-real lineups.</p>
+          <p class="filter-desc" hidden>Candidates below this stability are discarded during solving, before you ever see them. Lower it to surface touchy-but-real lineups.</p>
         </div>
         <div class="filter-row">
-          <label class="filter-head" for="a-scan"><b>Scan detail:</b><span class="filter-slot">
+          <label class="filter-head" for="a-scan"><b>Scan detail:</b><button type="button" class="desc-toggle" aria-expanded="false" aria-label="What does Scan detail do?">?</button><span class="filter-slot">
             <select id="a-scan" aria-label="Angle scan granularity">
               <option value="">normal (recommended)</option>
               <option value="fine">fine (slower)</option>
             </select></span></label>
-          <p class="filter-desc">Halves the aim-angle step the sweep samples (0.5° near a click). Finds lineups whose working angle window the normal scan steps over. Roughly 3x solve time.</p>
+          <p class="filter-desc" hidden>Halves the aim-angle step the sweep samples (0.5° near a click). Finds lineups whose working angle window the normal scan steps over. Roughly 3x solve time.</p>
         </div>
         <p class="filter-desc" id="advanced-note">These change how the solver searches - they apply to your next Search / spot click.</p>
       </div>

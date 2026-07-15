@@ -151,6 +151,18 @@ public static class LineupApi
         {
             return "fineScan must be a boolean";
         }
+        if (query.TryGetProperty("types", out var typesEl) &&
+            (typesEl.ValueKind != JsonValueKind.Array || typesEl.GetArrayLength() is 0 or > 5 ||
+             typesEl.EnumerateArray().Any(e => e.ValueKind != JsonValueKind.String || !Enum.TryParse<ThrowType>(e.GetString(), ignoreCase: true, out _))))
+        {
+            return "types must be a non-empty array of throw type names";
+        }
+        if (query.TryGetProperty("strengths", out var strengthsEl) &&
+            (strengthsEl.ValueKind != JsonValueKind.Array || strengthsEl.GetArrayLength() is 0 or > 3 ||
+             strengthsEl.EnumerateArray().Any(e => e.ValueKind != JsonValueKind.Number || e.GetSingle() is not (0f or 0.5f or 1f))))
+        {
+            return "strengths must be a non-empty array drawn from 0, 0.5, 1";
+        }
         return null;
     }
 
@@ -169,13 +181,19 @@ public static class LineupApi
         var tol = query.TryGetProperty("tolerance", out var tolEl) ? tolEl.GetSingle() : 80f;
         var stab = query.TryGetProperty("minStability", out var stabEl) ? stabEl.GetSingle() : 0.4f;
         var fine = query.TryGetProperty("fineScan", out var fineEl) && fineEl.GetBoolean();
+        var typesKey = query.TryGetProperty("types", out var typesEl)
+            ? string.Join(",", typesEl.EnumerateArray().Select(e => e.GetString()!.ToLowerInvariant()).OrderBy(t => t, StringComparer.Ordinal))
+            : "all";
+        var strengthsKey = query.TryGetProperty("strengths", out var strengthsEl)
+            ? string.Join(",", strengthsEl.EnumerateArray().Select(e => e.GetSingle().ToString("F1", CultureInfo.InvariantCulture)).OrderBy(v => v, StringComparer.Ordinal))
+            : "all";
         // Bump when solver or sim behavior changes: cached answers from older code
         // must never be replayed as current results.
         const int QueryVersion = 9;
         // meshVersion is the content-hashed mesh identity (not just the game
         // build), so re-extracting a map - e.g. dropping the Retake tape - forces
         // a re-solve instead of replaying results computed against the old mesh.
-        var seed = $"v{QueryVersion}|{mesh.MapName}|{meshVersion}|{JsonSerializer.Serialize(constants)}|{tx},{ty},{tz}|{origin}|{reach:F0}|{tol:F0}|{stab:F2}|{(fine ? 1 : 0)}|{attrs}";
+        var seed = $"v{QueryVersion}|{mesh.MapName}|{meshVersion}|{JsonSerializer.Serialize(constants)}|{tx},{ty},{tz}|{origin}|{reach:F0}|{tol:F0}|{stab:F2}|{(fine ? 1 : 0)}|{typesKey}|{strengthsKey}|{attrs}";
         var hash = System.Security.Cryptography.SHA1.HashData(Encoding.UTF8.GetBytes(seed));
         return Convert.ToHexString(hash)[..20].ToLowerInvariant();
     }
@@ -213,8 +231,16 @@ public static class LineupApi
         var tolerance = query.TryGetProperty("tolerance", out var tolEl) ? tolEl.GetSingle() : 80f;
         var minStability = query.TryGetProperty("minStability", out var stabEl) ? stabEl.GetSingle() : 0.4f;
         var fineScan = query.TryGetProperty("fineScan", out var fineEl) && fineEl.GetBoolean();
+        // Scoping the sweep to the filters the user already set skips whole
+        // type/strength combinations from every origin - up to 15x less work.
+        var types = query.TryGetProperty("types", out var typesEl)
+            ? typesEl.EnumerateArray().Select(e => Enum.Parse<ThrowType>(e.GetString()!, ignoreCase: true)).Distinct().ToList()
+            : null;
+        var strengths = query.TryGetProperty("strengths", out var strengthsEl)
+            ? strengthsEl.EnumerateArray().Select(e => e.GetSingle()).Distinct().ToList()
+            : null;
 
-        var solve = SolveForTarget(mesh, attributeFilter, navAreas, target, hasTargetZ, originClick, originReach, tolerance, constants, onPhase, onOrigin, onCandidate, minStability, fineScan);
+        var solve = SolveForTarget(mesh, attributeFilter, navAreas, target, hasTargetZ, originClick, originReach, tolerance, constants, onPhase, onOrigin, onCandidate, minStability, fineScan, types, strengths);
 
         // Raw voxel-stage counts overstate throwability (many candidates die in
         // exact-sim verification), so each cell also says whether a verified

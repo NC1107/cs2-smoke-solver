@@ -43,7 +43,9 @@ public static class TargetSolver
         Action<Vector3, int>? onOrigin = null,
         Action<Vector3, bool>? onCandidate = null,
         float minStability = 0.4f,
-        bool fineScan = false)
+        bool fineScan = false,
+        IReadOnlyList<ThrowType>? types = null,
+        IReadOnlyList<float>? strengths = null)
     {
         var hasOrigin = originClickOpt.HasValue;
         var originClick = originClickOpt ?? new Vector2(target.X, target.Y);
@@ -139,13 +141,13 @@ public static class TargetSolver
         onPhase?.Invoke("sweep", origins.Count);
         var candidates = LineupSolver.Solve(
             grid, zoneCrossings, min, max,
-            [ThrowType.Stand, ThrowType.Crouch, ThrowType.JumpThrow, ThrowType.CrouchJumpThrow, ThrowType.RunJumpThrow],
+            types ?? [ThrowType.Stand, ThrowType.Crouch, ThrowType.JumpThrow, ThrowType.CrouchJumpThrow, ThrowType.RunJumpThrow],
             yawStep, pitchStep,
             // A probe is about ONE spot: keep the exact click, its pinned
             // variants, and each lattice neighbor as distinct results instead
             // of collapsing them into one 64u representative.
             dedupeBucketSize: hasOrigin ? 8f : 64f,
-            origins: origins, constants: constants, coverage: coverage, onOrigin: onOrigin,
+            origins: origins, strengths: strengths, constants: constants, coverage: coverage, onOrigin: onOrigin,
             collider: collider);
         onPhase?.Invoke("verify", candidates.Count);
         var lineups = LineupSolver.VerifyExact(grid, collider, zoneCrossings, candidates, minStability: minStability, constants: constants, onCandidate: onCandidate);

@@ -280,13 +280,30 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
   const filterEls = Object.values(state.filters).filter(f => f.id !== "f-sky");
   const filterRowsHtml = () => filterEls
     .map(f => `<div class="filter-row" data-for="${f.id}">` +
-      `<label class="filter-head" for="${f.id}"><b>${esc(f.dataset.label)}:</b><span class="filter-slot"></span></label>` +
-      `<p class="filter-desc">${esc(f.dataset.desc)}</p></div>`)
+      `<label class="filter-head" for="${f.id}"><b>${esc(f.dataset.label)}:</b>` +
+      `<button type="button" class="desc-toggle" aria-expanded="false" aria-label="What does ${esc(f.dataset.label)} do?">?</button>` +
+      `<span class="filter-slot"></span></label>` +
+      `<p class="filter-desc" hidden>${esc(f.dataset.desc)}</p></div>`)
     .join("");
   // The label+description rows render in the sidebar too, permanently - they
   // used to exist only inside the intro, so the one explanation of what
   // "reliability" or "sky aim" means vanished forever the moment it closed
   // (and returning visitors never saw it at all).
+  // Descriptions collapse behind a ? per row: inline they made the card
+  // taller than a phone screen. One delegated handler serves every context
+  // (sidebar, intro, advanced card). preventDefault stops the wrapping
+  // label from also activating its control.
+  document.addEventListener("click", e => {
+    if (!(e.target instanceof Element) || !e.target.classList.contains("desc-toggle")) {
+      return;
+    }
+    e.preventDefault();
+    const desc = e.target.closest(".filter-row")?.querySelector(".filter-desc");
+    if (desc) {
+      desc.hidden = !desc.hidden;
+      e.target.setAttribute("aria-expanded", String(!desc.hidden));
+    }
+  });
   filterBody.innerHTML = filterRowsHtml();
   const slotFor = (container, f) => container.querySelector(`.filter-row[data-for="${f.id}"] .filter-slot`);
   for (const f of filterEls) {
@@ -409,6 +426,20 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
       (factor >= 2 ? ` Current settings make each solve roughly ${Math.round(factor)}x slower.` : "");
   }
 
+  // The movement and click filters, when set BEFORE solving, scope the sweep
+  // itself: the solver skips every other type/strength combination from every
+  // origin (up to 15x less work), instead of computing everything and hiding
+  // most of it. state.solveScope remembers it so the status line can say the
+  // results were solved narrow.
+  function solveScopeParams() {
+    const p = {};
+    const type = state.filters.type.value;
+    if (type) { p.types = [type]; }
+    const strength = state.filters.strength.value;
+    if (strength) { p.strengths = [parseFloat(strength)]; }
+    return p;
+  }
+
   async function runQuery(body) {
     state.busy = true;
     state.progress = { phase: "sweep", total: 0, candidates: 0, checked: [], verified: [] };
@@ -417,7 +448,9 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
     solveController = new AbortController();
     cancelBtn.hidden = false;
     try {
-      const { error, data } = await postLineupQuery({ ...advancedParams(), ...body, map: state.currentMap }, solveController.signal, onSolveProgress);
+      const scope = solveScopeParams();
+      state.solveScope = Object.keys(scope).length ? scope : null;
+      const { error, data } = await postLineupQuery({ ...advancedParams(), ...scope, ...body, map: state.currentMap }, solveController.signal, onSolveProgress);
       if (error) {
         statusEl.textContent = error;
         return;
