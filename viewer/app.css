@@ -140,9 +140,9 @@
   /* Filters are the one card that stays collapsible on desktop: there is nothing
      to filter until a search has returned something, so it starts closed and has
      to be openable. The actions card has no summary to click, so it must not. */
-  #card-filters > summary { display: list-item; }
-  #card-filters[open] > .card-body { margin-top: 6px; }
-  #card-filters .filter-count {
+  :is(#card-filters, #card-advanced) > summary { display: list-item; }
+  :is(#card-filters, #card-advanced)[open] > .card-body { margin-top: 6px; }
+  :is(#card-filters, #card-advanced) .filter-count {
     color: var(--accent);
     font-weight: 600;
   }

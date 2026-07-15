@@ -126,6 +126,8 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
     // the result count would look wrong with no visible cause.
     const active = Object.values(state.filters).filter(f => f.value).length;
     document.getElementById("filter-count").textContent = active ? `(${active})` : "";
+    const adv = Object.keys(advancedParams()).length;
+    document.getElementById("advanced-count").textContent = adv ? `(${adv})` : "";
   }
 
   // Heat mode swaps the map key from marker shapes to coverage colors (L23).
@@ -370,6 +372,21 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
     syncProgress3d();
   }
 
+  // Solver-side knobs from the advanced card: unlike the display filters,
+  // these change what gets COMPUTED, so they ride along with each solve
+  // request. Only non-defaults are sent; the server owns the defaults.
+  function advancedParams() {
+    const p = {};
+    const tol = document.getElementById("a-tolerance").value;
+    if (tol) { p.tolerance = parseFloat(tol); }
+    const reach = document.getElementById("a-reach").value;
+    if (reach) { p.originReach = parseFloat(reach); }
+    const stab = document.getElementById("a-stability").value;
+    if (stab) { p.minStability = parseFloat(stab); }
+    if (document.getElementById("a-scan").value === "fine") { p.fineScan = true; }
+    return p;
+  }
+
   async function runQuery(body) {
     state.busy = true;
     state.progress = { phase: "sweep", total: 0, candidates: 0, checked: [], verified: [] };
@@ -377,7 +394,7 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
     solveController = new AbortController();
     cancelBtn.hidden = false;
     try {
-      const { error, data } = await postLineupQuery({ ...body, map: state.currentMap }, solveController.signal, onSolveProgress);
+      const { error, data } = await postLineupQuery({ ...advancedParams(), ...body, map: state.currentMap }, solveController.signal, onSolveProgress);
       if (error) {
         statusEl.textContent = error;
         return;
@@ -531,6 +548,12 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
       : resultStatusText(filtered().length);
     draw();
   });
+  for (const el of ["a-tolerance", "a-reach", "a-stability", "a-scan"].map(id => document.getElementById(id))) {
+    el.addEventListener("change", () => {
+      syncControls();
+      statusEl.textContent = "advanced settings apply to your next Search / spot click";
+    });
+  }
   for (const f of Object.values(state.filters)) {
     f.addEventListener("change", () => {
       state.selected = -1;

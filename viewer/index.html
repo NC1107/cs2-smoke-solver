@@ -96,6 +96,50 @@
         </select>
       </div>
     </details>
+    <details class="card" id="card-advanced">
+      <summary>advanced <span class="filter-count" id="advanced-count"></span></summary>
+      <div class="card-body" id="advanced-body">
+        <div class="filter-row">
+          <label class="filter-head" for="a-tolerance"><b>Solve tolerance:</b><span class="filter-slot">
+            <select id="a-tolerance" aria-label="Landing tolerance the solver accepts">
+              <option value="">80u (default)</option>
+              <option value="16">16u (surgical)</option>
+              <option value="32">32u</option>
+              <option value="48">48u</option>
+              <option value="128">128u (loose)</option>
+            </select></span></label>
+          <p class="filter-desc">How close to the target a throw must land for the solver to keep it at all. Unlike the Precision display filter, this changes what gets computed.</p>
+        </div>
+        <div class="filter-row">
+          <label class="filter-head" for="a-reach"><b>Search radius:</b><span class="filter-slot">
+            <select id="a-reach" aria-label="Origin search radius around a clicked throw spot">
+              <option value="">300u (default)</option>
+              <option value="50">50u (this exact spot)</option>
+              <option value="150">150u</option>
+              <option value="600">600u (wide)</option>
+            </select></span></label>
+          <p class="filter-desc">How far around a clicked throw spot to look for stand positions. Small = only lineups from right where you clicked.</p>
+        </div>
+        <div class="filter-row">
+          <label class="filter-head" for="a-stability"><b>Verify gate:</b><span class="filter-slot">
+            <select id="a-stability" aria-label="Minimum stability a candidate needs to survive verification">
+              <option value="">40% (default)</option>
+              <option value="0.2">20% (keep shaky finds)</option>
+              <option value="0.6">60% (strict)</option>
+            </select></span></label>
+          <p class="filter-desc">Candidates below this stability are discarded during solving, before you ever see them. Lower it to surface touchy-but-real lineups.</p>
+        </div>
+        <div class="filter-row">
+          <label class="filter-head" for="a-scan"><b>Scan detail:</b><span class="filter-slot">
+            <select id="a-scan" aria-label="Angle scan granularity">
+              <option value="">normal</option>
+              <option value="fine">fine (slower)</option>
+            </select></span></label>
+          <p class="filter-desc">Halves the aim-angle step the sweep samples (0.5° near a click). Finds lineups whose working angle window the normal scan steps over. Roughly 3x solve time.</p>
+        </div>
+        <p class="filter-desc" id="advanced-note">These change how the solver searches - they apply to your next Search / spot click.</p>
+      </div>
+    </details>
   </div>
   <canvas id="map" aria-label="Top-down map; click to set a smoke target and throw origins"></canvas>
   <div id="stage3d" style="position:absolute; inset:0; display:none"></div>

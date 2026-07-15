@@ -140,6 +140,17 @@ public static class LineupApi
         {
             return $"tolerance must be between {MinTolerance} and {MaxTolerance}";
         }
+        if (query.TryGetProperty("minStability", out var stabEl) &&
+            (stabEl.ValueKind != JsonValueKind.Number || !float.IsFinite(stabEl.GetSingle()) ||
+             stabEl.GetSingle() is < 0.05f or > 1f))
+        {
+            return "minStability must be between 0.05 and 1";
+        }
+        if (query.TryGetProperty("fineScan", out var fineEl) &&
+            fineEl.ValueKind is not (JsonValueKind.True or JsonValueKind.False))
+        {
+            return "fineScan must be a boolean";
+        }
         return null;
     }
 
@@ -156,13 +167,15 @@ public static class LineupApi
         // differing only in that input replay each other's cached results.
         var reach = query.TryGetProperty("originReach", out var reachEl) ? reachEl.GetSingle() : -1f;
         var tol = query.TryGetProperty("tolerance", out var tolEl) ? tolEl.GetSingle() : 80f;
+        var stab = query.TryGetProperty("minStability", out var stabEl) ? stabEl.GetSingle() : 0.4f;
+        var fine = query.TryGetProperty("fineScan", out var fineEl) && fineEl.GetBoolean();
         // Bump when solver or sim behavior changes: cached answers from older code
         // must never be replayed as current results.
         const int QueryVersion = 9;
         // meshVersion is the content-hashed mesh identity (not just the game
         // build), so re-extracting a map - e.g. dropping the Retake tape - forces
         // a re-solve instead of replaying results computed against the old mesh.
-        var seed = $"v{QueryVersion}|{mesh.MapName}|{meshVersion}|{JsonSerializer.Serialize(constants)}|{tx},{ty},{tz}|{origin}|{reach:F0}|{tol:F0}|{attrs}";
+        var seed = $"v{QueryVersion}|{mesh.MapName}|{meshVersion}|{JsonSerializer.Serialize(constants)}|{tx},{ty},{tz}|{origin}|{reach:F0}|{tol:F0}|{stab:F2}|{(fine ? 1 : 0)}|{attrs}";
         var hash = System.Security.Cryptography.SHA1.HashData(Encoding.UTF8.GetBytes(seed));
         return Convert.ToHexString(hash)[..20].ToLowerInvariant();
     }
@@ -198,8 +211,10 @@ public static class LineupApi
             ? (query.TryGetProperty("originReach", out var reachEl) ? reachEl.GetSingle() : 300f)
             : 3100f;
         var tolerance = query.TryGetProperty("tolerance", out var tolEl) ? tolEl.GetSingle() : 80f;
+        var minStability = query.TryGetProperty("minStability", out var stabEl) ? stabEl.GetSingle() : 0.4f;
+        var fineScan = query.TryGetProperty("fineScan", out var fineEl) && fineEl.GetBoolean();
 
-        var solve = SolveForTarget(mesh, attributeFilter, navAreas, target, hasTargetZ, originClick, originReach, tolerance, constants, onPhase, onOrigin, onCandidate);
+        var solve = SolveForTarget(mesh, attributeFilter, navAreas, target, hasTargetZ, originClick, originReach, tolerance, constants, onPhase, onOrigin, onCandidate, minStability, fineScan);
 
         // Raw voxel-stage counts overstate throwability (many candidates die in
         // exact-sim verification), so each cell also says whether a verified

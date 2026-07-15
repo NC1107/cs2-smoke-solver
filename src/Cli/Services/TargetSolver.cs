@@ -41,7 +41,9 @@ public static class TargetSolver
         ThrowConstants constants,
         Action<string, int>? onPhase = null,
         Action<Vector3, int>? onOrigin = null,
-        Action<Vector3, bool>? onCandidate = null)
+        Action<Vector3, bool>? onCandidate = null,
+        float minStability = 0.4f,
+        bool fineScan = false)
     {
         var hasOrigin = originClickOpt.HasValue;
         var originClick = originClickOpt ?? new Vector2(target.X, target.Y);
@@ -127,7 +129,12 @@ public static class TargetSolver
         // search can afford a fine one. At long range one degree of pitch moves the
         // landing tens of units, so local grids must be fine enough not to step over
         // the tolerance sphere.
-        var (yawStep, pitchStep) = hasOrigin ? (1f, 1f) : (3f, 4f);
+        // Fine scan halves the angle lattice: a probe goes 1 -> 0.5 deg, a
+        // map-wide sweep 3x4 -> 2x2 - roughly 3x the work, for lineups whose
+        // in-zone angle ribbon the normal lattice steps over.
+        var (yawStep, pitchStep) = hasOrigin
+            ? (fineScan ? (0.5f, 0.5f) : (1f, 1f))
+            : (fineScan ? (2f, 2f) : (3f, 4f));
         var coverage = new System.Collections.Concurrent.ConcurrentDictionary<(int X, int Y), int>();
         onPhase?.Invoke("sweep", origins.Count);
         var candidates = LineupSolver.Solve(
@@ -141,7 +148,7 @@ public static class TargetSolver
             origins: origins, constants: constants, coverage: coverage, onOrigin: onOrigin,
             collider: collider);
         onPhase?.Invoke("verify", candidates.Count);
-        var lineups = LineupSolver.VerifyExact(grid, collider, zoneCrossings, candidates, constants: constants, onCandidate: onCandidate);
+        var lineups = LineupSolver.VerifyExact(grid, collider, zoneCrossings, candidates, minStability: minStability, constants: constants, onCandidate: onCandidate);
 
         return new TargetSolve(
             target,
