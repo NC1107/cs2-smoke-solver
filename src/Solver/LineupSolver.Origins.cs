@@ -61,7 +61,163 @@ public static partial class LineupSolver
                 }
             }
         }
+        if (collider != null)
+        {
+            AddPinnedOrigins(grid, collider, origins);
+        }
         return origins;
+    }
+
+    // The CS2 player hull is 32x32; feet pressed against a wall sit exactly
+    // 16u from its plane. That is what makes pinned positions valuable: the
+    // wall places the player, not the player's eye.
+    const float PlayerHalfWidth = 16f;
+    // How far from a nav sample a wall still counts as "walk into it" range.
+    const float WallProbeRange = 64f;
+    // A surface steeper than this is a wall for pinning purposes (the grenade
+    // sim's floor test is normal.Z > 0.7; walls are the near-vertical rest).
+    const float WallNormalMaxZ = 0.35f;
+    static readonly Vector3[] ProbeDirs = [.. Enumerable.Range(0, 8)
+        .Select(i => new Vector3(MathF.Cos(i * MathF.PI / 4f), MathF.Sin(i * MathF.PI / 4f), 0f))];
+
+    /// <summary>
+    /// Positions a player reaches by walking INTO geometry: feet pressed flat
+    /// against one wall, or wedged into the corner where two meet. The grid
+    /// sampling above lands on multiples of the step and misses these, yet they
+    /// are the easiest real-world lineups to reproduce - the wall removes the
+    /// player's position error entirely, leaving only aim.
+    /// </summary>
+    static void AddPinnedOrigins(VoxelGrid grid, TriangleCollider collider, List<Vector3> origins)
+    {
+        var seen = new HashSet<(int, int)>(origins.Select(o => ((int)MathF.Round(o.X / 4f), (int)MathF.Round(o.Y / 4f))));
+        var pinned = new List<Vector3>();
+
+        void TryAdd(Vector3 baseFeet, Vector2 xy)
+        {
+            if (Vector2.Distance(xy, new Vector2(baseFeet.X, baseFeet.Y)) > WallProbeRange + PlayerHalfWidth ||
+                !seen.Add(((int)MathF.Round(xy.X / 4f), (int)MathF.Round(xy.Y / 4f))))
+            {
+                return;
+            }
+            var snapped = SnapToGround(grid, collider, new Vector3(xy.X, xy.Y, baseFeet.Z));
+            var (cx, cy, cz) = grid.CellOf(snapped + new Vector3(0, 0, 8));
+            if (grid.InBounds(cx, cy, cz) && !grid.IsSolid(grid.Index(cx, cy, cz)))
+            {
+                pinned.Add(snapped);
+            }
+        }
+
+        foreach (var feet in origins.ToArray())
+        {
+            // Probe at waist height: skirting-board trim and floor clutter sit
+            // below it, railings and real walls cross it.
+            var waist = feet + new Vector3(0, 0, 36f);
+            var walls = new List<(Vector2 N, float PlaneD)>();
+            foreach (var dir in ProbeDirs)
+            {
+                if (collider.FirstHit(waist, waist + dir * WallProbeRange) is not { } hit ||
+                    MathF.Abs(hit.Normal.Z) > WallNormalMaxZ)
+                {
+                    continue;
+                }
+                var n = new Vector2(hit.Normal.X, hit.Normal.Y);
+                if (n.Length() < 0.8f)
+                {
+                    continue;
+                }
+                n = Vector2.Normalize(n);
+                var hitPoint = waist + dir * (hit.T * WallProbeRange);
+                // Plane in Hesse form n.x = d; the pinned position satisfies
+                // n.x = d + hull half-width.
+                var d = Vector2.Dot(n, new Vector2(hitPoint.X, hitPoint.Y));
+                if (walls.Any(w => Vector2.Dot(w.N, n) > 0.9f))
+                {
+                    continue; // same wall seen from a neighboring probe
+                }
+                walls.Add((n, d));
+            }
+            foreach (var (n, d) in walls)
+            {
+                var feetXy = new Vector2(feet.X, feet.Y);
+                var dist = Vector2.Dot(n, feetXy) - d;
+                if (dist > PlayerHalfWidth + 0.5f)
+                {
+                    TryAdd(feet, feetXy - n * (dist - PlayerHalfWidth));
+                }
+            }
+            for (var i = 0; i < walls.Count; i++)
+            {
+                for (var j = i + 1; j < walls.Count; j++)
+                {
+                    var (a, da) = walls[i];
+                    var (b, db) = walls[j];
+                    // Solve for the point 16u off BOTH planes - the corner wedge.
+                    var det = a.X * b.Y - a.Y * b.X;
+                    if (MathF.Abs(Vector2.Dot(a, b)) > 0.5f || MathF.Abs(det) < 0.3f)
+                    {
+                        continue; // not corner-like
+                    }
+                    var ra = da + PlayerHalfWidth;
+                    var rb = db + PlayerHalfWidth;
+                    TryAdd(feet, new Vector2((ra * b.Y - rb * a.Y) / det, (rb * a.X - ra * b.X) / det));
+                }
+            }
+        }
+        origins.AddRange(pinned);
+    }
+
+    /// <summary>
+    /// A user-named stand spot, taken literally: the seed itself ground-snapped,
+    /// plus its wall/corner-pinned variants. The sampling lattice above tests
+    /// positions NEAR a click; a known lineup lives at ITS feet, up to half a
+    /// grid step away from every lattice point, so the click must be tested
+    /// as-is or the exact lineup the player asked about can never be found.
+    /// </summary>
+    public static List<Vector3> ExactOriginWithPins(VoxelGrid grid, TriangleCollider? collider, Vector3 seed)
+    {
+        var list = new List<Vector3> { SnapToGround(grid, collider, seed) };
+        if (collider != null)
+        {
+            AddPinnedOrigins(grid, collider, list);
+        }
+        return list;
+    }
+
+    /// <summary>
+    /// How geometry pins a lineup's stand spot: 2 = wedged into a corner (both
+    /// axes fixed by walking in), 1 = pressed against one wall, 0 = open ground.
+    /// </summary>
+    public static int PositionPin(TriangleCollider collider, Vector3 feet)
+    {
+        var waist = feet + new Vector3(0, 0, 36f);
+        var touching = new List<Vector2>();
+        foreach (var dir in ProbeDirs)
+        {
+            if (collider.FirstHit(waist, waist + dir * (PlayerHalfWidth + 8f)) is not { } hit ||
+                MathF.Abs(hit.Normal.Z) > WallNormalMaxZ)
+            {
+                continue;
+            }
+            var n = new Vector2(hit.Normal.X, hit.Normal.Y);
+            if (n.Length() < 0.8f)
+            {
+                continue;
+            }
+            n = Vector2.Normalize(n);
+            // The hull face sits along the wall normal, not along the probe ray.
+            var planeDist = hit.T * (PlayerHalfWidth + 8f) * MathF.Abs(Vector2.Dot(new Vector2(dir.X, dir.Y), n));
+            if (planeDist > PlayerHalfWidth + 1.5f || touching.Any(t => Vector2.Dot(t, n) > 0.9f))
+            {
+                continue;
+            }
+            touching.Add(n);
+        }
+        if (touching.Count >= 2 &&
+            touching.Any(a => touching.Any(b => a != b && MathF.Abs(Vector2.Dot(a, b)) < 0.7f)))
+        {
+            return 2;
+        }
+        return touching.Count > 0 ? 1 : 0;
     }
 
     /// <summary>

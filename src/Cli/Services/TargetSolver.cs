@@ -113,6 +113,15 @@ public static class TargetSolver
                 collider: collider)
             .Where(o => Vector2.Distance(new Vector2(o.X, o.Y), originClick) <= originReach)
             .ToList();
+        if (hasOrigin)
+        {
+            // The click names the player's exact intended stand spot. Test it
+            // literally (and its pinned variants) - the lattice's nearest sample
+            // can sit half a grid step away, and for a tight known lineup that
+            // is the difference between finding it and not.
+            var clickZ = LineupSolver.NavGroundZ([.. navAreas.Select(a => a.Corners)], originClick.X, originClick.Y) ?? target.Z;
+            origins.AddRange(LineupSolver.ExactOriginWithPins(grid, collider, new Vector3(originClick.X, originClick.Y, clickZ)));
+        }
 
         // Map-wide searches use a coarser angle grid to stay interactive; a near-click
         // search can afford a fine one. At long range one degree of pitch moves the
@@ -124,7 +133,12 @@ public static class TargetSolver
         var candidates = LineupSolver.Solve(
             grid, zoneCrossings, min, max,
             [ThrowType.Stand, ThrowType.Crouch, ThrowType.JumpThrow, ThrowType.CrouchJumpThrow, ThrowType.RunJumpThrow],
-            yawStep, pitchStep, origins: origins, constants: constants, coverage: coverage, onOrigin: onOrigin,
+            yawStep, pitchStep,
+            // A probe is about ONE spot: keep the exact click, its pinned
+            // variants, and each lattice neighbor as distinct results instead
+            // of collapsing them into one 64u representative.
+            dedupeBucketSize: hasOrigin ? 8f : 64f,
+            origins: origins, constants: constants, coverage: coverage, onOrigin: onOrigin,
             collider: collider);
         onPhase?.Invoke("verify", candidates.Count);
         var lineups = LineupSolver.VerifyExact(grid, collider, zoneCrossings, candidates, constants: constants, onCandidate: onCandidate);
@@ -160,9 +174,7 @@ public static class TargetSolver
     public static Vector3 AimReferencePoint(TriangleCollider collider, Vector3 feet, ThrowType type, float pitchDeg, float yawDeg)
     {
         var eye = feet + new Vector3(0, 0, GrenadeTrajectory.EyeHeight(type));
-        var pr = pitchDeg * MathF.PI / 180f;
-        var yr = yawDeg * MathF.PI / 180f;
-        var dir = new Vector3(MathF.Cos(pr) * MathF.Cos(yr), MathF.Cos(pr) * MathF.Sin(yr), -MathF.Sin(pr));
+        var dir = GrenadeTrajectory.ForwardFromAngles(pitchDeg, yawDeg);
         var far = eye + dir * 1200f;
         var hit = collider.FirstHit(eye, far);
         var dist = hit is { } h ? MathF.Max(60f, h.T * 1200f - 24f) : 1200f;

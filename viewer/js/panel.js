@@ -30,9 +30,14 @@ function lineupSummaryHtml(l) {
     : l.aimRef.tier === "reticle" ? `<span class="ref reticle" title="open sky at the crosshair, but the grenade reticle's arms cross a silhouette ${l.aimRef.reticleDeg.toFixed(0)} deg out - line it up on that">reticle ${l.aimRef.reticleDeg.toFixed(0)}°</span>`
     : l.aimRef.tier === "flat" ? `<span class="ref flat" title="aims at featureless surface - weak reference">flat</span>`
     : `<span class="ref edge" title="silhouette ${l.aimRef.edgeDeg.toFixed(1)} deg from crosshair">${l.aimRef.edgeDeg.toFixed(1)}°</span>`;
+  // Geometry-pinned stand spots: the wall places the player, so only aim
+  // remains - the easiest lineups to reproduce in a real round.
+  const pin = l.pin === "corner" ? `<span class="ref pin" title="stand spot is wedged into a corner - walk into it and your position is exact">corner</span>`
+    : l.pin === "wall" ? `<span class="ref pin" title="stand spot presses against a wall - walk into it to remove position error">wall</span>`
+    : "";
   const fav = l._favorite ? `<span class="ref fav" title="favorited">★</span>` : "";
   return `<b class="${clickClass(l.strength)}">${clickShort(l.strength)}</b><span>${typeShort[l.type]}</span>` +
-    `<span>${l.Bounces}b</span><span>${l.flightTime.toFixed(1)}s</span>${ref}${fav}` +
+    `<span>${l.Bounces}b</span><span>${l.flightTime.toFixed(1)}s</span>${pin}${ref}${fav}` +
     `<span class="pct">${(l.stability * 100).toFixed(0)}%</span>`;
 }
 

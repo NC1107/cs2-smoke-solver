@@ -500,6 +500,7 @@
   .ref.reticle { color: var(--target); border: 1px solid var(--target); }
   .ref.flat { color: var(--muted); border: var(--border); }
   .ref.edge { color: var(--accent); border: 1px solid var(--accent); }
+  .ref.pin { color: var(--click-left); border: 1px solid var(--click-left); font-weight: 600; }
   .ref.fav { color: var(--target); border: none; padding: 0; }
   @media (max-width: 640px) {
     /* Finger-sized controls: the desktop paddings produce ~20px-tall hit

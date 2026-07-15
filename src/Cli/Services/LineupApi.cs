@@ -158,7 +158,7 @@ public static class LineupApi
         var tol = query.TryGetProperty("tolerance", out var tolEl) ? tolEl.GetSingle() : 80f;
         // Bump when solver or sim behavior changes: cached answers from older code
         // must never be replayed as current results.
-        const int QueryVersion = 8;
+        const int QueryVersion = 9;
         // meshVersion is the content-hashed mesh identity (not just the game
         // build), so re-extracting a map - e.g. dropping the Retake tape - forces
         // a re-solve instead of replaying results computed against the old mesh.
@@ -211,11 +211,29 @@ public static class LineupApi
         // A throw aimed into featureless sky has nothing to line the crosshair
         // against, so sky shots sink below every referenced lineup regardless
         // of trajectory quality (stable sort keeps the physical order within
-        // each group). Full scoring is backlogged; this is the v1 penalty.
+        // each group). Within that, a stand spot the geometry pins - a corner
+        // wedge or a wall press - outranks open ground: walking into the wall
+        // removes the player's position error entirely, which is what makes a
+        // lineup reproducible in a real round.
         var aimRefs = solve.Lineups.ToDictionary(
             l => l,
             l => AimReference.Analyze(solve.Collider, l.Feet, l.Type, l.PitchDeg, l.YawDeg));
-        var ranked = solve.Lineups.OrderBy(l => aimRefs[l].IsSkyShot ? 1 : 0).ToList();
+        var pins = solve.Lineups.ToDictionary(
+            l => l,
+            l => LineupSolver.PositionPin(solve.Collider, l.Feet));
+        // A probe means "I stand HERE": closeness to the click outranks
+        // everything but a usable aim reference, in 32u bands so a pinned spot
+        // still wins among near-equals. A map-wide sweep has no "here", so
+        // pinned spots lead outright.
+        var ranked = (originClick is { } click
+                ? solve.Lineups
+                    .OrderBy(l => aimRefs[l].IsSkyShot ? 1 : 0)
+                    .ThenBy(l => (int)(Vector2.Distance(new Vector2(l.Feet.X, l.Feet.Y), click) / 32f))
+                    .ThenByDescending(l => pins[l])
+                : solve.Lineups
+                    .OrderBy(l => aimRefs[l].IsSkyShot ? 1 : 0)
+                    .ThenByDescending(l => pins[l]))
+            .ToList();
 
         return JsonSerializer.Serialize(new
         {
@@ -227,7 +245,9 @@ public static class LineupApi
             // or a sim gap).
             coverage = solve.Coverage
                 .Select(c => new[] { c[0], c[1], c[2], verifiedAt.Contains((c[0], c[1])) ? 1 : 0 }),
-            lineups = ranked.Take(hasOrigin ? 6 : 400).Select(l => new
+            // 12 for a probe (steep lobs and pinned spots widened the field a
+            // single click can deserve), 400 for the map-wide sweep.
+            lineups = ranked.Take(hasOrigin ? 12 : 400).Select(l => new
             {
                 feet = new[] { l.Feet.X, l.Feet.Y, l.Feet.Z },
                 yaw = l.YawDeg,
@@ -238,6 +258,7 @@ public static class LineupApi
                 l.Bounces,
                 flightTime = l.FlightTime,
                 stability = l.Stability,
+                pin = pins[l] switch { 2 => "corner", 1 => "wall", _ => (string?)null },
                 aimRef = new
                 {
                     tier = aimRefs[l].Tier,

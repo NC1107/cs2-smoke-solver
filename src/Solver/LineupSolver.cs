@@ -24,6 +24,16 @@ public sealed record Lineup(
 public static partial class LineupSolver
 {
     const float YawSpreadDeg = 30f;
+    // The pitch sweep's two floors. -65 was the historical cap ("impractical
+    // sky-lob") - but real play uses near-vertical drops when standing close to
+    // the target, and capping there made those lineups unfindable. -89 stops
+    // short of straight up only to keep the launch direction non-degenerate.
+    const float StandardPitchFloorDeg = -65f;
+    const float SteepPitchFloorDeg = -89f;
+    // A -65deg left-click lands ~1470u out (range scales with sin(2*pitch));
+    // everything steeper lands closer, so past this distance the steep band
+    // cannot reach and is not worth simulating.
+    const float SteepLobMaxRange = 1500f;
     // The in-zone region of angle space is a thin ribbon at range (often under a
     // degree thick), so any fixed angle grid aliases into distance bands of false
     // "impossible" origins. Coarse samples that nearly land in-zone seed a local
@@ -56,6 +66,12 @@ public static partial class LineupSolver
         IReadOnlyList<ThrowType> types,
         float yawStepDeg = 2f,
         float pitchStepDeg = 2f,
+        // One surviving lineup per bucket of this size. 64u keeps a map-wide
+        // list readable, but a single-click probe must keep the user's exact
+        // spot distinct from its lattice neighbors - merging them silently
+        // replaces the position the user actually asked about with one up to
+        // half a bucket away.
+        float dedupeBucketSize = 64f,
         IReadOnlyList<Vector3>? origins = null,
         ThrowConstants? constants = null,
         ConcurrentDictionary<(int X, int Y), int>? coverage = null,
@@ -108,7 +124,7 @@ public static partial class LineupSolver
                 }
                 hits++;
                 var lineup = new Lineup(feet, Normalize(yaw), pitch, type, result.RestPoint, result.Bounces, result.FlightTime, crossings, Strength: strength);
-                var key = ((int)MathF.Floor(feet.X / 64f), (int)MathF.Floor(feet.Y / 64f));
+                var key = ((int)MathF.Floor(feet.X / dedupeBucketSize), (int)MathF.Floor(feet.Y / dedupeBucketSize));
                 best.AddOrUpdate(key, lineup, (_, current) => Better(lineup, current) ? lineup : current);
                 return 0f;
             }
@@ -129,11 +145,29 @@ public static partial class LineupSolver
                     var reach = zoneRadius + distance * MathF.Max(yawStepDeg, pitchStepDeg) * MathF.PI / 180f;
                     var reachSq = reach * reach;
                     var nearMisses = new List<(float Yaw, float Pitch, float MissSq)>();
+                    // Steep lobs (-65 down to -89, i.e. up to nearly straight up)
+                    // only ever land close to the thrower - horizontal speed is
+                    // cos(pitch) - so they are swept only when the zone is within
+                    // plausible steep-lob range. That keeps a map-wide sweep from
+                    // paying for angles that physically cannot reach, while a
+                    // player standing near the target gets the near-vertical
+                    // drop-on-your-own-head lineups real play uses.
+                    var pitchFloor = distance <= SteepLobMaxRange * speedFactor * speedFactor
+                        ? SteepPitchFloorDeg
+                        : StandardPitchFloorDeg;
                     for (var yaw = yawCenter - YawSpreadDeg; yaw <= yawCenter + YawSpreadDeg; yaw += yawStepDeg)
                     {
-                        // Steeper than -65 degrees is an impractical sky-lob; players cannot
-                        // line it up reliably and it telegraphs for seconds.
-                        for (var pitch = -65f; pitch <= 0f; pitch += pitchStepDeg)
+                        for (var pitch = StandardPitchFloorDeg; pitch <= 0f; pitch += pitchStepDeg)
+                        {
+                            var missSq = Evaluate(eye, yaw, pitch, type, strength);
+                            if (missSq > 0f && missSq <= reachSq)
+                            {
+                                nearMisses.Add((yaw, pitch, missSq));
+                            }
+                        }
+                        // Extend downward on the same lattice so the classic range's
+                        // samples stay exactly where they always were.
+                        for (var pitch = StandardPitchFloorDeg - pitchStepDeg; pitch >= pitchFloor; pitch -= pitchStepDeg)
                         {
                             var missSq = Evaluate(eye, yaw, pitch, type, strength);
                             if (missSq > 0f && missSq <= reachSq)
