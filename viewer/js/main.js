@@ -308,6 +308,12 @@ import { renderLineups, initPanel, revealSelected } from "./panel.js";
       }
       next.lineups.forEach((l, i) => { l._idx = i; });
       state.result = next;
+      // Adopt the server's resolved target, which carries the ground Z it snapped
+      // a 2D (Z-less) pick onto. Keeps the 2D and 3D target at the same height the
+      // sim actually used, so switching views no longer moves or floats it.
+      if (Array.isArray(next.target) && next.target.length > 2) {
+        state.target = next.target;
+      }
       state.selected = -1;
       renderLineups();
       sync3d();
@@ -493,7 +499,7 @@ import { renderLineups, initPanel, revealSelected } from "./panel.js";
     onGoTo: goToLineup, onFavorite: toggleFavorite, onRemove: removeLineup,
   });
   initMap2d({ onSetTarget: setTarget, onSelect: select, onRunQuery: runQuery });
-  set3dCallbacks({ onSetTarget: setTarget, onSelect: select });
+  set3dCallbacks({ onSetTarget: setTarget, onSelect: select, onRunQuery: runQuery });
 
   const HINT_3D = "3D: WASD fly (QE up/down, shift fast) · drag to look · right-drag pan · scroll zoom · click terrain = set target";
 

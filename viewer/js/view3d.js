@@ -13,6 +13,7 @@ let threePromise = null; // memoized in-flight init so re-toggles share one
 let callbacks = {
   onSelect: () => {},
   onSetTarget: () => {},
+  onRunQuery: () => {},
 };
 export function set3dCallbacks(cb) {
   callbacks = cb;
@@ -187,6 +188,18 @@ async function init3d() {
   const raycaster = new THREE.Raycaster();
   const meshObj = scene.children.find(o => o.isMesh);
 
+  // Ground height at a horizontal point, by dropping a ray onto the collision
+  // mesh. Lets the target dot sit on the surface when it was picked in 2D (which
+  // carries no Z) instead of floating at world zero. Always the collision mesh,
+  // never the textured GLB, so it reports the true surface the sim uses.
+  const dropRay = new THREE.Raycaster();
+  const straightDown = new THREE.Vector3(0, 0, -1);
+  function surfaceZAt(x, y) {
+    dropRay.set(new THREE.Vector3(x, y, 20000), straightDown);
+    const hit = dropRay.intersectObject(meshObj, false);
+    return hit.length > 0 ? hit[0].point.z : null;
+  }
+
   // Free camera: left-drag looks around from the current spot (rotates the
   // camera in place, like turning your head - not orbiting a distant pivot,
   // which used to swing the whole view when navigating up close to a wall).
@@ -247,9 +260,18 @@ async function init3d() {
       return;
     }
     const hits = raycaster.intersectObject(meshObj, false);
-    if (hits.length > 0) {
-      const pnt = hits[0].point;
+    if (hits.length === 0) { return; }
+    const pnt = hits[0].point;
+    // Same two-click flow as the 2D map: while arming a target (or before one
+    // exists) a click sets the target; once a target is set, a click on the
+    // ground picks the spot to throw FROM and solves just that spot. Without
+    // this branch every 3D click re-targeted, so the origin could never be
+    // chosen in 3D. Re-targeting still works via the "Re-target" button, which
+    // arms state.picking exactly as it does for the 2D view.
+    if (state.picking || !state.target) {
       callbacks.onSetTarget([pnt.x, pnt.y, pnt.z], `target ${pnt.x.toFixed(0)}, ${pnt.y.toFixed(0)}, ${pnt.z.toFixed(0)} (3D)`);
+    } else if (!state.heatOn) {
+      callbacks.onRunQuery({ target: state.target, origin: [pnt.x, pnt.y, pnt.z] });
     }
   });
   renderer.domElement.addEventListener("wheel", e => {
@@ -375,7 +397,7 @@ async function init3d() {
   three = {
     renderer, scene, camera, markerGroup, targetGroup, progressGroup, resize3d,
     markerGeo, markerMats, targetGeo, targetMat, bloomGeo, bloomMat, lineMat,
-    progressCheckedMat, progressVerifiedMat,
+    progressCheckedMat, progressVerifiedMat, surfaceZAt,
     get isLive() { return live; },
     get isTextured() { return activeScene !== scene; },
     start() {
@@ -826,7 +848,10 @@ export function sync3d() {
   clearGroup(targetGroup);
   const target = state.target;
   if (target) {
-    const tz = target.length > 2 ? target[2] : 0;
+    // A 3D-picked target carries its exact Z; a 2D-picked one does not, so drop
+    // it onto the collision surface here rather than pinning it to world zero
+    // (which read as a target floating in space above stairs and ledges).
+    const tz = target.length > 2 ? target[2] : (three.surfaceZAt(target[0], target[1]) ?? 0);
     const dot = new THREE.Mesh(targetGeo, targetMat);
     dot.position.set(target[0], target[1], tz + 6);
     targetGroup.add(dot);
