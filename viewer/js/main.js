@@ -68,6 +68,7 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
 
   function select(i) {
     state.selected = i === state.selected ? -1 : i;
+    syncUrl();
     renderLineups();
     if (state.selected >= 0) {
       revealSelected();
@@ -161,6 +162,7 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
     state.currentMap = name;
     localStorage.setItem("smokesolver.lastMap", name);
     resetSearch();
+    syncUrl();
     syncControls();
 
     try {
@@ -326,9 +328,11 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
 
   if (initialMap) {
     mapSelect.value = initialMap;
+    const bootParams = new URLSearchParams(location.search);
     if (!(await loadMap(initialMap))) {
       return;
     }
+    applyPermalink(bootParams);
   } else {
     mountIntroFilters();
     // Escape may only skip the intro once a map exists - it is the map picker,
@@ -394,6 +398,7 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
       // sim actually used, so switching views no longer moves or floats it.
       if (Array.isArray(next.target) && next.target.length > 2) {
         state.target = next.target;
+        syncUrl();
       }
       state.selected = -1;
       renderLineups();
@@ -411,9 +416,76 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
     }
   }
 
+  // Shareable permalinks. t=x,y,z is the resolved target; l identifies the
+  // selected lineup by its PHYSICAL parameters (type:strength:fx:fy:fz:
+  // pitch:yaw) - result indices are unstable across data redeploys, the
+  // physics is the lineup's identity. The address bar always holds a valid
+  // share link for the current view.
+  function permalink() {
+    const p = new URLSearchParams({ map: state.currentMap });
+    if (state.target) {
+      p.set("t", state.target.map(v => Math.round(v * 10) / 10).join(","));
+    }
+    const l = state.selected >= 0 ? state.result?.lineups[state.selected] : null;
+    if (l) {
+      p.set("l", [l.type, l.strength, ...l.feet.map(v => Math.round(v * 10) / 10), l.pitch.toFixed(2), l.yaw.toFixed(2)].join(":"));
+    }
+    return `${location.pathname}?${p}`;
+  }
+  function syncUrl() {
+    history.replaceState(null, "", permalink());
+  }
+
+  async function shareLineup() {
+    const url = location.origin + permalink();
+    if (navigator.share) {
+      try {
+        await navigator.share({ url });
+        return;
+      } catch {
+        // Cancelled share sheets fall through to the clipboard path.
+      }
+    }
+    await navigator.clipboard.writeText(url);
+    statusEl.textContent = "link copied - it opens this exact lineup";
+  }
+
+  // Landing on a shared link: set the target, probe the lineup's own origin
+  // (cheap, and usually a query-cache hit for a link someone else already
+  // solved), and select the result matching the linked physics. If map data
+  // changed since the link was minted, fall back to the full sweep.
+  async function applyPermalink(params) {
+    const t = params.get("t")?.split(",").map(Number);
+    if (!t || t.length < 2 || t.some(v => !Number.isFinite(v))) {
+      return;
+    }
+    setTarget(t, `target ${t[0].toFixed(0)}, ${t[1].toFixed(0)} (from link)`);
+    const parts = params.get("l")?.split(":");
+    if (!parts || parts.length !== 7) {
+      return;
+    }
+    const type = parts[0];
+    const [strength, fx, fy, fz, pitch, yaw] = parts.slice(1).map(Number);
+    if ([strength, fx, fy, fz, pitch, yaw].some(v => !Number.isFinite(v))) {
+      return;
+    }
+    await runQuery({ target: state.target, origin: [fx, fy] });
+    const match = state.result?.lineups.findIndex(c =>
+      c.type === type && Math.abs(c.strength - strength) < 0.01 &&
+      Math.hypot(c.feet[0] - fx, c.feet[1] - fy, c.feet[2] - fz) <= 1 &&
+      Math.abs(c.pitch - pitch) < 0.1 && Math.abs(c.yaw - yaw) < 0.1) ?? -1;
+    if (match >= 0) {
+      select(match);
+      return;
+    }
+    statusEl.textContent = "the linked lineup no longer exists on current map data - sweeping the whole map for its target";
+    await runQuery({ target: state.target });
+  }
+
   function setTarget(t, note) {
     state.target = t;
     resetSearch({ keepTarget: true });
+    syncUrl();
     // Lead with the action most users want next (the full sweep); the
     // narrower solve-one-spot click is the refinement, not the default.
     statusEl.textContent = `${note} - "Search map" finds every throw spot · or click one spot to solve just it · right-click/long-press moves the target`;
@@ -446,6 +518,7 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
   });
   clearBtn.addEventListener("click", () => {
     resetSearch();
+    syncUrl();
     statusEl.textContent = "";
     syncControls();
     renderLineups();
@@ -579,6 +652,7 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
   initPanel({
     onSetTarget: setTarget, onSelect: select, onPreview: loadPreviewThumb,
     onGoTo: goToLineup, onFavorite: toggleFavorite, onRemove: removeLineup,
+    onShare: shareLineup,
   });
   initMap2d({ onSetTarget: setTarget, onSelect: select, onRunQuery: runQuery });
   set3dCallbacks({ onSetTarget: setTarget, onSelect: select, onRunQuery: runQuery });

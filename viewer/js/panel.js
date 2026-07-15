@@ -15,6 +15,7 @@ let callbacks = {
   onGoTo: () => {},
   onFavorite: () => {},
   onRemove: () => {},
+  onShare: () => {},
 };
 
 function lineupSummaryHtml(l) {
@@ -154,6 +155,7 @@ function detailCard(l) {
     `<div style="margin:4px 0 2px">${esc(l.how)}</div>` +
     `<div class="cmd" id="cmd-l${i}">${esc(l.console)}<button data-copy="cmd-l${i}" class="btn">copy</button></div>` +
     `<div class="lineup-actions">` +
+    `<button type="button" class="btn share-btn" title="copy a link that opens this exact lineup">Share</button>` +
     `<button type="button" class="btn goto-btn" title="move the free 3D camera into this lineup's exact throw spot">Go to</button>` +
     `<button type="button" class="btn fav-btn">${l._favorite ? "★ favorited" : "☆ favorite"}</button>` +
     `<button type="button" class="btn remove-btn">Remove</button>` +
@@ -163,6 +165,7 @@ function detailCard(l) {
   wireCopyButtons(el);
 
   for (const [selector, action] of [
+    [".share-btn", callbacks.onShare],
     [".goto-btn", callbacks.onGoTo],
     [".fav-btn", callbacks.onFavorite],
     [".remove-btn", callbacks.onRemove],
