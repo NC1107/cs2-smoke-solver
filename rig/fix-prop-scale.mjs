@@ -35,12 +35,11 @@
 //    out of it.
 //
 // Usage: node rig/fix-prop-scale.mjs <input.glb> <output.glb>
-import { NodeIO } from "@gltf-transform/core";
-import { ALL_EXTENSIONS } from "@gltf-transform/extensions";
-import draco3d from "draco3dgltf";
+import { readGlb, writeGlb, requireArgs, median, vmatName, meshExtent, groupNodesByMesh } from "./glb-lib.mjs";
 
 const inPath = process.argv[2];
 const outPath = process.argv[3];
+requireArgs("node rig/fix-prop-scale.mjs <input.glb> <output.glb>", inPath, outPath);
 const DEVIATION_THRESHOLD = 5;
 const UNIT_CONVERSION = 1 / 0.0254;
 const MAX_PROP_METRES = 8;
@@ -60,47 +59,10 @@ const GENUINELY_LARGE = new Set([
 // exclusion exists to prevent.
 const JUNK_PREFIXES = ["materials/tools/", "materials/dev/", "materials/effects/", "models/ui/"];
 
-const [decoder, encoder] = await Promise.all([
-  draco3d.createDecoderModule(),
-  draco3d.createEncoderModule(),
-]);
-const io = new NodeIO()
-  .registerExtensions(ALL_EXTENSIONS)
-  .registerDependencies({ "draco3d.decoder": decoder, "draco3d.encoder": encoder });
-const doc = await io.read(inPath);
-
-function median(values) {
-  const sorted = [...values].sort((a, b) => a - b);
-  const mid = Math.floor(sorted.length / 2);
-  return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
-}
-
-function vmatName(node) {
-  return node.getMesh()?.listPrimitives()[0]?.getMaterial()?.getExtras()?.vmat?.Name ?? "";
-}
+const doc = await readGlb(inPath);
 
 // The GLB is authored in metres (the viewer scales it by 1/0.0254 to reach
 // Hammer units), so a mesh's extent times its node scale is a size in metres.
-function meshExtent(mesh) {
-  const lo = [Infinity, Infinity, Infinity];
-  const hi = [-Infinity, -Infinity, -Infinity];
-  for (const primitive of mesh.listPrimitives()) {
-    const position = primitive.getAttribute("POSITION");
-    if (!position) {
-      continue;
-    }
-    const element = [0, 0, 0];
-    for (let i = 0; i < position.getCount(); i++) {
-      position.getElement(i, element);
-      for (let axis = 0; axis < 3; axis++) {
-        lo[axis] = Math.min(lo[axis], element[axis]);
-        hi[axis] = Math.max(hi[axis], element[axis]);
-      }
-    }
-  }
-  return [0, 1, 2].map(axis => Math.max(0, hi[axis] - lo[axis]));
-}
-
 function renderedMetres(node, extent) {
   const scale = node.getScale();
   return Math.max(...extent.map((e, axis) => e * Math.abs(scale[axis])));
@@ -114,17 +76,7 @@ function isWorldGeometry(node) {
   return /^n\d+_lr\d+/.test(name) || name.includes("hammer_mesh");
 }
 
-const byMesh = new Map();
-for (const node of doc.getRoot().listNodes()) {
-  const mesh = node.getMesh();
-  if (!mesh) {
-    continue;
-  }
-  if (!byMesh.has(mesh)) {
-    byMesh.set(mesh, []);
-  }
-  byMesh.get(mesh).push(node);
-}
+const byMesh = groupNodesByMesh(doc);
 
 let fixedCount = 0;
 for (const [mesh, nodes] of byMesh) {
@@ -174,4 +126,4 @@ for (const [mesh, nodes] of byMesh) {
 }
 
 console.log(`${inPath}: corrected ${fixedCount} node(s) out of ${doc.getRoot().listNodes().length} total nodes`);
-await io.write(outPath, doc);
+await writeGlb(outPath, doc);

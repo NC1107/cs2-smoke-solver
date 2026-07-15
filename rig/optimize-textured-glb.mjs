@@ -20,22 +20,13 @@
 // can move a smoke by a single unit.
 //
 // Usage: node rig/optimize-textured-glb.mjs [input.glb] [output.glb]
-import { NodeIO } from "@gltf-transform/core";
-import { ALL_EXTENSIONS } from "@gltf-transform/extensions";
 import { prune, textureCompress, quantize, dedup, draco, flatten, join } from "@gltf-transform/functions";
-import draco3d from "draco3dgltf";
+import { readGlb, writeGlb } from "./glb-lib.mjs";
 
 const inPath = process.argv[2] ?? "data/de_dust2_textured.glb";
 const outPath = process.argv[3] ?? "data/de_dust2_textured.optimized.glb";
 
-const [decoder, encoder] = await Promise.all([
-  draco3d.createDecoderModule(),
-  draco3d.createEncoderModule(),
-]);
-const io = new NodeIO()
-  .registerExtensions(ALL_EXTENSIONS)
-  .registerDependencies({ "draco3d.decoder": decoder, "draco3d.encoder": encoder });
-const doc = await io.read(inPath);
+const doc = await readGlb(inPath);
 
 for (const material of doc.getRoot().listMaterials()) {
   material.setNormalTexture(null);
@@ -111,5 +102,5 @@ await doc.transform(
   draco(),
 );
 
-await io.write(outPath, doc);
+await writeGlb(outPath, doc);
 console.log("wrote", outPath);
