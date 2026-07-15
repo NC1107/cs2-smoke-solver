@@ -180,7 +180,12 @@ public static class ServeCommand
                 return Results.NotFound();
             }
             context.Response.Headers.ETag = entry.BuildETag;
-            context.Response.Headers.CacheControl = "public, max-age=604800";
+            // Revalidate rather than cache blind for a week: the ETag is now the
+            // mesh content hash, so re-extracting a map (e.g. removing the Retake
+            // tape) must reach clients at once. no-cache still stores the body
+            // and returns a 304 when the hash matches, so unchanged meshes cost
+            // only a conditional request, not a re-download.
+            context.Response.Headers.CacheControl = "no-cache";
             // Three different bodies share this URL. Without this a cache (the
             // browser's, or Cloudflare's now that it holds these) can hand a
             // Brotli body to a client that only asked for gzip.
