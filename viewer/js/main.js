@@ -124,9 +124,9 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
 
     // A collapsed filters card silently hiding active filters would be a trap:
     // the result count would look wrong with no visible cause.
-    const active = Object.values(state.filters).filter(f => f.value).length;
+    const active = filterEls.filter(f => f.value).length;
     document.getElementById("filter-count").textContent = active ? `(${active})` : "";
-    const adv = Object.keys(advancedParams()).length;
+    const adv = Object.keys(advancedParams()).length + (state.filters.sky.value !== "65" ? 1 : 0);
     document.getElementById("advanced-count").textContent = adv ? `(${adv})` : "";
   }
 
@@ -273,7 +273,11 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
   // must only happen if the intro is actually going to be shown - doing it up
   // front left every returning visitor, and every ?map= link, with the filters
   // stranded inside a hidden dialog and an empty filters card.
-  const filterEls = Object.values(state.filters);
+  // Sky aim lives in the advanced card (it is the one display filter that
+  // ships pre-set), so the sidebar/intro rows and the filters badge cover
+  // every filter EXCEPT it - it stays in state.filters, so changing it still
+  // re-filters results instantly.
+  const filterEls = Object.values(state.filters).filter(f => f.id !== "f-sky");
   const filterRowsHtml = () => filterEls
     .map(f => `<div class="filter-row" data-for="${f.id}">` +
       `<label class="filter-head" for="${f.id}"><b>${esc(f.dataset.label)}:</b><span class="filter-slot"></span></label>` +
@@ -387,10 +391,29 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
     return p;
   }
 
+  // Rough solve-cost multiplier of the current advanced settings: fine scan
+  // sweeps ~3x the angles, and probe origins grow with the square of the
+  // search radius. Used only to warn, never to block.
+  function advancedCostFactor() {
+    const p = advancedParams();
+    let factor = p.fineScan ? 3 : 1;
+    if (p.originReach) {
+      factor *= Math.max((p.originReach / 300) ** 2, 0.1);
+    }
+    return factor;
+  }
+  function advancedCostNote() {
+    const factor = advancedCostFactor();
+    const note = document.getElementById("advanced-note");
+    note.textContent = "These change how the solver searches - they apply to your next Search / spot click." +
+      (factor >= 2 ? ` Current settings make each solve roughly ${Math.round(factor)}x slower.` : "");
+  }
+
   async function runQuery(body) {
     state.busy = true;
     state.progress = { phase: "sweep", total: 0, candidates: 0, checked: [], verified: [] };
-    statusEl.textContent = "solving…";
+    const cost = advancedCostFactor();
+    statusEl.textContent = cost >= 2 ? `solving… (advanced settings ≈ ${Math.round(cost)}x slower)` : "solving…";
     solveController = new AbortController();
     cancelBtn.hidden = false;
     try {
@@ -551,7 +574,10 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
   for (const el of ["a-tolerance", "a-reach", "a-stability", "a-scan"].map(id => document.getElementById(id))) {
     el.addEventListener("change", () => {
       syncControls();
-      statusEl.textContent = "advanced settings apply to your next Search / spot click";
+      advancedCostNote();
+      const factor = advancedCostFactor();
+      statusEl.textContent = "advanced settings apply to your next Search / spot click" +
+        (factor >= 2 ? ` - roughly ${Math.round(factor)}x slower` : "");
     });
   }
   for (const f of Object.values(state.filters)) {
