@@ -106,6 +106,16 @@ import { renderLineups, initPanel, revealSelected } from "./panel.js";
     keyEl.hidden = !hasTarget;
     keyEl.classList.toggle("heat", state.heatOn);
 
+    // The 3D controls chip lives on the stage, not in the ephemeral status
+    // line, so the bindings stay findable after the status text moves on.
+    // Auto-open once per browser; a chip after that.
+    const key3d = document.getElementById("key-3d");
+    key3d.hidden = !in3d;
+    if (in3d && !localStorage.getItem("smokesolver.seen3dHelp")) {
+      key3d.open = true;
+      localStorage.setItem("smokesolver.seen3dHelp", "1");
+    }
+
     // A collapsed filters card silently hiding active filters would be a trap:
     // the result count would look wrong with no visible cause.
     const active = Object.values(state.filters).filter(f => f.value).length;
@@ -303,7 +313,11 @@ import { renderLineups, initPanel, revealSelected } from "./panel.js";
       }
       const next = data;
       if (next.lineups.length === 0) {
-        statusEl.textContent = `no throw reaches there from any of the ${next.origins} stand spots in range - try another target`;
+        // A single-origin probe checked one spot, not the map; saying "any of
+        // N stand spots" for it would wrongly read as an exhaustive sweep.
+        statusEl.textContent = body.origin
+          ? `no throw from that spot reaches the target - "Search map" sweeps every spot that can`
+          : `no throw reaches there from any of the ${next.origins} stand spots in range - try another target`;
         return;
       }
       next.lineups.forEach((l, i) => { l._idx = i; });
@@ -337,10 +351,9 @@ import { renderLineups, initPanel, revealSelected } from "./panel.js";
     state.selected = -1;
     state.heatOn = false;
     canvas.classList.remove("picking");
-    // The two-click flow is the whole tool and was never stated anywhere: click
-    // the ground you want to throw *from* to solve just that spot, or Search map
-    // to sweep every spot that can reach the target.
-    statusEl.textContent = `${note} - now click the spot you want to throw FROM, or "Search map" to find every spot`;
+    // Lead with the action most users want next (the full sweep); the
+    // narrower solve-one-spot click is the refinement, not the default.
+    statusEl.textContent = `${note} - "Search map" finds every throw spot · or click one spot to solve just it · right-click/long-press moves the target`;
     syncControls();
     renderLineups();
     draw();
@@ -350,8 +363,16 @@ import { renderLineups, initPanel, revealSelected } from "./panel.js";
   pickBtn.addEventListener("click", () => {
     state.picking = !state.picking;
     canvas.classList.toggle("picking", state.picking);
-    statusEl.textContent = state.picking ? "click the map to place your smoke target" : "";
+    statusEl.textContent = state.picking ? "click the map to place your smoke target (Esc cancels)" : "";
     syncControls();
+  });
+  document.addEventListener("keydown", e => {
+    if (e.key === "Escape" && state.picking) {
+      state.picking = false;
+      canvas.classList.remove("picking");
+      statusEl.textContent = "";
+      syncControls();
+    }
   });
   searchBtn.addEventListener("click", () => {
     if (state.target && !state.busy) {
@@ -501,7 +522,13 @@ import { renderLineups, initPanel, revealSelected } from "./panel.js";
   initMap2d({ onSetTarget: setTarget, onSelect: select, onRunQuery: runQuery });
   set3dCallbacks({ onSetTarget: setTarget, onSelect: select, onRunQuery: runQuery });
 
-  const HINT_3D = "3D: WASD fly (QE up/down, shift fast) · drag to look · right-drag pan · scroll zoom · click terrain = set target";
+  // Derived, not constant: "click terrain" means set-target only until a
+  // target exists, then it means solve-from-here - a static string was
+  // telling users the wrong thing for most of the session. Space/Ctrl leads
+  // because that is CS2's own spectator freecam pair; Q/E stay as aliases.
+  const hint3d = () =>
+    "3D: WASD fly (Space/Ctrl up/down, Shift fast) · drag look · right-drag pan · scroll dolly · " +
+    (state.target ? "click terrain = solve from that spot · right-click = move target" : "click terrain = set target");
 
   topDownBtn.addEventListener("click", () => {
     const t3 = current3d();
@@ -526,7 +553,7 @@ import { renderLineups, initPanel, revealSelected } from "./panel.js";
     }
     const t3 = await openView3d();
     if (t3) {
-      statusEl.textContent = HINT_3D;
+      statusEl.textContent = hint3d();
     }
   });
 
@@ -541,9 +568,7 @@ import { renderLineups, initPanel, revealSelected } from "./panel.js";
     try {
       await t3.setTextured(wantOn);
       texturedBtn.classList.toggle("active", wantOn);
-      statusEl.textContent = wantOn
-        ? "textured: drag to look · right-drag pan · scroll zoom · WASD fly"
-        : HINT_3D;
+      statusEl.textContent = hint3d();
     } catch (err) {
       resetEnsureTexturedScene();
       statusEl.textContent = `failed to load textures: ${err.message}`;

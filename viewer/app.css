@@ -224,10 +224,12 @@
   /* Two bars forming a "+", each centered on the viewport midpoint. */
   .preview-crosshair span:first-child { left: -8px; top: -1px; width: 16px; height: 2px; }
   .preview-crosshair span:last-child { left: -1px; top: -8px; width: 2px; height: 16px; }
-  canvas { position: absolute; inset: 0; width: 100%; height: 100%; cursor: grab; }
+  /* touch-action: none hands every touch gesture to our pointer handlers;
+     without it the browser races us for pan/zoom on touch screens. */
+  canvas { position: absolute; inset: 0; width: 100%; height: 100%; cursor: grab; touch-action: none; }
   canvas.panning { cursor: grabbing; }
   canvas.picking { cursor: crosshair; }
-  #stage3d canvas { cursor: grab; }
+  #stage3d canvas { cursor: grab; touch-action: none; }
   #stage3d canvas.looking, #stage3d canvas.panning { cursor: grabbing; }
   /* The legend explains markers, so it stays out of the way until there are
      markers to explain, and then folds away again behind its own summary. */
@@ -267,6 +269,10 @@
   .key .swatch.raw { background: var(--heat-ok); opacity: 0.18; outline: 1px solid var(--line); }
   .key .swatch.none { border: 2px solid var(--heat-none); }
   .key .cross { color: var(--target); font-weight: 700; }
+  /* 3D controls legend: same chip idiom as the marker legend, opposite corner
+     so the two never fight for space. */
+  .key.help3d { left: auto; right: 10px; }
+  .key.help3d > summary::before { content: "?"; }
   .key .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--accent); border: 1.5px solid var(--panel); display: inline-block; }
   .key .dot.left { background: var(--click-left); }
   .key .dot.mid { background: var(--click-mid); }
@@ -294,6 +300,7 @@
     gap: 7px;
     padding: 9px 10px;
   }
+  .panel[hidden] { display: none; }
   #preview-pane[hidden] { display: none; }
   #preview-pane {
     /* Drag the corner if the render is too small to read. */
@@ -502,6 +509,8 @@
     #controls summary { display: list-item; }
     #controls details[open] > .card-body { margin-top: 6px; }
     .key { left: auto; right: 10px; top: 10px; bottom: auto; max-width: calc(100% - 178px); }
+    /* Keep the controls chip out from under the marker legend on phones. */
+    .key.help3d { top: auto; bottom: 10px; }
     .panel {
       left: 0;
       right: 0;

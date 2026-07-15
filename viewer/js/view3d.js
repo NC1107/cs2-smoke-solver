@@ -209,12 +209,74 @@ async function init3d() {
   const LOOK_SENSITIVITY = 0.0035;
   const PAN_SENSITIVITY = 1.35;
   const DOLLY_SENSITIVITY = 1.4;
+  const PINCH_DOLLY_SENSITIVITY = 4.5;
+  const LONG_PRESS_MS = 450, LONG_PRESS_SLOP_PX = 8;
   const panRight = new THREE.Vector3(), panUp = new THREE.Vector3(0, 0, 1), dollyDir = new THREE.Vector3();
   let down = null;
   let dragButton = -1;
   let lastX = 0, lastY = 0;
+  let pressTimer = 0, pressConsumed = false;
+  // Touch: one finger looks, two fingers pan (centroid) and dolly (pinch).
+  // Without this, pan and dolly were mouse-only - touch can never produce a
+  // secondary button or a wheel event.
+  const touches = new Map();
+  let pinchDist = 0, pinchX = 0, pinchY = 0;
+
+  // The terrain point under a screen position, or null. Markers win when
+  // `preferMarkers` so tapping a dot near the ground selects, not re-solves.
+  function pickAt(clientX, clientY, preferMarkers) {
+    const rect = renderer.domElement.getBoundingClientRect();
+    const ndc = new THREE.Vector2(
+      ((clientX - rect.left) / rect.width) * 2 - 1,
+      -((clientY - rect.top) / rect.height) * 2 + 1);
+    raycaster.setFromCamera(ndc, camera);
+    if (preferMarkers) {
+      const mhits = raycaster.intersectObjects(markerGroup.children, false);
+      if (mhits.length > 0 && mhits[0].object.userData.idx !== undefined) {
+        return { markerIdx: mhits[0].object.userData.idx };
+      }
+    }
+    const hits = raycaster.intersectObject(meshObj, false);
+    return hits.length > 0 ? { point: hits[0].point } : null;
+  }
+  function setTargetAt(clientX, clientY) {
+    const hit = pickAt(clientX, clientY, false);
+    if (hit?.point) {
+      const p = hit.point;
+      callbacks.onSetTarget([p.x, p.y, p.z], `target ${p.x.toFixed(0)}, ${p.y.toFixed(0)}, ${p.z.toFixed(0)} (3D)`);
+    }
+  }
+  function cancelLongPress() {
+    if (pressTimer) {
+      clearTimeout(pressTimer);
+      pressTimer = 0;
+    }
+  }
+
   renderer.domElement.addEventListener("contextmenu", e => e.preventDefault());
   renderer.domElement.addEventListener("pointerdown", e => {
+    if (e.pointerType === "touch") {
+      touches.set(e.pointerId, [e.clientX, e.clientY]);
+      if (touches.size === 2) {
+        cancelLongPress();
+        dragButton = -1;
+        down = null; // a pinch is never also a click
+        renderer.domElement.classList.remove("looking");
+        const [a, b] = [...touches.values()];
+        pinchDist = Math.hypot(a[0] - b[0], a[1] - b[1]);
+        pinchX = (a[0] + b[0]) / 2;
+        pinchY = (a[1] + b[1]) / 2;
+        renderer.domElement.classList.add("panning");
+        return;
+      }
+      pressConsumed = false;
+      pressTimer = setTimeout(() => {
+        pressTimer = 0;
+        pressConsumed = true;
+        navigator.vibrate?.(10);
+        setTargetAt(e.clientX, e.clientY);
+      }, LONG_PRESS_MS);
+    }
     down = [e.clientX, e.clientY];
     if (e.button === 0 || e.button === 2) {
       dragButton = e.button;
@@ -225,6 +287,27 @@ async function init3d() {
     }
   });
   renderer.domElement.addEventListener("pointermove", e => {
+    if (e.pointerType === "touch" && touches.has(e.pointerId)) {
+      touches.set(e.pointerId, [e.clientX, e.clientY]);
+      if (touches.size === 2) {
+        const [a, b] = [...touches.values()];
+        const dist = Math.hypot(a[0] - b[0], a[1] - b[1]);
+        const cx = (a[0] + b[0]) / 2, cy = (a[1] + b[1]) / 2;
+        panRight.set(Math.sin(yaw), -Math.cos(yaw), 0);
+        camera.position.addScaledVector(panRight, (cx - pinchX) * PAN_SENSITIVITY);
+        camera.position.addScaledVector(panUp, (cy - pinchY) * PAN_SENSITIVITY);
+        camera.getWorldDirection(dollyDir);
+        camera.position.addScaledVector(dollyDir, (dist - pinchDist) * PINCH_DOLLY_SENSITIVITY);
+        pinchDist = dist;
+        pinchX = cx;
+        pinchY = cy;
+        dirty = true;
+        return;
+      }
+    }
+    if (pressTimer && down && Math.hypot(e.clientX - down[0], e.clientY - down[1]) > LONG_PRESS_SLOP_PX) {
+      cancelLongPress();
+    }
     if (dragButton === -1) { return; }
     const dx = e.clientX - lastX, dy = e.clientY - lastY;
     lastX = e.clientX;
@@ -243,31 +326,33 @@ async function init3d() {
       dirty = true;
     }
   });
-  renderer.domElement.addEventListener("pointerup", e => {
+  const endPointer = e => {
+    touches.delete(e.pointerId);
+    cancelLongPress();
     dragButton = -1;
     renderer.domElement.classList.remove("looking", "panning");
+  };
+  renderer.domElement.addEventListener("pointercancel", endPointer);
+  renderer.domElement.addEventListener("pointerup", e => {
+    const wasPinching = e.pointerType === "touch" && touches.size >= 2;
+    endPointer(e);
+    if (pressConsumed || wasPinching) { pressConsumed = false; return; }
     if (!down || Math.hypot(e.clientX - down[0], e.clientY - down[1]) > 4) { down = null; return; }
     down = null;
-    const rect = renderer.domElement.getBoundingClientRect();
-    const ndc = new THREE.Vector2(
-      ((e.clientX - rect.left) / rect.width) * 2 - 1,
-      -((e.clientY - rect.top) / rect.height) * 2 + 1);
-    raycaster.setFromCamera(ndc, camera);
-    // markers take priority over terrain
-    const mhits = raycaster.intersectObjects(markerGroup.children, false);
-    if (mhits.length > 0 && mhits[0].object.userData.idx !== undefined) {
-      callbacks.onSelect(mhits[0].object.userData.idx);
+    // Right-click always sets/moves the target - its own dedicated input, so
+    // re-aiming never fights marker selection or origin probing (which stay
+    // on plain click, same contextual model as the 2D map).
+    if (e.button === 2) {
+      setTargetAt(e.clientX, e.clientY);
       return;
     }
-    const hits = raycaster.intersectObject(meshObj, false);
-    if (hits.length === 0) { return; }
-    const pnt = hits[0].point;
-    // Same two-click flow as the 2D map: while arming a target (or before one
-    // exists) a click sets the target; once a target is set, a click on the
-    // ground picks the spot to throw FROM and solves just that spot. Without
-    // this branch every 3D click re-targeted, so the origin could never be
-    // chosen in 3D. Re-targeting still works via the "Re-target" button, which
-    // arms state.picking exactly as it does for the 2D view.
+    const hit = pickAt(e.clientX, e.clientY, true);
+    if (!hit) { return; }
+    if (hit.markerIdx !== undefined) {
+      callbacks.onSelect(hit.markerIdx);
+      return;
+    }
+    const pnt = hit.point;
     if (state.picking || !state.target) {
       callbacks.onSetTarget([pnt.x, pnt.y, pnt.z], `target ${pnt.x.toFixed(0)}, ${pnt.y.toFixed(0)}, ${pnt.z.toFixed(0)} (3D)`);
     } else if (!state.heatOn) {
@@ -331,7 +416,11 @@ async function init3d() {
   const FAST_SPEED = 1500;
   // Rate the velocity closes on the speed the keys are asking for. Instant
   // velocity is what made this feel like it teleported rather than flew.
-  const RESPONSIVENESS = 11;
+  // Deceleration is deliberately snappier than acceleration (the editor-
+  // viewport convention): in a measuring tool, releasing a key means "my eye
+  // goes exactly here" - coasting past the spot fights the whole point.
+  const ACCEL_RESPONSIVENESS = 11;
+  const DECEL_RESPONSIVENESS = 24;
   const STOPPED = 1;
 
   // Reused across frames; fly() runs every frame while the camera still has
@@ -364,7 +453,8 @@ async function init3d() {
     }
     // Frame-rate independent exponential approach: the fraction of the remaining
     // gap closed depends on elapsed time, not on how many frames elapsed.
-    velocity.lerp(wanted, 1 - Math.exp(-RESPONSIVENESS * dt));
+    const responsiveness = wanted.lengthSq() > 0 ? ACCEL_RESPONSIVENESS : DECEL_RESPONSIVENESS;
+    velocity.lerp(wanted, 1 - Math.exp(-responsiveness * dt));
     if (velocity.lengthSq() < STOPPED) {
       velocity.set(0, 0, 0);
       return;

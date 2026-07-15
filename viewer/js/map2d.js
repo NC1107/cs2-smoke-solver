@@ -267,28 +267,64 @@ export function resize() {
 export function initMap2d(cb) {
   callbacks = cb;
 
+  // Targeting model, shared with the 3D view: the target has its own dedicated
+  // input (right-click on desktop, long-press on touch) that works at ANY time,
+  // so moving it never collides with selecting a marker or probing an origin.
+  // A plain click stays contextual: it bootstraps the first target when none
+  // exists (so the intro's "click anywhere" promise is true), then selects
+  // markers or probes a throw origin once one does.
+  const LONG_PRESS_MS = 450, LONG_PRESS_SLOP_PX = 8;
   let panning = false, lastX = 0, lastY = 0, downX = 0, downY = 0;
+  let pressTimer = 0, pressConsumed = false;
+
+  function setTargetAt(clientX, clientY) {
+    const rect = canvas.getBoundingClientRect();
+    const [wx, wy] = worldOf(clientX - rect.left, clientY - rect.top);
+    callbacks.onSetTarget([wx, wy], `target ${wx.toFixed(0)}, ${wy.toFixed(0)}`);
+  }
+  function cancelLongPress() {
+    if (pressTimer) {
+      clearTimeout(pressTimer);
+      pressTimer = 0;
+    }
+  }
+
+  canvas.addEventListener("contextmenu", e => e.preventDefault());
   canvas.addEventListener("pointerdown", e => {
     panning = true;
     lastX = downX = e.clientX; lastY = downY = e.clientY;
     canvas.classList.add("panning");
     canvas.setPointerCapture(e.pointerId);
+    pressConsumed = false;
+    if (e.pointerType === "touch" && !state.busy) {
+      pressTimer = setTimeout(() => {
+        pressTimer = 0;
+        pressConsumed = true;
+        navigator.vibrate?.(10);
+        setTargetAt(downX, downY);
+      }, LONG_PRESS_MS);
+    }
   });
   canvas.addEventListener("pointerup", e => {
     panning = false;
     canvas.classList.remove("panning");
-    if (Math.hypot(e.clientX - downX, e.clientY - downY) > 4 || state.busy) {
+    cancelLongPress();
+    if (pressConsumed || Math.hypot(e.clientX - downX, e.clientY - downY) > 4 || state.busy) {
+      return;
+    }
+    if (e.button === 2) {
+      setTargetAt(e.clientX, e.clientY);
+      return;
+    }
+    if (state.picking || !state.target) {
+      setTargetAt(e.clientX, e.clientY);
+      return;
+    }
+    if (state.heatOn) {
       return;
     }
     const rect = canvas.getBoundingClientRect();
     const [wx, wy] = worldOf(e.clientX - rect.left, e.clientY - rect.top);
-    if (state.picking) {
-      callbacks.onSetTarget([wx, wy], `target ${wx.toFixed(0)}, ${wy.toFixed(0)}`);
-      return;
-    }
-    if (!state.target || state.heatOn) {
-      return;
-    }
     const bestIdx = nearestLineup(wx, wy, PICK_RADIUS_PX / scale);
     if (bestIdx >= 0) {
       callbacks.onSelect(bestIdx);
@@ -296,8 +332,12 @@ export function initMap2d(cb) {
     }
     callbacks.onRunQuery({ target: state.target, origin: [wx, wy] });
   });
+  canvas.addEventListener("pointercancel", cancelLongPress);
   canvas.addEventListener("pointermove", e => {
     const rect = canvas.getBoundingClientRect();
+    if (pressTimer && Math.hypot(e.clientX - downX, e.clientY - downY) > LONG_PRESS_SLOP_PX) {
+      cancelLongPress();
+    }
     if (panning) {
       ox += e.clientX - lastX;
       oy += e.clientY - lastY;

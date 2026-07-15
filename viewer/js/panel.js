@@ -60,6 +60,10 @@ function onListKeydown(e) {
 // of the filtered results (H19). The canvas stays the visual index; the
 // list drives the exact same select path as clicking a marker.
 export function renderLineups() {
+  // The panel earns its screen space only once there are results to show;
+  // empty it reads as a stray bar of chrome (worst on phones, where it
+  // anchors to the bottom edge like a footer).
+  document.getElementById("panel").hidden = !state.result;
   const list = document.getElementById("lineup-list");
   const focusIdx = list.contains(document.activeElement)
     ? document.activeElement.dataset.idx : undefined;

@@ -29,6 +29,10 @@
         <button id="textured3d" class="btn" hidden title="Load real map textures for the 3D view (one-time, size varies by map)">Textured</button>
         <button id="topdown" class="btn" hidden title="Look straight down at the whole map">Top-down</button>
         <button id="clear" class="btn" hidden>Clear</button>
+        <div class="paste">
+          <input id="getpos-in" placeholder="paste getpos → target" aria-label="Paste getpos output to set target">
+          <button id="getpos-set" class="btn">set</button>
+        </div>
       </div>
     </details>
     <details class="card" id="card-filters">
@@ -110,11 +114,16 @@
       </div>
     </div>
   </details>
-  <div class="panel" id="panel">
-    <div class="paste">
-      <input id="getpos-in" placeholder="paste getpos → target" aria-label="Paste getpos output to set target">
-      <button id="getpos-set" class="btn">set</button>
+  <details class="key help3d" id="key-3d" hidden>
+    <summary>controls</summary>
+    <div class="key-body">
+      <div class="key-row"><span class="key-label">move</span><span>WASD fly · Space up · Ctrl down · Shift fast</span></div>
+      <div class="key-row"><span class="key-label">camera</span><span>drag look · right-drag pan · scroll dolly</span></div>
+      <div class="key-row"><span class="key-label">target</span><span>right-click / long-press sets it · click terrain solves from there</span></div>
+      <div class="key-row"><span class="key-label">touch</span><span>1 finger look · 2 fingers pan + pinch zoom</span></div>
     </div>
+  </details>
+  <div class="panel" id="panel" hidden>
     <details class="setup">
       <summary>practice setup</summary>
       <div class="cmd" id="cmd-setup">sv_cheats 1; mp_warmup_end; mp_roundtime_defuse 60;
