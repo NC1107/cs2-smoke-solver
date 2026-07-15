@@ -85,10 +85,30 @@ export async function fetchTrajectory(map, l) {
   const q = new URLSearchParams({
     map, x: l.feet[0], y: l.feet[1], z: l.feet[2],
     type: l.type, pitch: l.pitch, yaw: l.yaw, strength: l.strength,
+    // The run direction changes the carried velocity, so a lateral run-jump's
+    // arc is a different curve than the same angles thrown while holding W.
+    runDeg: l.runDeg ?? 0,
   });
   const res = await fetch(`/api/trajectory?${q}`);
   if (!res.ok) {
     throw new Error(`trajectory HTTP ${res.status}`);
+  }
+  return res.json();
+}
+
+// The positional slack ring: per world direction, how far the feet can drift
+// from the lineup's exact spot before the same aim misses `within` units of
+// the target. Cached on the lineup by the caller (keyed by `within`).
+export async function fetchSlack(map, l, target, within) {
+  const q = new URLSearchParams({
+    map, x: l.feet[0], y: l.feet[1], z: l.feet[2],
+    type: l.type, pitch: l.pitch, yaw: l.yaw, strength: l.strength,
+    runDeg: l.runDeg ?? 0,
+    tx: target[0], ty: target[1], tz: target[2] ?? 0, within,
+  });
+  const res = await fetch(`/api/slack?${q}`);
+  if (!res.ok) {
+    throw new Error(`slack HTTP ${res.status}`);
   }
   return res.json();
 }

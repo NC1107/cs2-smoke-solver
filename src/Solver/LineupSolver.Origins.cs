@@ -77,8 +77,49 @@ public static partial class LineupSolver
     // A surface steeper than this is a wall for pinning purposes (the grenade
     // sim's floor test is normal.Z > 0.7; walls are the near-vertical rest).
     const float WallNormalMaxZ = 0.35f;
+    // Two probe heights, both above floor trim: waist (36) catches full walls
+    // and the clip brushes laid along most railings; the second (46) catches
+    // the top bar of an unclipped railing whose sparse balusters a single
+    // waist ray can slip between.
+    static readonly float[] ProbeHeights = [36f, 46f];
     static readonly Vector3[] ProbeDirs = [.. Enumerable.Range(0, 8)
         .Select(i => new Vector3(MathF.Cos(i * MathF.PI / 4f), MathF.Sin(i * MathF.PI / 4f), 0f))];
+
+    // The wall planes within walk-into range of `feet`, deduped across probe
+    // rays and heights: shared by pinned-origin generation and the pin
+    // classifier so the two can never disagree about what counts as a wall.
+    static List<(Vector2 N, float PlaneD)> NearbyWallPlanes(TriangleCollider collider, Vector3 feet, float range)
+    {
+        var walls = new List<(Vector2 N, float PlaneD)>();
+        foreach (var height in ProbeHeights)
+        {
+            var probe = feet + new Vector3(0, 0, height);
+            foreach (var dir in ProbeDirs)
+            {
+                if (collider.FirstHit(probe, probe + dir * range) is not { } hit ||
+                    MathF.Abs(hit.Normal.Z) > WallNormalMaxZ)
+                {
+                    continue;
+                }
+                var n = new Vector2(hit.Normal.X, hit.Normal.Y);
+                if (n.Length() < 0.8f)
+                {
+                    continue;
+                }
+                n = Vector2.Normalize(n);
+                var hitPoint = probe + dir * (hit.T * range);
+                // Plane in Hesse form n.x = d; the pinned position satisfies
+                // n.x = d + hull half-width.
+                var d = Vector2.Dot(n, new Vector2(hitPoint.X, hitPoint.Y));
+                if (walls.Any(w => Vector2.Dot(w.N, n) > 0.9f))
+                {
+                    continue; // same wall seen from a neighboring probe
+                }
+                walls.Add((n, d));
+            }
+        }
+        return walls;
+    }
 
     /// <summary>
     /// Positions a player reaches by walking INTO geometry: feet pressed flat
@@ -112,33 +153,7 @@ public static partial class LineupSolver
 
         foreach (var feet in origins.ToArray())
         {
-            // Probe at waist height: skirting-board trim and floor clutter sit
-            // below it, railings and real walls cross it.
-            var waist = feet + new Vector3(0, 0, 36f);
-            var walls = new List<(Vector2 N, float PlaneD)>();
-            foreach (var dir in ProbeDirs)
-            {
-                if (collider.FirstHit(waist, waist + dir * WallProbeRange) is not { } hit ||
-                    MathF.Abs(hit.Normal.Z) > WallNormalMaxZ)
-                {
-                    continue;
-                }
-                var n = new Vector2(hit.Normal.X, hit.Normal.Y);
-                if (n.Length() < 0.8f)
-                {
-                    continue;
-                }
-                n = Vector2.Normalize(n);
-                var hitPoint = waist + dir * (hit.T * WallProbeRange);
-                // Plane in Hesse form n.x = d; the pinned position satisfies
-                // n.x = d + hull half-width.
-                var d = Vector2.Dot(n, new Vector2(hitPoint.X, hitPoint.Y));
-                if (walls.Any(w => Vector2.Dot(w.N, n) > 0.9f))
-                {
-                    continue; // same wall seen from a neighboring probe
-                }
-                walls.Add((n, d));
-            }
+            var walls = NearbyWallPlanes(collider, feet, WallProbeRange);
             foreach (var (n, d) in walls)
             {
                 var feetXy = new Vector2(feet.X, feet.Y);
@@ -192,29 +207,13 @@ public static partial class LineupSolver
     /// </summary>
     public static int PositionPin(TriangleCollider collider, Vector3 feet)
     {
-        var waist = feet + new Vector3(0, 0, 36f);
-        var touching = new List<Vector2>();
-        foreach (var dir in ProbeDirs)
-        {
-            if (collider.FirstHit(waist, waist + dir * (PlayerHalfWidth + 8f)) is not { } hit ||
-                MathF.Abs(hit.Normal.Z) > WallNormalMaxZ)
-            {
-                continue;
-            }
-            var n = new Vector2(hit.Normal.X, hit.Normal.Y);
-            if (n.Length() < 0.8f)
-            {
-                continue;
-            }
-            n = Vector2.Normalize(n);
-            // The hull face sits along the wall normal, not along the probe ray.
-            var planeDist = hit.T * (PlayerHalfWidth + 8f) * MathF.Abs(Vector2.Dot(new Vector2(dir.X, dir.Y), n));
-            if (planeDist > PlayerHalfWidth + 1.5f || touching.Any(t => Vector2.Dot(t, n) > 0.9f))
-            {
-                continue;
-            }
-            touching.Add(n);
-        }
+        var feetXy = new Vector2(feet.X, feet.Y);
+        // The hull face sits along the wall normal, not along the probe ray,
+        // so "touching" is a point-to-plane distance, not a ray length.
+        var touching = NearbyWallPlanes(collider, feet, PlayerHalfWidth + 8f)
+            .Where(w => Vector2.Dot(w.N, feetXy) - w.PlaneD <= PlayerHalfWidth + 1.5f)
+            .Select(w => w.N)
+            .ToList();
         if (touching.Count >= 2 &&
             touching.Any(a => touching.Any(b => a != b && MathF.Abs(Vector2.Dot(a, b)) < 0.7f)))
         {

@@ -33,6 +33,14 @@ public sealed record MapEntry(
         var (min, max) = Mesh.ComputeBounds();
         return new TriangleCollider(Mesh, min, max, Mesh.GrenadeSolidFilter());
     }, LazyThreadSafetyMode.ExecutionAndPublication);
+
+    // Player-solid twin of the collider above (clips included), for the slack
+    // ring's "can the player actually slide/stand there" probes.
+    public Lazy<TriangleCollider> PlayerCollider { get; } = new(() =>
+    {
+        var (min, max) = Mesh.ComputeBounds();
+        return new TriangleCollider(Mesh, min, max, Mesh.PlayerSolidFilter());
+    }, LazyThreadSafetyMode.ExecutionAndPublication);
 }
 
 /// <summary>

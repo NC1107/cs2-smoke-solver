@@ -14,10 +14,15 @@ public enum ThrowType
 /// <summary>
 /// Strength maps the mouse buttons: 1 = left, 0.5 = left+right, 0 = right.
 /// Each click's velocity multiplier is a calibrated constant (ThrowConstants).
+/// RunYawOffsetDeg is the movement-key direction of a running jump throw
+/// relative to the facing: 0 = W, +90 = A (Source yaw grows to the left),
+/// -90 = D, +-45 = the W+A / W+D diagonals. Ground speed is the same in every
+/// direction (the engine normalizes the wish direction), so the carried
+/// velocity only rotates, never changes magnitude.
 /// </summary>
 // Struct: allocated once per simulated throw, and solves run millions of
 // simulations inside Parallel.ForEach - heap records were pure gen0 churn.
-public readonly record struct ThrowSpec(Vector3 EyePosition, float YawDeg, float PitchDeg, ThrowType Type, float Strength = 1f);
+public readonly record struct ThrowSpec(Vector3 EyePosition, float YawDeg, float PitchDeg, ThrowType Type, float Strength = 1f, float RunYawOffsetDeg = 0f);
 
 public readonly record struct TrajectoryResult(Vector3 RestPoint, int Bounces, float FlightTime, bool Lost, Vector3? FirstTouch = null);
 
@@ -257,8 +262,8 @@ public static class GrenadeTrajectory
         }
         if (spec.Type is ThrowType.RunJumpThrow)
         {
-            var yaw = spec.YawDeg * MathF.PI / 180f;
-            velocity += new Vector3(MathF.Cos(yaw), MathF.Sin(yaw), 0) * k.RunSpeed;
+            var runYaw = (spec.YawDeg + spec.RunYawOffsetDeg) * MathF.PI / 180f;
+            velocity += new Vector3(MathF.Cos(runYaw), MathF.Sin(runYaw), 0) * k.RunSpeed;
         }
         return (release, velocity);
     }

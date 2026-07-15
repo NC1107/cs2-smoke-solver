@@ -45,6 +45,30 @@ public sealed class CollisionMesh
         return a => solid[a];
     }
 
+    /// <summary>
+    /// Attribute filter for PLAYER movement: what stops feet, not grenades.
+    /// Player clips are the geometry mappers lay along railings, stairs, and
+    /// ledges to steer movement, so wall/corner pin probing must see them -
+    /// probing with the grenade filter made every clip-covered railing read
+    /// as open ground. The two grenade-only groups go the other way: grenade
+    /// clips and func_clip_vphysics block projectiles while players walk
+    /// straight through, so a "pin" against one would be fictional.
+    /// </summary>
+    public Func<byte, bool> PlayerSolidFilter()
+    {
+        var solid = new bool[AttributeNames.Length];
+        for (var i = 0; i < solid.Length; i++)
+        {
+            var layers = AttributeInteractAs[i];
+            var npcOnly = layers.Any(l => l.Equals("npcclip", StringComparison.OrdinalIgnoreCase)) &&
+                !layers.Any(l => l.Equals("playerclip", StringComparison.OrdinalIgnoreCase));
+            solid[i] = !npcOnly &&
+                !layers.Any(l => l.Equals("csgo_grenadeclip", StringComparison.OrdinalIgnoreCase)) &&
+                !AttributeNames[i].Equals("EntityPhysicsClip", StringComparison.Ordinal);
+        }
+        return a => solid[a];
+    }
+
     public (Vector3 Min, Vector3 Max) ComputeBounds()
     {
         var min = new Vector3(float.MaxValue);

@@ -110,6 +110,30 @@ public class SimulateExactTests
     }
 
     [Fact]
+    public void DeriveInitialRotatesRunVelocityWithTheMovementKey()
+    {
+        var k = ThrowConstants.Default;
+        var eye = new Vector3(100, 200, 64);
+        const float yaw = 30f;
+        const float pitch = -20f;
+        var (_, jump) = GrenadeTrajectory.DeriveInitial(new ThrowSpec(eye, yaw, pitch, ThrowType.JumpThrow));
+
+        // Strafing left (A) carries the same speed rotated +90 degrees from the
+        // facing; the diagonal (W+D) sits -45. The aim direction is unchanged -
+        // only the carried player velocity moves with the key.
+        foreach (var offset in (float[])[90f, -45f])
+        {
+            var (_, run) = GrenadeTrajectory.DeriveInitial(
+                new ThrowSpec(eye, yaw, pitch, ThrowType.RunJumpThrow, RunYawOffsetDeg: offset));
+            var boost = run - jump;
+            var runYaw = (yaw + offset) * MathF.PI / 180f;
+            Assert.Equal(k.RunSpeed * MathF.Cos(runYaw), boost.X, 2);
+            Assert.Equal(k.RunSpeed * MathF.Sin(runYaw), boost.Y, 2);
+            Assert.Equal(0f, boost.Z, 3);
+        }
+    }
+
+    [Fact]
     public void VoxelAndExactSimulatorsAgreeOnOpenGround()
     {
         // Different integrator stages against different collision (inflated

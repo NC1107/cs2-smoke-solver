@@ -29,6 +29,7 @@
         <button id="view3d" class="btn">3D</button>
         <button id="textured3d" class="btn" hidden title="Load real map textures for the 3D view (one-time, size varies by map)">Textured</button>
         <button id="topdown" class="btn" hidden title="Look straight down at the whole map">Top-down</button>
+        <button id="crosshair3d" class="btn" hidden title="Show or hide the center crosshair">Crosshair</button>
         <button id="clear" class="btn" hidden>Clear</button>
         <div class="paste">
           <input id="getpos-in" placeholder="paste getpos → target" aria-label="Paste getpos output to set target">
@@ -86,22 +87,17 @@
           <option value="2">≤2u</option>
           <option value="1">≤1u (perfect)</option>
         </select>
+        <select id="f-sky" aria-label="Sky-aimed lineups" data-default="65"
+                data-label="Sky throws" data-desc="Sky-aimed lineups have no wall or silhouette under the crosshair to line up against - only the horizon. Allowed keeps the reasonable ones (up to 65° above the horizon); none shows only throws aimed against real geometry. Applies instantly to shown results.">
+          <option value="65" selected>allowed ≤65° up (recommended)</option>
+          <option value="">any angle</option>
+          <option value="off">none - wall aim only</option>
+        </select>
       </div>
     </details>
     <details class="card" id="card-advanced">
       <summary>advanced <span class="filter-count" id="advanced-count"></span></summary>
       <div class="card-body" id="advanced-body">
-        <div class="filter-row">
-          <label class="filter-head" for="f-sky"><b>Sky aim:</b><button type="button" class="desc-toggle" aria-expanded="false" aria-label="What does Sky aim do?">?</button><span class="filter-slot">
-            <select id="f-sky" aria-label="Maximum upward aim angle for lineups that aim into open sky">
-              <option value="">any sky angle</option>
-              <option value="65" selected>≤65° up (recommended)</option>
-              <option value="50">≤50° up</option>
-              <option value="35">≤35° up</option>
-              <option value="off">no sky-aimed lineups</option>
-            </select></span></label>
-          <p class="filter-desc" hidden>How high you'll aim when the crosshair sits on open sky. The default hides near-vertical sky lobs; the status line counts anything hidden. Applies instantly to shown results.</p>
-        </div>
         <div class="filter-row">
           <label class="filter-head" for="a-tolerance"><b>Solve tolerance:</b><button type="button" class="desc-toggle" aria-expanded="false" aria-label="What does Solve tolerance do?">?</button><span class="filter-slot">
             <select id="a-tolerance" aria-label="Landing tolerance the solver accepts">
@@ -158,9 +154,16 @@
         <div class="key-row"><span class="key-label">stand</span><span>corner / wall = geometry pins your feet - walk into it, position error gone</span></div>
       </div>
       <div class="key-group" id="key-heat">
-        <div class="key-row"><span class="swatch ok"></span> verified lineup</div>
-        <div class="key-row"><span class="swatch raw"></span> sim reaches, unverified</div>
-        <div class="key-row"><span class="swatch none"></span> standable, no throw reaches</div>
+        <div id="key-heat-cover">
+          <div class="key-row"><span class="swatch ok"></span> verified lineup</div>
+          <div class="key-row"><span class="swatch raw"></span> sim reaches, unverified</div>
+          <div class="key-row"><span class="swatch none"></span> standable, no throw reaches</div>
+        </div>
+        <div id="key-heat-spots" hidden>
+          <div class="key-row"><span class="swatch ok bright"></span> corner-pinned + verified - walk in, position exact</div>
+          <div class="key-row"><span class="swatch ok"></span> wall-pinned + verified - press the wall</div>
+          <div class="key-row"><span class="swatch ok dim"></span> open ground, verified lineup</div>
+        </div>
       </div>
     </div>
   </details>

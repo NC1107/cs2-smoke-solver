@@ -4,7 +4,7 @@
 // registers, so this module never imports the orchestrator.
 
 import { cacheBust } from "./api.js";
-import { isDrag, state, filtered, typeShort, clickShort, clickClass, esc, SMOKE_BLOOM_RADIUS, PICK_RADIUS_PX, TOUCH_PICK_RADIUS_PX, HEAT_CELL } from "./state.js";
+import { isDrag, state, filtered, typeLabel, clickShort, clickClass, esc, SMOKE_BLOOM_RADIUS, PICK_RADIUS_PX, TOUCH_PICK_RADIUS_PX, HEAT_CELL } from "./state.js";
 
 const canvas = state.canvas;
 const ctx = canvas.getContext("2d");
@@ -169,7 +169,7 @@ export function draw() {
     }
     ctx.globalAlpha = 1;
   }
-  if (state.heatOn && state.result && state.result.coverage) {
+  if (state.heatOn && state.result && state.result.coverage && !state.heatSpots) {
     // Coverage heat map, colorblind-safe (M14): solid blue fill where a
     // verified lineup stands, faint blue fill where only the coarse voxel sim
     // reaches (its candidates failed exact verification), orange outline with
@@ -186,6 +186,24 @@ export function draw() {
         ctx.globalAlpha = 0.7;
         ctx.strokeRect(hx - HEAT_CELL / 2 + 1.5, -hy - HEAT_CELL / 2 + 1.5, HEAT_CELL - 3, HEAT_CELL - 3);
       }
+    }
+    ctx.globalAlpha = 1;
+  }
+  if (state.heatOn && state.result?.coverage && state.heatSpots) {
+    // Stand-spot quality view: the same evaluated origins, ranked by how
+    // reproducible standing there is in a real round. Geometry-pinned spots
+    // (walk into the corner/wall and your position error is gone) burn bright;
+    // open ground where a verified lineup stands is faint; everything else is
+    // nearly invisible so the good spots pop.
+    ctx.fillStyle = colors["heat-ok"];
+    for (const [hx, hy, count, verified, pin] of state.result.coverage) {
+      if (!count) {
+        continue;
+      }
+      ctx.globalAlpha = verified
+        ? (pin === 2 ? 0.95 : pin === 1 ? 0.6 : 0.25)
+        : 0.07;
+      ctx.fillRect(hx - HEAT_CELL / 2, -hy - HEAT_CELL / 2, HEAT_CELL, HEAT_CELL);
     }
     ctx.globalAlpha = 1;
   }
@@ -216,6 +234,24 @@ export function draw() {
       ctx.beginPath();
       ctx.arc(l.rest[0], -l.rest[1], 4 / scale, 0, Math.PI * 2);
       ctx.fill();
+    }
+    // The accuracy ring ("Go to" fetches it): the area the player can stand
+    // in and still land within the precision in play.
+    if (idx === state.selected && l._slack) {
+      ctx.beginPath();
+      for (const [deg, r] of l._slack.dirs) {
+        const a = deg * Math.PI / 180;
+        ctx.lineTo(l.feet[0] + Math.cos(a) * r, -(l.feet[1] + Math.sin(a) * r));
+      }
+      ctx.closePath();
+      ctx.fillStyle = colors["heat-ok"];
+      ctx.globalAlpha = 0.15;
+      ctx.fill();
+      ctx.strokeStyle = colors["heat-ok"];
+      ctx.globalAlpha = 0.9;
+      ctx.lineWidth = 1.2 / scale;
+      ctx.stroke();
+      ctx.globalAlpha = 1;
     }
     drawMarker(l, isSelected, clickColor);
   });
@@ -419,7 +455,7 @@ export function initMap2d(cb) {
     if (best >= 0) {
       const l = state.result.lineups[best];
       tip.innerHTML =
-        `<b class="${clickClass(l.strength)}">${clickShort(l.strength)}</b> · ${typeShort[l.type]}` +
+        `<b class="${clickClass(l.strength)}">${clickShort(l.strength)}</b> · ${typeLabel(l)}` +
         ` · ${l.Bounces} bounce${l.Bounces === 1 ? "" : "s"} · ${l.flightTime.toFixed(1)}s · ${(l.stability * 100).toFixed(0)}%<br>` +
         `${esc(l.how)}<br><span class="cmd2">${esc(l.console)}</span><br>` +
         `<span class="cmd2">rest ${l.rest[0].toFixed(0)}, ${l.rest[1].toFixed(0)} · click marker to pin</span>`;

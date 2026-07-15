@@ -121,7 +121,7 @@ public static class ServeCommand
         // shipped with every result: a map-wide solve returns hundreds of lineups
         // and only ever one is drawn.
         app.MapGet("/api/trajectory", (HttpContext context, string? map,
-            float x, float y, float z, string? type, float pitch, float yaw, float strength) =>
+            float x, float y, float z, string? type, float pitch, float yaw, float strength, float runDeg = 0f) =>
         {
             if (map == null || !maps.TryGetValue(map, out var entry))
             {
@@ -132,15 +132,47 @@ public static class ServeCommand
                 return ApiError(StatusCodes.Status400BadRequest, $"unknown throw type '{type}'");
             }
             if (!float.IsFinite(x) || !float.IsFinite(y) || !float.IsFinite(z) ||
-                !float.IsFinite(pitch) || !float.IsFinite(yaw) || !float.IsFinite(strength))
+                !float.IsFinite(pitch) || !float.IsFinite(yaw) || !float.IsFinite(strength) || !float.IsFinite(runDeg))
             {
                 return ApiError(StatusCodes.Status400BadRequest, "non-finite throw parameter");
             }
             var eye = new Vector3(x, y, z + GrenadeTrajectory.EyeHeight(throwType));
-            var spec = new ThrowSpec(eye, yaw, pitch, throwType, strength);
+            var spec = new ThrowSpec(eye, yaw, pitch, throwType, strength, runDeg);
             var payload = TrajectoryPayload(entry.Collider.Value, spec, entry.Constants);
             // Deterministic for a given throw on a given build, so it never needs
             // recomputing for a lineup the viewer has already drawn.
+            context.Response.Headers.ETag = entry.BuildETag;
+            context.Response.Headers.CacheControl = "public, max-age=604800";
+            return Results.Bytes(payload, "application/json");
+        });
+
+        // The positional slack ring for one lineup: how far the feet can drift
+        // per direction before the same aim misses the `within` radius. Fetched
+        // on "Go to", so it shares the trajectory endpoint's shape and caching.
+        app.MapGet("/api/slack", (HttpContext context, string? map,
+            float x, float y, float z, string? type, float pitch, float yaw, float strength,
+            float tx, float ty, float tz, float within, float runDeg = 0f) =>
+        {
+            if (map == null || !maps.TryGetValue(map, out var entry))
+            {
+                return ApiError(StatusCodes.Status404NotFound, "unknown map (see /api/maps)");
+            }
+            if (!Enum.TryParse<ThrowType>(type, ignoreCase: true, out var throwType))
+            {
+                return ApiError(StatusCodes.Status400BadRequest, $"unknown throw type '{type}'");
+            }
+            float[] numbers = [x, y, z, pitch, yaw, strength, tx, ty, tz, within, runDeg];
+            if (numbers.Any(v => !float.IsFinite(v)))
+            {
+                return ApiError(StatusCodes.Status400BadRequest, "non-finite slack parameter");
+            }
+            if (within is < 1f or > 512f)
+            {
+                return ApiError(StatusCodes.Status400BadRequest, "within must be between 1 and 512");
+            }
+            var payload = PositionSlackPayload(
+                entry.Collider.Value, entry.PlayerCollider.Value, new Vector3(x, y, z), throwType, strength,
+                pitch, yaw, runDeg, new Vector3(tx, ty, tz), within, entry.Constants);
             context.Response.Headers.ETag = entry.BuildETag;
             context.Response.Headers.CacheControl = "public, max-age=604800";
             return Results.Bytes(payload, "application/json");

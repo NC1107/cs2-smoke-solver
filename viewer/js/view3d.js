@@ -138,6 +138,11 @@ async function init3d() {
   const bloomGeo = new THREE.SphereGeometry(1, 24, 16); // unit sphere, scaled to the zone radius
   const bloomMat = new THREE.MeshBasicMaterial({ color: colors.target, transparent: true, opacity: 0.14, depthWrite: false });
   const lineMat = new THREE.LineBasicMaterial({ color: colors.accent });
+  // The accuracy ring around a lineup's feet ("Go to"): how far the player can
+  // drift before the aim misses. Green like verified heat - it means "safe".
+  const slackFillMat = new THREE.MeshBasicMaterial({
+    color: colors["heat-ok"], transparent: true, opacity: 0.22, depthWrite: false, side: THREE.DoubleSide });
+  const slackLineMat = new THREE.LineBasicMaterial({ color: colors["heat-ok"] });
   // A sweep evaluates tens of thousands of origins and restreams every ~100ms,
   // so the live progress dots are Points clouds (one draw call each) rather
   // than a mesh per origin, which would stall the view exactly when it is
@@ -156,8 +161,10 @@ async function init3d() {
   // never the textured GLB, so it reports the true surface the sim uses.
   const dropRay = new THREE.Raycaster();
   const straightDown = new THREE.Vector3(0, 0, -1);
-  function surfaceZAt(x, y) {
-    dropRay.set(new THREE.Vector3(x, y, 20000), straightDown);
+  // `fromZ` matters when the point sits under an arch or overpass: dropping
+  // from the sky would land the marker on the roof above it.
+  function surfaceZAt(x, y, fromZ = 20000) {
+    dropRay.set(new THREE.Vector3(x, y, fromZ), straightDown);
     const hit = dropRay.intersectObject(meshObj, false);
     return hit.length > 0 ? hit[0].point.z : null;
   }
@@ -254,6 +261,7 @@ async function init3d() {
   three = {
     renderer, scene, camera, markerGroup, targetGroup, progressGroup, resize3d,
     markerGeo, markerMats, targetGeo, targetMat, bloomGeo, bloomMat, lineMat,
+    slackFillMat, slackLineMat,
     progressCheckedMat, progressVerifiedMat, surfaceZAt,
     get isLive() { return live; },
     get isTextured() { return activeScene !== scene; },
@@ -366,6 +374,8 @@ export function applyTheme3d() {
   three.targetMat.color.set(colors.target);
   three.bloomMat.color.set(colors.target);
   three.lineMat.color.set(colors.accent);
+  three.slackFillMat.color.set(colors["heat-ok"]);
+  three.slackLineMat.color.set(colors["heat-ok"]);
   three.progressVerifiedMat.color.set(colors["heat-ok"]);
   three.requestRender();
 }
@@ -471,6 +481,25 @@ export function sync3d() {
       const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), lineMat);
       line.userData.ownedGeometry = true;
       markerGroup.add(line);
+      // The accuracy ring around the throw spot ("Go to" fetches it): a fan
+      // draped on the ground, each vertex dropped onto the surface from just
+      // above the feet so slopes and steps don't leave it floating.
+      if (l._slack) {
+        const ring = l._slack.dirs.map(([deg, r]) => {
+          const a = deg * Math.PI / 180;
+          const x = l.feet[0] + Math.cos(a) * r, y = l.feet[1] + Math.sin(a) * r;
+          return new THREE.Vector3(x, y, (three.surfaceZAt(x, y, l.feet[2] + 50) ?? l.feet[2]) + 2);
+        });
+        const fan = new THREE.BufferGeometry().setFromPoints(
+          [new THREE.Vector3(l.feet[0], l.feet[1], l.feet[2] + 2), ...ring]);
+        fan.setIndex(ring.flatMap((_, i) => [0, 1 + i, 1 + (i + 1) % ring.length]));
+        const disc = new THREE.Mesh(fan, three.slackFillMat);
+        disc.userData.ownedGeometry = true;
+        markerGroup.add(disc);
+        const outline = new THREE.LineLoop(new THREE.BufferGeometry().setFromPoints(ring), three.slackLineMat);
+        outline.userData.ownedGeometry = true;
+        markerGroup.add(outline);
+      }
     }
   }
   three.requestRender();

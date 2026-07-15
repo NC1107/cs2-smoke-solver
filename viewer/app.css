@@ -291,6 +291,8 @@
   .key.heat #key-heat { display: grid; gap: 5px; }
   .key .swatch { width: 10px; height: 10px; display: inline-block; vertical-align: -1px; }
   .key .swatch.ok { background: var(--heat-ok); opacity: 0.75; }
+  .key .swatch.ok.bright { opacity: 1; }
+  .key .swatch.ok.dim { opacity: 0.3; }
   .key .swatch.raw { background: var(--heat-ok); opacity: 0.18; outline: var(--border); }
   .key .swatch.none { border: 2px solid var(--heat-none); }
   .key .cross { color: var(--target); font-weight: 700; }

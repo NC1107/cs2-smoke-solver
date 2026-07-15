@@ -14,7 +14,10 @@ public sealed record Lineup(
     float FlightTime,
     int RestCrossings,
     float Stability = 0f,
-    float Strength = 1f);
+    float Strength = 1f,
+    // Movement-key direction of a running jump throw relative to the facing
+    // (see ThrowSpec.RunYawOffsetDeg); 0 for every grounded/W throw.
+    float RunYawOffsetDeg = 0f);
 
 /// <summary>
 /// Stage 2 of the inverse solver: sweep standable origins and view angles, keep
@@ -41,6 +44,13 @@ public static partial class LineupSolver
     const int MaxRefineSeeds = 8;
     const int RefineHalfSpan = 2;
     static readonly float[] AllStrengths = [1f, 0.5f, 0f];
+    // Movement directions a running jump throw is swept with: W, the two
+    // diagonals, and pure strafes. Players line these up exactly like W run
+    // throws (hold a movement key into the jump), and the carried velocity
+    // rotates with the key, so a target unreachable with W is often exactly
+    // reachable with A or D. Every other throw type has no run component.
+    static readonly float[] RunYawOffsets = [0f, 45f, -45f, 90f, -90f];
+    static readonly float[] NoRunOffset = [0f];
 
     // A throw that ran out the full flight budget never came to rest - its
     // "rest point" is wherever the integrator gave up. The 0.01s slack absorbs
@@ -113,9 +123,9 @@ public static partial class LineupSolver
             // Returns how far the rest point missed the zone centroid (squared), or
             // 0 for an in-zone hit, or MaxValue for a lost/expired throw. Hits are
             // recorded into the bucket dictionary as a side effect.
-            float Evaluate(Vector3 eye, float yaw, float pitch, ThrowType type, float strength)
+            float Evaluate(Vector3 eye, float yaw, float pitch, ThrowType type, float strength, float runOffset)
             {
-                var result = GrenadeTrajectory.Simulate(grid, new ThrowSpec(eye, yaw, pitch, type, strength), constants);
+                var result = GrenadeTrajectory.Simulate(grid, new ThrowSpec(eye, yaw, pitch, type, strength, runOffset), constants);
                 if (!Settled(result))
                 {
                     return float.MaxValue;
@@ -126,76 +136,90 @@ public static partial class LineupSolver
                     return Vector3.DistanceSquared(result.RestPoint, zoneCentroid);
                 }
                 hits++;
-                var lineup = new Lineup(feet, Normalize(yaw), pitch, type, result.RestPoint, result.Bounces, result.FlightTime, crossings, Strength: strength);
+                var lineup = new Lineup(feet, Normalize(yaw), pitch, type, result.RestPoint, result.Bounces, result.FlightTime, crossings, Strength: strength, RunYawOffsetDeg: runOffset);
                 var key = ((int)MathF.Floor(feet.X / dedupeBucketSize), (int)MathF.Floor(feet.Y / dedupeBucketSize));
                 best.AddOrUpdate(key, lineup, (_, current) => Better(lineup, current) ? lineup : current);
                 return 0f;
             }
 
+            var k = constants ?? ThrowConstants.Default;
             foreach (var type in types)
             {
                 var eye = feet + new Vector3(0, 0, GrenadeTrajectory.EyeHeight(type));
-                foreach (var strength in strengths ?? AllStrengths)
+                foreach (var runOffset in type is ThrowType.RunJumpThrow ? RunYawOffsets : NoRunOffset)
                 {
-                    // Range scales with the square of throw speed.
-                    var speedFactor = (constants ?? ThrowConstants.Default).SpeedScale(strength);
-                    if (distance > MaxRange(type) * speedFactor * speedFactor)
+                    foreach (var strength in strengths ?? AllStrengths)
                     {
-                        continue;
-                    }
-                    // A near miss is one coarse step's worth of landing displacement
-                    // (roughly distance * step in radians) from the zone edge.
-                    var reach = zoneRadius + distance * MathF.Max(yawStepDeg, pitchStepDeg) * MathF.PI / 180f;
-                    var reachSq = reach * reach;
-                    var nearMisses = new List<(float Yaw, float Pitch, float MissSq)>();
-                    // Steep lobs (-65 down to -89, i.e. up to nearly straight up)
-                    // only ever land close to the thrower - horizontal speed is
-                    // cos(pitch) - so they are swept only when the zone is within
-                    // plausible steep-lob range. That keeps a map-wide sweep from
-                    // paying for angles that physically cannot reach, while a
-                    // player standing near the target gets the near-vertical
-                    // drop-on-your-own-head lineups real play uses.
-                    var pitchFloor = distance <= SteepLobMaxRange * speedFactor * speedFactor
-                        ? SteepPitchFloorDeg
-                        : StandardPitchFloorDeg;
-                    for (var yaw = yawCenter - YawSpreadDeg; yaw <= yawCenter + YawSpreadDeg; yaw += yawStepDeg)
-                    {
-                        for (var pitch = StandardPitchFloorDeg; pitch <= 0f; pitch += pitchStepDeg)
+                        // Range scales with the square of throw speed.
+                        var speedFactor = k.SpeedScale(strength);
+                        if (distance > MaxRange(type) * speedFactor * speedFactor)
                         {
-                            var missSq = Evaluate(eye, yaw, pitch, type, strength);
-                            if (missSq > 0f && missSq <= reachSq)
-                            {
-                                nearMisses.Add((yaw, pitch, missSq));
-                            }
+                            continue;
                         }
-                        // Extend downward on the same lattice so the classic range's
-                        // samples stay exactly where they always were.
-                        for (var pitch = StandardPitchFloorDeg - pitchStepDeg; pitch >= pitchFloor; pitch -= pitchStepDeg)
+                        // A near miss is one coarse step's worth of landing displacement
+                        // (roughly distance * step in radians) from the zone edge.
+                        var reach = zoneRadius + distance * MathF.Max(yawStepDeg, pitchStepDeg) * MathF.PI / 180f;
+                        var reachSq = reach * reach;
+                        var nearMisses = new List<(float Yaw, float Pitch, float MissSq)>();
+                        // Steep lobs (-65 down to -89, i.e. up to nearly straight up)
+                        // only ever land close to the thrower - horizontal speed is
+                        // cos(pitch) - so they are swept only when the zone is within
+                        // plausible steep-lob range. That keeps a map-wide sweep from
+                        // paying for angles that physically cannot reach, while a
+                        // player standing near the target gets the near-vertical
+                        // drop-on-your-own-head lineups real play uses.
+                        var pitchFloor = distance <= SteepLobMaxRange * speedFactor * speedFactor
+                            ? SteepPitchFloorDeg
+                            : StandardPitchFloorDeg;
+                        // A lateral run carries the grenade sideways, so the aim yaw
+                        // that lands on the zone sits AWAY from the straight line to
+                        // it - by up to ~60 degrees for a right-click full strafe.
+                        // The deflection depends on pitch (horizontal throw speed is
+                        // cos(pitch)), so the swept window spans the deflections at
+                        // both pitch extremes plus the usual spread on either side.
+                        var shiftShallow = RunYawShiftDeg(k, strength, 0f, runOffset);
+                        var shiftSteep = RunYawShiftDeg(k, strength, pitchFloor, runOffset);
+                        var yawLo = yawCenter + MathF.Min(shiftShallow, shiftSteep) - YawSpreadDeg;
+                        var yawHi = yawCenter + MathF.Max(shiftShallow, shiftSteep) + YawSpreadDeg;
+                        for (var yaw = yawLo; yaw <= yawHi; yaw += yawStepDeg)
                         {
-                            var missSq = Evaluate(eye, yaw, pitch, type, strength);
-                            if (missSq > 0f && missSq <= reachSq)
+                            for (var pitch = StandardPitchFloorDeg; pitch <= 0f; pitch += pitchStepDeg)
                             {
-                                nearMisses.Add((yaw, pitch, missSq));
-                            }
-                        }
-                    }
-                    nearMisses.Sort((a, b) => a.MissSq.CompareTo(b.MissSq));
-                    foreach (var (seedYaw, seedPitch, _) in nearMisses.Take(MaxRefineSeeds))
-                    {
-                        // The fine lattice spans the seed's whole coarse Voronoi cell
-                        // so ribbons anywhere between coarse samples get sampled.
-                        for (var i = -RefineHalfSpan; i <= RefineHalfSpan; i++)
-                        {
-                            for (var j = -RefineHalfSpan; j <= RefineHalfSpan; j++)
-                            {
-                                if (i == 0 && j == 0)
+                                var missSq = Evaluate(eye, yaw, pitch, type, strength, runOffset);
+                                if (missSq > 0f && missSq <= reachSq)
                                 {
-                                    continue;
+                                    nearMisses.Add((yaw, pitch, missSq));
                                 }
-                                Evaluate(eye,
-                                    seedYaw + i * yawStepDeg / (2 * RefineHalfSpan),
-                                    seedPitch + j * pitchStepDeg / (2 * RefineHalfSpan),
-                                    type, strength);
+                            }
+                            // Extend downward on the same lattice so the classic range's
+                            // samples stay exactly where they always were.
+                            for (var pitch = StandardPitchFloorDeg - pitchStepDeg; pitch >= pitchFloor; pitch -= pitchStepDeg)
+                            {
+                                var missSq = Evaluate(eye, yaw, pitch, type, strength, runOffset);
+                                if (missSq > 0f && missSq <= reachSq)
+                                {
+                                    nearMisses.Add((yaw, pitch, missSq));
+                                }
+                            }
+                        }
+                        nearMisses.Sort((a, b) => a.MissSq.CompareTo(b.MissSq));
+                        foreach (var (seedYaw, seedPitch, _) in nearMisses.Take(MaxRefineSeeds))
+                        {
+                            // The fine lattice spans the seed's whole coarse Voronoi cell
+                            // so ribbons anywhere between coarse samples get sampled.
+                            for (var i = -RefineHalfSpan; i <= RefineHalfSpan; i++)
+                            {
+                                for (var j = -RefineHalfSpan; j <= RefineHalfSpan; j++)
+                                {
+                                    if (i == 0 && j == 0)
+                                    {
+                                        continue;
+                                    }
+                                    Evaluate(eye,
+                                        seedYaw + i * yawStepDeg / (2 * RefineHalfSpan),
+                                        seedPitch + j * pitchStepDeg / (2 * RefineHalfSpan),
+                                        type, strength, runOffset);
+                                }
                             }
                         }
                     }
@@ -250,7 +274,7 @@ public static partial class LineupSolver
                 if (!cache.TryGetValue((dYaw, dPitch), out var result))
                 {
                     result = GrenadeTrajectory.SimulateExact(collider, new ThrowSpec(
-                        eye, lineup.YawDeg + dYaw * StepDeg, lineup.PitchDeg + dPitch * StepDeg, lineup.Type, lineup.Strength), constants);
+                        eye, lineup.YawDeg + dYaw * StepDeg, lineup.PitchDeg + dPitch * StepDeg, lineup.Type, lineup.Strength, lineup.RunYawOffsetDeg), constants);
                     cache[(dYaw, dPitch)] = result;
                 }
                 return result;
@@ -350,6 +374,22 @@ public static partial class LineupSolver
             }
         }
         return false;
+    }
+
+    // Where the resultant horizontal velocity of a running jump throw points,
+    // relative to the aim yaw: the throw contributes speed*scale*cos(pitch)
+    // along the aim, the run contributes RunSpeed rotated by the movement key.
+    // The aim that lands on the zone is the zone bearing MINUS this deflection,
+    // hence the negative sign. Zero for W (the vectors are collinear).
+    static float RunYawShiftDeg(ThrowConstants k, float strength, float pitchDeg, float runOffsetDeg)
+    {
+        if (runOffsetDeg == 0f)
+        {
+            return 0f;
+        }
+        var horizontal = k.ThrowSpeed * k.SpeedScale(strength) * MathF.Cos(pitchDeg * MathF.PI / 180f);
+        var offset = runOffsetDeg * MathF.PI / 180f;
+        return -MathF.Atan2(k.RunSpeed * MathF.Sin(offset), horizontal + k.RunSpeed * MathF.Cos(offset)) * 180f / MathF.PI;
     }
 
     static bool Better(Lineup a, Lineup b)

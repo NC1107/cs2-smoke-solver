@@ -83,6 +83,98 @@ public static class LineupApi
         return Encoding.UTF8.GetBytes(json.ToString());
     }
 
+    /// <summary>
+    /// How far the player can drift from a lineup's exact stand spot, per world
+    /// direction, before the same aim angles stop landing within `within` units
+    /// of the target. This is the honest answer to "how precisely must I stand
+    /// here": each direction is bisected against the exact simulator, so walls
+    /// (a pinned spot), ledges, and bounce geometry all shape the ring rather
+    /// than assuming the landing shifts linearly with the feet.
+    /// </summary>
+    public static byte[] PositionSlackPayload(
+        TriangleCollider collider, TriangleCollider playerCollider, Vector3 feet, ThrowType type, float strength,
+        float pitchDeg, float yawDeg, float runDeg, Vector3 target, float within, ThrowConstants constants)
+    {
+        const int Directions = 12;
+        const float MaxProbe = 64f;
+        // sv_standable_normal: the same floor test the sim and origin snap use.
+        const float StandableNormalZ = 0.7f;
+
+        bool LandsFrom(Vector3 candidateFeet)
+        {
+            var eye = candidateFeet + new Vector3(0, 0, GrenadeTrajectory.EyeHeight(type));
+            var result = GrenadeTrajectory.SimulateExact(collider, new ThrowSpec(eye, yawDeg, pitchDeg, type, strength, runDeg), constants);
+            return !result.Lost && result.FlightTime < GrenadeTrajectory.MaxFlightSeconds - 0.01f &&
+                new Vector2(result.RestPoint.X - target.X, result.RestPoint.Y - target.Y).Length() <= within;
+        }
+
+        // Probes at waist height so floor trim does not read as a wall, exactly
+        // like the pin logic does.
+        var waist = feet + new Vector3(0, 0, 36f);
+        Vector3? FeetAt(Vector2 xy)
+        {
+            // The player has to be able to slide there: geometry between the
+            // stand spot and the offset (a wall or clip the lineup is pinned
+            // against) truncates that direction to zero, which is the point of
+            // pinning. Player-solid, not grenade-solid - clips stop feet.
+            var offsetWaist = new Vector3(xy.X, xy.Y, waist.Z);
+            if (playerCollider.FirstHit(waist, offsetWaist) != null)
+            {
+                return null;
+            }
+            // And there must be standable floor beneath - stepping off a ledge
+            // is not a small aim error, it is a different throw entirely.
+            var hit = playerCollider.FirstHit(offsetWaist, offsetWaist - new Vector3(0, 0, 72f));
+            return hit is { } h && h.Normal.Z >= StandableNormalZ
+                ? new Vector3(xy.X, xy.Y, offsetWaist.Z - 72f * h.T)
+                : null;
+        }
+
+        var feetXy = new Vector2(feet.X, feet.Y);
+        // If even the exact spot misses the asked-for precision, every radius
+        // is zero rather than a bisection against an unsatisfiable predicate.
+        var centered = LandsFrom(feet);
+        var json = new StringBuilder();
+        json.Append(CultureInfo.InvariantCulture, $"{{\"within\":{within:F0},\"dirs\":[");
+        for (var i = 0; i < Directions; i++)
+        {
+            var ang = i * 2f * MathF.PI / Directions;
+            var dir = new Vector2(MathF.Cos(ang), MathF.Sin(ang));
+            bool Ok(float r) => FeetAt(feetXy + dir * r) is { } f && LandsFrom(f);
+            var radius = 0f;
+            if (centered)
+            {
+                // Bisection treats the landing as monotone in the drift, which
+                // holds in practice for the ranges probed here (<= 64u).
+                float lo = 0f, hi = MaxProbe;
+                if (Ok(MaxProbe))
+                {
+                    radius = MaxProbe;
+                }
+                else
+                {
+                    for (var step = 0; step < 6; step++)
+                    {
+                        var mid = (lo + hi) / 2f;
+                        if (Ok(mid))
+                        {
+                            lo = mid;
+                        }
+                        else
+                        {
+                            hi = mid;
+                        }
+                    }
+                    radius = lo;
+                }
+            }
+            json.Append(i == 0 ? "" : ",")
+                .Append(CultureInfo.InvariantCulture, $"[{ang * 180f / MathF.PI:F0},{radius:F1}]");
+        }
+        json.Append("]}");
+        return Encoding.UTF8.GetBytes(json.ToString());
+    }
+
     // Validation bounds, named so the checks and their error messages cannot
     // drift apart. The margin allows targets slightly past the mesh AABB
     // (overhangs at map edges); the reach/tolerance ranges bracket every value
@@ -189,7 +281,7 @@ public static class LineupApi
             : "all";
         // Bump when solver or sim behavior changes: cached answers from older code
         // must never be replayed as current results.
-        const int QueryVersion = 10;
+        const int QueryVersion = 12;
         // meshVersion is the content-hashed mesh identity (not just the game
         // build), so re-extracting a map - e.g. dropping the Retake tape - forces
         // a re-solve instead of replaying results computed against the old mesh.
@@ -261,7 +353,7 @@ public static class LineupApi
             l => AimReference.Analyze(solve.Collider, l.Feet, l.Type, l.PitchDeg, l.YawDeg));
         var pins = solve.Lineups.ToDictionary(
             l => l,
-            l => LineupSolver.PositionPin(solve.Collider, l.Feet));
+            l => LineupSolver.PositionPin(solve.PlayerCollider, l.Feet));
         // A probe means "I stand HERE": closeness to the click outranks
         // everything but a usable aim reference, in 32u bands so a pinned spot
         // still wins among near-equals. A map-wide sweep has no "here", so
@@ -276,12 +368,13 @@ public static class LineupApi
         {
             target = new[] { solve.Target.X, solve.Target.Y, solve.Target.Z },
             origins = solve.OriginCount,
-            // Per evaluated origin: [x, y, raw option count, verified lineup here].
-            // Zero-count cells are the interesting ones - places a player can stand
-            // where no simulated throw reaches the target (either truly impossible
-            // or a sim gap).
+            // Per evaluated origin: [x, y, raw option count, verified lineup
+            // here, pin class (2 corner / 1 wall / 0 open)]. Zero-count cells
+            // are the interesting ones - places a player can stand where no
+            // simulated throw reaches the target (either truly impossible or a
+            // sim gap); the pin class drives the stand-spot heat view.
             coverage = solve.Coverage
-                .Select(c => new[] { c[0], c[1], c[2], verifiedAt.Contains((c[0], c[1])) ? 1 : 0 }),
+                .Select(c => new[] { c[0], c[1], c[2], verifiedAt.Contains((c[0], c[1])) ? 1 : 0, c.Length > 3 ? c[3] : 0 }),
             // 12 for a probe (steep lobs and pinned spots widened the field a
             // single click can deserve), 400 for the map-wide sweep.
             lineups = ranked.Take(hasOrigin ? 12 : 400).Select(l => new
@@ -290,7 +383,12 @@ public static class LineupApi
                 yaw = l.YawDeg,
                 pitch = l.PitchDeg,
                 type = l.Type.ToString(),
-                how = Describe(l.Type, l.Strength), strength = l.Strength, click = ClickName(l.Strength),
+                how = Describe(l.Type, l.Strength, l.RunYawOffsetDeg), strength = l.Strength, click = ClickName(l.Strength),
+                // Movement-key direction for running jump throws (0 = W,
+                // +90 = A, -90 = D, +-45 = diagonals); part of the throw's
+                // physical identity, so the viewer must echo it back when
+                // fetching this lineup's trajectory.
+                runDeg = l.RunYawOffsetDeg,
                 rest = new[] { l.RestPoint.X, l.RestPoint.Y, l.RestPoint.Z },
                 l.Bounces,
                 flightTime = l.FlightTime,

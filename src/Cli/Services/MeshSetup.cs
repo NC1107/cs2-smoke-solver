@@ -40,6 +40,12 @@ public static class MeshSetup
     public static TriangleCollider BuildGrenadeCollider(CollisionMesh mesh, Vector3 min, Vector3 max) =>
         new(mesh, min, max, mesh.GrenadeSolidFilter());
 
+    // What blocks the PLAYER, for pin probing and stand-spot checks; the
+    // grenade collider above is wrong for that job because it drops the
+    // player clips that railings and ledges pin players with.
+    public static TriangleCollider BuildPlayerCollider(CollisionMesh mesh, Vector3 min, Vector3 max) =>
+        new(mesh, min, max, mesh.PlayerSolidFilter());
+
     // extract always writes <map>.navareas.json next to the .s2geo, so every
     // command can find nav data by convention instead of demanding --nav.
     public static string DefaultNavAreasPath(Dictionary<string, string> options, CollisionMesh mesh) =>

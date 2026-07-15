@@ -110,6 +110,11 @@ public static class TargetSolver
         // Built before the origins, not after: they are snapped onto its triangles
         // so that the spot a lineup names is the spot the player actually stands on.
         var collider = BuildGrenadeCollider(mesh, min, max);
+        // Origins model where the PLAYER can be, so their ground snap and wall
+        // pin probes run against player-solid geometry: the clip brushes along
+        // railings and ledges are exactly what pins feet in game, and they are
+        // invisible to the grenade collider by design.
+        var playerCollider = BuildPlayerCollider(mesh, min, max);
 
         var origins = LineupSolver.OriginsFromNavAreas(
                 grid,
@@ -117,7 +122,7 @@ public static class TargetSolver
                 new Vector3(originClick.X - originReach, originClick.Y - originReach, meshMin.Z),
                 new Vector3(originClick.X + originReach, originClick.Y + originReach, max.Z),
                 sampleStep: 24f,
-                collider: collider)
+                collider: playerCollider)
             .Where(o => Vector2.Distance(new Vector2(o.X, o.Y), originClick) <= originReach)
             .ToList();
         if (hasOrigin)
@@ -127,7 +132,7 @@ public static class TargetSolver
             // can sit half a grid step away, and for a tight known lineup that
             // is the difference between finding it and not.
             var clickZ = LineupSolver.NavGroundZ(corners, originClick.X, originClick.Y) ?? target.Z;
-            origins.AddRange(LineupSolver.ExactOriginWithPins(grid, collider, new Vector3(originClick.X, originClick.Y, clickZ)));
+            origins.AddRange(LineupSolver.ExactOriginWithPins(grid, playerCollider, new Vector3(originClick.X, originClick.Y, clickZ)));
         }
 
         // Map-wide searches use a coarser angle grid to stay interactive; a near-click
@@ -155,12 +160,20 @@ public static class TargetSolver
         onPhase?.Invoke("verify", candidates.Count);
         var lineups = LineupSolver.VerifyExact(grid, collider, zoneCrossings, candidates, minStability: minStability, constants: constants, onCandidate: onCandidate);
 
+        // Pin class for every evaluated origin, so the viewer's stand-spot heat
+        // view can rank corner wedges and wall presses above open ground. Eight
+        // short raycasts per origin - trivial next to the sweep that just ran.
+        var originPins = new System.Collections.Concurrent.ConcurrentDictionary<(int X, int Y), int>();
+        Parallel.ForEach(origins, Cpu.Bound, o =>
+            originPins.GetOrAdd(((int)MathF.Round(o.X), (int)MathF.Round(o.Y)), _ => LineupSolver.PositionPin(playerCollider, o)));
+
         return new TargetSolve(
             target,
             origins.Count,
-            [.. coverage.Select(kv => new[] { kv.Key.X, kv.Key.Y, kv.Value })],
+            [.. coverage.Select(kv => new[] { kv.Key.X, kv.Key.Y, kv.Value, originPins.GetValueOrDefault((kv.Key.X, kv.Key.Y)) })],
             lineups,
-            collider);
+            collider,
+            playerCollider);
     }
 
     public static Vector3? SnapTargetToGround(VoxelGrid grid, int x, int y)

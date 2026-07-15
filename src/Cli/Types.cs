@@ -103,4 +103,7 @@ public sealed record TargetSolve(
     int OriginCount,
     List<int[]> Coverage,
     List<Lineup> Lineups,
-    TriangleCollider Collider);
+    TriangleCollider Collider,
+    // Player-solid variant (clips included): pin classification must run
+    // against what stops FEET, not what bounces grenades.
+    TriangleCollider PlayerCollider);

@@ -18,6 +18,11 @@ export const state = {
   // view needs it to stand each dot on the floor the origin actually sits on.
   progress: null,
   heatOn: false,
+  // Second heat view: color evaluated origins by stand-spot quality (corner/
+  // wall pin + verified) instead of raw coverage. Only meaningful with heatOn.
+  heatSpots: false,
+  // 3D center-crosshair preference; main.js loads/persists it in localStorage.
+  crosshairOn: true,
   hovered: -1,
   canvas: document.getElementById("map"),
   stage3d: document.getElementById("stage3d"),
@@ -75,6 +80,14 @@ export function filtered() {
 }
 
 export const typeShort = { Stand: "stand", Crouch: "crouch", JumpThrow: "jump", CrouchJumpThrow: "crouch+jump", RunJumpThrow: "run+jump" };
+// Movement keys behind a running jump throw's run direction (server runDeg:
+// 0 = W, +90 = A, -90 = D, +-45 = diagonals). Banded, not exact-matched, so
+// a float that went through JSON still labels correctly.
+export const runKeys = deg =>
+  deg > 67.5 ? "A" : deg > 22.5 ? "W+A" : deg < -67.5 ? "D" : deg < -22.5 ? "W+D" : "W";
+// The movement label with the run direction folded in, e.g. "run+jump (A)".
+export const typeLabel = l =>
+  l.type === "RunJumpThrow" ? `run+jump (${runKeys(l.runDeg ?? 0)})` : typeShort[l.type];
 export const clickShort = s => s >= 0.99 ? "left click" : s >= 0.49 ? "mid (L+R)" : "right click";
 export const clickClass = s => s >= 0.99 ? "left" : s >= 0.49 ? "mid" : "right";
 

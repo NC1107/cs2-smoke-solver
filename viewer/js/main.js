@@ -3,7 +3,7 @@
 // here (setTarget, select, runQuery) via the init*/set*Callbacks hooks.
 
 import { state, filtered, esc } from "./state.js";
-import { loadMapList, loadMapData, runQuery as postLineupQuery, fetchTrajectory } from "./api.js";
+import { loadMapList, loadMapData, runQuery as postLineupQuery, fetchTrajectory, fetchSlack } from "./api.js";
 import { loadRadar, readColors, recolorRadar, draw, scheduleDraw, resize, resetView, initMap2d } from "./map2d.js";
 import { ensure3d, resetEnsure3d, teardown3d, current3d, sync3d, syncProgress3d, set3dCallbacks, applyTheme3d } from "./view3d.js";
 import { resetEnsureTexturedScene } from "./textured-scene.js";
@@ -39,12 +39,23 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
   const resetViewBtn = document.getElementById("reset-view");
   const texturedBtn = document.getElementById("textured3d");
   const topDownBtn = document.getElementById("topdown");
+  const crosshairBtn = document.getElementById("crosshair3d");
   const clearBtn = document.getElementById("clear");
   const keyEl = document.getElementById("key-dots");
   const mapSelect = document.getElementById("map-select");
   const cancelBtn = document.getElementById("solve-cancel");
   let solveController = null;
   cancelBtn.addEventListener("click", () => solveController?.abort());
+
+  // The 3D crosshair is a preference, not per-session state: someone who
+  // hides it to take clean screenshots wants it to stay hidden next visit.
+  state.crosshairOn = localStorage.getItem("smokesolver.crosshair3d") !== "0";
+  crosshairBtn.addEventListener("click", () => {
+    state.crosshairOn = !state.crosshairOn;
+    localStorage.setItem("smokesolver.crosshair3d", state.crosshairOn ? "1" : "0");
+    syncControls();
+    current3d()?.focusStage();
+  });
 
   // Fetched once per lineup and cached on it: a throw's arc is fixed for a given
   // map build, and only the selected one is ever drawn. A failure here is not
@@ -100,13 +111,20 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
 
     heatBtn.hidden = !state.result?.coverage;
     heatBtn.classList.toggle("active", state.heatOn);
+    // The button walks off -> coverage -> stand spots -> off; its label names
+    // the view it is currently showing so the cycle is legible.
+    heatBtn.textContent = !state.heatOn ? "Heatmap" : state.heatSpots ? "Heatmap: stand spots" : "Heatmap: coverage";
+    document.getElementById("key-heat-cover").hidden = state.heatSpots;
+    document.getElementById("key-heat-spots").hidden = !state.heatSpots;
 
     view3dBtn.classList.toggle("active", in3d);
     // 2D's "recenter" is Reset view; 3D's is Top-down. Only the live one shows.
     resetViewBtn.hidden = in3d;
     texturedBtn.hidden = !in3d;
     topDownBtn.hidden = !in3d;
-    document.body.classList.toggle("crosshair-3d", in3d);
+    crosshairBtn.hidden = !in3d;
+    crosshairBtn.classList.toggle("active", state.crosshairOn);
+    document.body.classList.toggle("crosshair-3d", in3d && state.crosshairOn);
 
     // Nothing to explain until there are markers on the map to explain.
     keyEl.hidden = !hasTarget;
@@ -123,10 +141,11 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
     }
 
     // A collapsed filters card silently hiding active filters would be a trap:
-    // the result count would look wrong with no visible cause.
-    const active = filterEls.filter(f => f.value).length;
+    // the result count would look wrong with no visible cause. A filter that
+    // ships pre-set (sky) only counts when moved OFF its default.
+    const active = filterEls.filter(f => f.value !== (f.dataset.default ?? "")).length;
     document.getElementById("filter-count").textContent = active ? `(${active})` : "";
-    const adv = Object.keys(advancedParams()).length + (state.filters.sky.value !== "65" ? 1 : 0);
+    const adv = Object.keys(advancedParams()).length;
     document.getElementById("advanced-count").textContent = adv ? `(${adv})` : "";
   }
 
@@ -147,6 +166,7 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
     state.result = null;
     state.selected = -1;
     state.heatOn = false;
+    state.heatSpots = false;
     canvas.classList.remove("picking");
   }
 
@@ -273,11 +293,7 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
   // must only happen if the intro is actually going to be shown - doing it up
   // front left every returning visitor, and every ?map= link, with the filters
   // stranded inside a hidden dialog and an empty filters card.
-  // Sky aim lives in the advanced card (it is the one display filter that
-  // ships pre-set), so the sidebar/intro rows and the filters badge cover
-  // every filter EXCEPT it - it stays in state.filters, so changing it still
-  // re-filters results instantly.
-  const filterEls = Object.values(state.filters).filter(f => f.id !== "f-sky");
+  const filterEls = Object.values(state.filters);
   const filterRowsHtml = () => filterEls
     .map(f => `<div class="filter-row" data-for="${f.id}">` +
       `<label class="filter-head" for="${f.id}"><b>${esc(f.dataset.label)}:</b>` +
@@ -501,7 +517,13 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
     }
     const l = state.selected >= 0 ? state.result?.lineups[state.selected] : null;
     if (l) {
-      p.set("l", [l.type, l.strength, ...l.feet.map(v => Math.round(v * 10) / 10), l.pitch.toFixed(2), l.yaw.toFixed(2)].join(":"));
+      // The run direction is part of the physics identity; appended only when
+      // set so links minted before it existed keep their exact old shape.
+      const parts = [l.type, l.strength, ...l.feet.map(v => Math.round(v * 10) / 10), l.pitch.toFixed(2), l.yaw.toFixed(2)];
+      if (l.runDeg) {
+        parts.push(l.runDeg.toFixed(0));
+      }
+      p.set("l", parts.join(":"));
     }
     return `${location.pathname}?${p}`;
   }
@@ -534,19 +556,21 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
     }
     setTarget(t, `target ${t[0].toFixed(0)}, ${t[1].toFixed(0)} (from link)`);
     const parts = params.get("l")?.split(":");
-    if (!parts || parts.length !== 7) {
+    if (!parts || parts.length < 7 || parts.length > 8) {
       return;
     }
     const type = parts[0];
-    const [strength, fx, fy, fz, pitch, yaw] = parts.slice(1).map(Number);
-    if ([strength, fx, fy, fz, pitch, yaw].some(v => !Number.isFinite(v))) {
+    const [strength, fx, fy, fz, pitch, yaw] = parts.slice(1, 7).map(Number);
+    const runDeg = parts.length === 8 ? Number(parts[7]) : 0;
+    if ([strength, fx, fy, fz, pitch, yaw, runDeg].some(v => !Number.isFinite(v))) {
       return;
     }
     await runQuery({ target: state.target, origin: [fx, fy] });
     const match = state.result?.lineups.findIndex(c =>
       c.type === type && Math.abs(c.strength - strength) < 0.01 &&
       Math.hypot(c.feet[0] - fx, c.feet[1] - fy, c.feet[2] - fz) <= 1 &&
-      Math.abs(c.pitch - pitch) < 0.1 && Math.abs(c.yaw - yaw) < 0.1) ?? -1;
+      Math.abs(c.pitch - pitch) < 0.1 && Math.abs(c.yaw - yaw) < 0.1 &&
+      Math.abs((c.runDeg ?? 0) - runDeg) < 1) ?? -1;
     if (match >= 0) {
       select(match);
       return;
@@ -598,10 +622,21 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
     draw();
   });
   heatBtn.addEventListener("click", () => {
-    setHeat(!state.heatOn);
-    statusEl.textContent = state.heatOn
-      ? "heatmap: where a throw reaches, and where nothing does - see legend"
-      : resultStatusText(filtered().length);
+    // Cycle: off -> coverage -> stand spots -> off.
+    if (!state.heatOn) {
+      state.heatSpots = false;
+      setHeat(true);
+    } else if (!state.heatSpots) {
+      state.heatSpots = true;
+      syncControls();
+    } else {
+      state.heatSpots = false;
+      setHeat(false);
+    }
+    statusEl.textContent = !state.heatOn ? resultStatusText(filtered().length)
+      : state.heatSpots
+        ? "stand spots: bright = corner-pinned with a verified lineup, mid = wall-pinned, faint = open ground - see legend"
+        : "heatmap: where a throw reaches, and where nothing does - see legend · click again for stand-spot quality";
     draw();
   });
   for (const el of ["a-tolerance", "a-reach", "a-stability", "a-scan"].map(id => document.getElementById(id))) {
@@ -719,6 +754,13 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
     }
   }
 
+  // The precision the accuracy ring is judged against: the precision filter
+  // when set, otherwise whatever landing tolerance the solve itself used.
+  function slackWithin() {
+    return parseFloat(state.filters.precision.value) ||
+      parseFloat(document.getElementById("a-tolerance").value) || 80;
+  }
+
   async function goToLineup(l) {
     const t3 = await openView3d();
     if (!t3) {
@@ -729,6 +771,25 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
     }
     t3.flyTo({ feet: l.feet, type: l.type, pitchDeg: l.pitch, yawDeg: l.yaw });
     statusEl.textContent = "dropped into this lineup's throw spot - drag to look, WASD to move";
+    // The accuracy ring: how far the feet can drift before this exact aim
+    // stops landing within the precision in play. Fetched lazily and cached
+    // on the lineup; a failure only costs the ring, never the Go to itself.
+    try {
+      const within = slackWithin();
+      if (l._slack?.within !== within) {
+        l._slack = await fetchSlack(state.currentMap, l, state.target, within);
+      }
+      draw();
+      sync3d();
+      const rs = l._slack.dirs.map(d => d[1]);
+      const rmax = Math.max(...rs);
+      statusEl.textContent = rmax < 1
+        ? `stand EXACTLY here - even 1u of drift stops this aim landing within ${within}u`
+        : `the ring shows how far you can stand from this spot and still land within ${within}u ` +
+          `(${Math.min(...rs).toFixed(0)}-${rmax.toFixed(0)}u of slack) - drag to look, WASD to move`;
+    } catch {
+      // Ring unavailable; the camera drop already succeeded.
+    }
   }
 
   initPanel({

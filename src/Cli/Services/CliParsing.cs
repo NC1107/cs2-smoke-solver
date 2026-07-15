@@ -142,7 +142,17 @@ public static class CliParsing
     public static string SetposCommand(Vector3 feet, float pitchDeg, float yawDeg) =>
         $"setpos {feet.X:F0} {feet.Y:F0} {feet.Z + 1:F0}; setang {pitchDeg:F1} {yawDeg:F1} 0";
 
-    public static string Describe(ThrowType type, float strength = 1f)
+    // The movement keys behind a running jump throw's carried velocity
+    // direction. Bands rather than exact float matches so a value that went
+    // through JSON and back still names its key.
+    public static string RunKeys(float runYawOffsetDeg) =>
+        runYawOffsetDeg > 67.5f ? "left (A)"
+        : runYawOffsetDeg > 22.5f ? "forward-left (W+A)"
+        : runYawOffsetDeg < -67.5f ? "right (D)"
+        : runYawOffsetDeg < -22.5f ? "forward-right (W+D)"
+        : "forward (W)";
+
+    public static string Describe(ThrowType type, float strength = 1f, float runYawOffsetDeg = 0f)
     {
         // "jumpthrow bind" is dead advice: Valve disabled multi-input binds on
         // official servers (Aug 2024, cl_allow_multi_input_binds 0). What players
@@ -154,7 +164,7 @@ public static class CliParsing
             ThrowType.Crouch => "crouch (hold ctrl)",
             ThrowType.JumpThrow => "hold click, tap jump, release",
             ThrowType.CrouchJumpThrow => "crouch + hold click, tap jump, release",
-            _ => "run forward (W) + hold click, tap jump, release",
+            _ => $"run {RunKeys(runYawOffsetDeg)} + hold click, tap jump, release",
         };
         var buttons = strength switch
         {
