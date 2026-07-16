@@ -9,6 +9,10 @@ import { createFlyCamera } from "./flycam.js";
 import { loadScript, ensureTexturedScene, currentTexturedScene, disposeSceneContents, disposeTexturedScene } from "./textured-scene.js";
 
 const stage3d = state.stage3d;
+// Warning tint for phantom blockers (grenade-clips, physics-clips, glass) - a
+// magenta that appears nowhere else in the palette, so a smoke-stopping surface
+// the textured world hides cannot be mistaken for a real wall or a marker.
+const PHANTOM_COLOR = 0xff2fd0;
 let three = null;
 let threePromise = null; // memoized in-flight init so re-toggles share one
 
@@ -62,9 +66,14 @@ async function init3d() {
   const buf = await fetchMesh(state.currentMap);
   const dv = new DataView(buf);
   const vCount = dv.getInt32(0, true);
-  const iCount = dv.getInt32(4, true);
-  const verts = new Float32Array(buf, 8, vCount * 3);
-  const idx = new Uint32Array(buf, 8 + vCount * 12, iCount);
+  // Two index groups over one shared vertex buffer: the ordinary walls and the
+  // "phantom" grenade blockers (clips + glass) the solver collides with but the
+  // textured world does not show. See MeshPayloadSolid.
+  const worldICount = dv.getInt32(4, true);
+  const phantomICount = dv.getInt32(8, true);
+  const verts = new Float32Array(buf, 12, vCount * 3);
+  const worldIdx = new Uint32Array(buf, 12 + vCount * 12, worldICount);
+  const phantomIdx = new Uint32Array(buf, 12 + vCount * 12 + worldICount * 4, phantomICount);
 
   const colors = state.colors;
   const [RX0, RY0, RX1, RY1] = state.mapData.region;
@@ -90,10 +99,7 @@ async function init3d() {
   camera.lookAt(cx, cy, 0);
 
 
-  const geo = new THREE.BufferGeometry();
-  geo.setAttribute("position", new THREE.BufferAttribute(verts, 3));
-  geo.setIndex(new THREE.BufferAttribute(idx, 1));
-  geo.computeVertexNormals();
+  const posAttr = new THREE.BufferAttribute(verts, 3);
   // Height-tinted vertex colors so floors and rooftops read at a glance.
   let zLo = Infinity, zHi = -Infinity;
   for (let i = 2; i < verts.length; i += 3) {
@@ -109,10 +115,35 @@ async function init3d() {
     tmp.copy(lo).lerp(hi, 0.15 + 0.55 * t);
     cols[i] = tmp.r; cols[i + 1] = tmp.g; cols[i + 2] = tmp.b;
   }
-  geo.setAttribute("color", new THREE.BufferAttribute(cols, 3));
+  const colAttr = new THREE.BufferAttribute(cols, 3);
+
+  // The real walls: the height-tinted collision surface. This is meshObj - what
+  // the ground-drop and target picking ray hit, so a target never lands on a
+  // phantom clip.
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute("position", posAttr);
+  geo.setAttribute("color", colAttr);
+  geo.setIndex(new THREE.BufferAttribute(worldIdx, 1));
+  geo.computeVertexNormals();
   const mat = new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide });
   const collisionVisual = new THREE.Mesh(geo, mat);
   scene.add(collisionVisual);
+
+  // The phantom blockers: grenade-clips, physics-clips, and glass the solver
+  // treats as solid but the textured world hides. Drawn in a distinct warning
+  // tint over the walls, so an invisible wall that stops a smoke is obvious.
+  if (phantomICount > 0) {
+    const pgeo = new THREE.BufferGeometry();
+    pgeo.setAttribute("position", posAttr);
+    pgeo.setIndex(new THREE.BufferAttribute(phantomIdx, 1));
+    pgeo.computeVertexNormals();
+    const pmat = new THREE.MeshLambertMaterial({
+      color: PHANTOM_COLOR, emissive: PHANTOM_COLOR, emissiveIntensity: 0.35,
+      transparent: true, opacity: 0.55, side: THREE.DoubleSide, depthWrite: false });
+    const phantomVisual = new THREE.Mesh(pgeo, pmat);
+    phantomVisual.renderOrder = 1;
+    scene.add(phantomVisual);
+  }
   scene.add(new THREE.HemisphereLight(0xffffff, 0x33302a, 0.95));
   const sun = new THREE.DirectionalLight(0xffffff, 0.7);
   sun.position.set(0.4, 0.25, 1);

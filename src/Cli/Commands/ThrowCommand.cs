@@ -57,6 +57,20 @@ public static class ThrowCommand
             Elasticity: float.Parse(options.GetValueOrDefault("elasticity", baseConstants.Elasticity.ToString(CultureInfo.InvariantCulture)), CultureInfo.InvariantCulture),
             JumpVelocity: float.Parse(options.GetValueOrDefault("jumpv", baseConstants.JumpVelocity.ToString(CultureInfo.InvariantCulture)), CultureInfo.InvariantCulture));
 
+        // --vel x,y,z replays a recorded launch exactly: the plugin captures the
+        // engine's own release position and velocity, so feeding those straight
+        // into the integrator compares our physics against a real throw without
+        // any DeriveInitial guesswork about pitch/strength/eye height.
+        if (options.TryGetValue("vel", out var velRaw))
+        {
+            var vel = ParseVec(velRaw);
+            var replay = GrenadeTrajectory.SimulateExactRaw(
+                BuildGrenadeCollider(mesh, min, max), eye, vel, constants);
+            Console.WriteLine($"replay from ({eye.X:F0},{eye.Y:F0},{eye.Z:F0}) vel ({vel.X:F0},{vel.Y:F0},{vel.Z:F0})");
+            Console.WriteLine($"rest (exact): ({replay.RestPoint.X:F1},{replay.RestPoint.Y:F1},{replay.RestPoint.Z:F1})  bounces {replay.Bounces}  flight {replay.FlightTime:F2}s  lost {replay.Lost}");
+            return 0;
+        }
+
         var result = GrenadeTrajectory.Simulate(grid, new ThrowSpec(eye, yaw, pitch, type, strength), constants);
         var traceLines = options.ContainsKey("trace") ? new List<string>() : null;
         var exact = GrenadeTrajectory.SimulateExact(BuildGrenadeCollider(mesh, min, max), new ThrowSpec(eye, yaw, pitch, type, strength), constants, traceLines);

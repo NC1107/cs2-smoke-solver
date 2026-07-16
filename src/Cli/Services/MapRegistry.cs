@@ -75,7 +75,11 @@ public static class MapRegistry
             {
                 navAreas = JsonSerializer.Deserialize<List<NavAreaJson>>(File.ReadAllText(navPath));
             }
-            var payload = MeshPayload(mesh, attributeFilter);
+            // The 3D view shows exactly what the grenade sim collides with (see
+            // MeshPayloadSolid), not the --attrs subset the voxel sweep uses -
+            // so movement clips stop reading as walls and the invisible blockers
+            // (grenade-clips, glass) become visible.
+            var payload = MeshPayloadSolid(mesh);
             // Raw vertex/index floats and ints compress well (measured ~55%
             // smaller with plain gzip) but this is application/octet-stream,
             // which neither Cloudflare's edge nor the already-Draco-compressed

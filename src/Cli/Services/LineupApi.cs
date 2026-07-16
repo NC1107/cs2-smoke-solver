@@ -29,29 +29,60 @@ namespace SmokeSolver.Cli;
 
 public static class LineupApi
 {
-    // Binary mesh for the 3D view: [int32 vertexCount][int32 indexCount]
-    // [float32 x,y,z per vertex][uint32 indices], vision-filtered triangles.
-    public static byte[] MeshPayload(CollisionMesh mesh, Func<byte, bool>? attributeFilter)
+    /// <summary>
+    /// The 3D view's "what the solver actually collides grenades with" mesh:
+    /// every triangle the grenade filter treats as solid, split into two index
+    /// groups so the viewer can draw them apart -
+    ///   world:   ordinary walls that also exist in the textured render, and
+    ///   phantom: grenade-clips, physics-clips, and glass - solid to the sim but
+    ///            invisible or special in the real world, the usual suspects
+    ///            behind "why won't this smoke go through / why is this blocked".
+    /// Player/NPC clips and sky are excluded exactly as the sim excludes them,
+    /// so a "wall" that is really just a movement clip disappears here - which is
+    /// how the view stops lying about what blocks a smoke.
+    /// Format: [int32 vertexCount][int32 worldIndexCount][int32 phantomIndexCount]
+    ///         [float32 x,y,z per vertex][uint32 world indices][uint32 phantom indices].
+    /// </summary>
+    public static byte[] MeshPayloadSolid(CollisionMesh mesh)
     {
-        var indices = new List<int>(mesh.Indices.Length);
+        var grenadeSolid = mesh.GrenadeSolidFilter();
+        var phantom = new bool[mesh.AttributeNames.Length];
+        for (var i = 0; i < phantom.Length; i++)
+        {
+            var layers = mesh.AttributeInteractAs[i];
+            phantom[i] = grenadeSolid((byte)i) && (
+                layers.Any(l => l.Equals("csgo_grenadeclip", StringComparison.OrdinalIgnoreCase)) ||
+                layers.Any(l => l.Equals("window", StringComparison.OrdinalIgnoreCase)) ||
+                mesh.AttributeNames[i].Equals("EntityPhysicsClip", StringComparison.Ordinal));
+        }
+        var world = new List<int>();
+        var special = new List<int>();
         for (var t = 0; t < mesh.Indices.Length; t += 3)
         {
-            if (attributeFilter == null || attributeFilter(mesh.TriangleAttributes[t / 3]))
+            var attr = mesh.TriangleAttributes[t / 3];
+            if (!grenadeSolid(attr))
             {
-                indices.Add(mesh.Indices[t]);
-                indices.Add(mesh.Indices[t + 1]);
-                indices.Add(mesh.Indices[t + 2]);
+                continue;
             }
+            var group = phantom[attr] ? special : world;
+            group.Add(mesh.Indices[t]);
+            group.Add(mesh.Indices[t + 1]);
+            group.Add(mesh.Indices[t + 2]);
         }
         using var ms = new MemoryStream();
         using var bw = new BinaryWriter(ms);
         bw.Write(mesh.Vertices.Length / 3);
-        bw.Write(indices.Count);
+        bw.Write(world.Count);
+        bw.Write(special.Count);
         foreach (var v in mesh.Vertices)
         {
             bw.Write(v);
         }
-        foreach (var i in indices)
+        foreach (var i in world)
+        {
+            bw.Write((uint)i);
+        }
+        foreach (var i in special)
         {
             bw.Write((uint)i);
         }
