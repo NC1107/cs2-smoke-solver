@@ -532,6 +532,13 @@
   .intro-choices { display: flex; gap: 8px; flex-wrap: wrap; }
   .intro-choices .btn { --btn-pad: 7px 14px; --btn-font-size: 12.5px; }
   .list-note { color: var(--muted); font-size: 11px; }
+  .list-pager {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 8px; margin-top: 6px;
+  }
+  .list-pager .pager-label { color: var(--muted); font-size: 11px; }
+  .pager-btn { --btn-pad: 4px 12px; }
+  .pager-btn:disabled { opacity: 0.4; cursor: default; }
   .lineup-options { display: grid; gap: 4px; }
   .lineup-option {
     display: flex;

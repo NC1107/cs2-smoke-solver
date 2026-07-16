@@ -8,7 +8,11 @@ import { loadRadar, readColors, recolorRadar, draw, scheduleDraw, resize, resetV
 import { ensure3d, resetEnsure3d, teardown3d, current3d, sync3d, syncProgress3d, set3dCallbacks, applyTheme3d } from "./view3d.js";
 import { resetEnsureTexturedScene } from "./textured-scene.js";
 import { capturePreview } from "./preview.js";
-import { renderLineups, initPanel, revealSelected, resultStatusText } from "./panel.js";
+// Versioned import: panel.js is imported only here, so bumping this query
+// delivers a panel.js change to browsers holding it in Cloudflare's 4h cache
+// without a hard refresh. Safe precisely because there is one importer - its
+// own (unversioned) state.js stays the shared singleton. Bump with main.js?v=.
+import { renderLineups, initPanel, revealSelected, resultStatusText } from "./panel.js?v=3";
 
 (async () => {
   // Map switching means a failed load is no longer necessarily terminal (the

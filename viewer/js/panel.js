@@ -6,7 +6,14 @@
 import { state, filtered, typeLabel, clickShort, clickClass, esc, skyAngle, DEFAULT_EYE_HEIGHT } from "./state.js";
 
 const statusEl = state.statusEl;
-const LIST_CAP = 50;
+const PAGE_SIZE = 50;
+
+// Which page of results the list is showing. Reset when a fresh solve replaces
+// the result set; snapped to the selection's page when the selection changes
+// (so clicking a marker past page 1 actually shows that lineup's card).
+let page = 0;
+let pagedResultRef = null;
+let lastRenderedSelection = -2;
 
 let callbacks = {
   onSetTarget: () => {},
@@ -109,10 +116,28 @@ export function renderLineups() {
     return;
   }
 
+  // A fresh solve starts at page 1; a filter change keeps the page but the
+  // clamp below drops it back into range if the result count shrank.
+  if (state.result !== pagedResultRef) {
+    page = 0;
+    pagedResultRef = state.result;
+  }
+  const pageCount = Math.ceil(shown.length / PAGE_SIZE);
+  const selPos = state.selected >= 0 ? shown.findIndex(l => l._idx === state.selected) : -1;
+  // Follow the selection onto its page only when it actually changed - a manual
+  // page turn leaves a selection on another page put, so browsing still works.
+  if (selPos >= 0 && state.selected !== lastRenderedSelection) {
+    page = Math.floor(selPos / PAGE_SIZE);
+  }
+  lastRenderedSelection = state.selected;
+  page = Math.min(Math.max(page, 0), pageCount - 1);
+  const start = page * PAGE_SIZE;
+  const pageItems = shown.slice(start, start + PAGE_SIZE);
+
   const note = document.createElement("div");
   note.className = "list-note";
-  note.textContent = shown.length > LIST_CAP
-    ? `top ${LIST_CAP} of ${shown.length} results`
+  note.textContent = pageCount > 1
+    ? `${shown.length} results · page ${page + 1} of ${pageCount}`
     : `${shown.length} result${shown.length === 1 ? "" : "s"}`;
   list.appendChild(note);
 
@@ -120,7 +145,7 @@ export function renderLineups() {
   box.className = "lineup-options";
   box.setAttribute("role", "group");
   box.setAttribute("aria-label", `lineup results, ${note.textContent}`);
-  for (const l of shown.slice(0, LIST_CAP)) {
+  for (const l of pageItems) {
     // The selected lineup expands where it sits. Rendering its detail card at
     // the top of the panel instead meant that picking the 40th result put the
     // preview image somewhere far above the scroll position, out of sight.
@@ -128,20 +153,49 @@ export function renderLineups() {
   }
   box.addEventListener("keydown", onListKeydown);
   const home = box.querySelector(".lineup-option") ?? box.firstElementChild;
-  if (home.classList.contains("lineup-option")) {
+  if (home?.classList.contains("lineup-option")) {
     home.tabIndex = 0;
   }
   list.appendChild(box);
+  if (pageCount > 1) {
+    list.appendChild(buildPager(pageCount));
+  }
 
   // Selecting re-renders the list; keep keyboard focus on the same lineup.
   if (focusIdx !== undefined) {
     const again = box.querySelector(`.lineup-option[data-idx="${focusIdx}"]`);
-    if (again) {
+    if (again && home) {
       home.tabIndex = -1;
       again.tabIndex = 0;
       again.focus();
     }
   }
+}
+
+// Prev/next pager shown only when the results span more than one page. Turning
+// a page re-renders the list at the new offset; it deliberately does not touch
+// the selection, so a lineup selected on another page stays selected.
+function buildPager(pageCount) {
+  const nav = document.createElement("div");
+  nav.className = "list-pager";
+  nav.append(
+    pagerButton("‹ prev", page > 0, () => { page -= 1; renderLineups(); }),
+    Object.assign(document.createElement("span"), {
+      className: "pager-label", textContent: `page ${page + 1} of ${pageCount}` }),
+    pagerButton("next ›", page < pageCount - 1, () => { page += 1; renderLineups(); }));
+  return nav;
+}
+
+function pagerButton(label, enabled, onClick) {
+  const b = document.createElement("button");
+  b.type = "button";
+  b.className = "btn pager-btn";
+  b.textContent = label;
+  b.disabled = !enabled;
+  if (enabled) {
+    b.addEventListener("click", onClick);
+  }
+  return b;
 }
 
 function optionButton(l) {

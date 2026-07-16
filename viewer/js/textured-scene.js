@@ -164,7 +164,13 @@ export function ensureTexturedScene(url = `data/${state.currentMap}_textured.glb
         transparent,
         alphaTest: o.material.alphaTest,
         opacity,
-        side: o.material.side,
+        // Map walls are compiled one-sided (backfaces culled for in-engine
+        // perf), so from the far side they vanish - a wall you can see through
+        // from outside a room but not from inside. This is a fly-around
+        // inspector, not the engine, so render opaque surfaces from both sides.
+        // Translucent water/glass keep their original side: double-siding a
+        // depthWrite:false surface double-blends and sorts wrong.
+        side: transparent ? o.material.side : THREE.DoubleSide,
       });
     });
     for (const o of toRemove) {
