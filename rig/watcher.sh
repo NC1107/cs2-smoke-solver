@@ -108,6 +108,18 @@ service_lineup() {
   if [ "$relay" = "relay-plineup.py" ]; then
     result=$("${CLI[@]}" pointlineup --geo "$GEO" --from " $from" --target " $target" \
              --mode "$mode" 2>> "$LOG" | tail -1)
+    # A miss from the exact spot is a dead end. Fall back to the nearest spot
+    # that DOES land and deliver it through the !lineup formatter, so the player
+    # gets a stand-beam and a one-word !goto to snap there instead of raw coords.
+    case "$result" in
+      *'"found":true'*) : ;;
+      *)
+        logw "plineup miss - falling back to nearest working lineup"
+        result=$("${CLI[@]}" bestlineup --geo "$GEO" --nav "$NAV" \
+                 --target " $target" --near " $from" 2>> "$LOG" | tail -1)
+        relay=relay-lineup.py
+        ;;
+    esac
   else
     result=$("${CLI[@]}" bestlineup --geo "$GEO" --nav "$NAV" \
              --target " $target" --near " $from" 2>> "$LOG" | tail -1)
