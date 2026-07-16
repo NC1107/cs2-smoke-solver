@@ -414,6 +414,11 @@ public static class ValidateCommand
             lineups = plans.Count,
             submitted,
             matched = matches.Count,
+            // The base-throw count is the denominator for every within-N figure
+            // below: those counters exclude perturbation probes, so dividing by
+            // `matched` (which includes them) understates the rate ~5x once a
+            // batch uses --perturb. Serialize it so the dashboard divides right.
+            graded = errors.Count,
             notDetonated,
             culled,
             passRadius,

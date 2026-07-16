@@ -155,8 +155,20 @@ function groupLabelFor(run) {
   return run.batch || fmtDateOnly(run.timestamp);
 }
 
+// The within-N counters (within1/2/8, withinPass) count base throws only, so
+// the denominator is the base-throw count `graded`, never `matched` - matched
+// includes the perturbation probes and would understate every rate ~5x. Old
+// reports predate `graded` but also predate perturbation, so matched == graded
+// there and the fallback is exact.
+function gradedCount(summary) {
+  return summary?.graded ?? summary?.matched ?? 0;
+}
+function withinFraction(summary, key) {
+  const n = gradedCount(summary);
+  return n && Number.isFinite(summary?.[key]) ? summary[key] / n : null;
+}
 function within8Fraction(summary) {
-  return summary?.matched ? summary.within8 / summary.matched : 0;
+  return withinFraction(summary, "within8") ?? 0;
 }
 
 // ---- SVG chart helpers ----------------------------------------------------
@@ -364,8 +376,8 @@ function chartMedianByMap(runs, xFor, xTicks) {
 
 function chartWithinShare(runs, xFor, xTicks) {
   const series = [
-    { label: "within 2u", color: "var(--accent)", of: s => s?.matched && Number.isFinite(s.within2) ? (s.within2 / s.matched) * 100 : null },
-    { label: "within 8u", color: "var(--heat-ok)", of: s => s?.matched && Number.isFinite(s.within8) ? (s.within8 / s.matched) * 100 : null },
+    { label: "within 2u", color: "var(--accent)", of: s => { const f = withinFraction(s, "within2"); return f === null ? null : f * 100; } },
+    { label: "within 8u", color: "var(--heat-ok)", of: s => { const f = withinFraction(s, "within8"); return f === null ? null : f * 100; } },
   ];
   const yFor = makeLinY(OT, 0, 100);
   let body = "";
@@ -577,19 +589,17 @@ async function selectRun(file) {
 function renderReport(file, report) {
   document.getElementById("report-title").textContent =
     `${report.map ?? file}${report.name ? " - " + report.name : ""} - ${fmtLocal(report.timestamp)}`;
-  renderSummaryCards(report.summary ?? {}, report.results);
+  renderSummaryCards(report.summary ?? {});
   renderRunCharts(report);
   renderSegments(report.results);
   renderDivergence(report.results);
   renderWorst(report);
 }
 
-function renderSummaryCards(s, results) {
+function renderSummaryCards(s) {
   const within8Pct = within8Fraction(s);
-  const withinPassPct = s.matched ? s.withinPass / s.matched : 0;
-  // Recomputed from the rows rather than read from the summary: the field
-  // was backfilled recently, and the rows are the source of truth anyway.
-  const within2Pct = results.length ? results.filter(r => r.ErrPredicted <= 2).length / results.length : 0;
+  const withinPassPct = withinFraction(s, "withinPass") ?? 0;
+  const within2Pct = withinFraction(s, "within2") ?? 0;
   const cards = [
     ["median error", `${fmtErr(s.errMedian)}u`, ""],
     ["p90 error", `${fmtErr(s.errP90)}u`, ""],
@@ -605,22 +615,33 @@ function renderSummaryCards(s, results) {
     `<div class="metric-value${cls ? " " + cls : ""}">${esc(value)}</div></div>`).join("");
 }
 
-function renderSegments(results) {
-  const rows = [];
-  for (const [label, pred] of SEGMENT_DEFS) {
-    const errs = results.filter(pred).map(r => r.ErrPredicted).sort((a, b) => a - b);
-    if (!errs.length) {
-      continue;
-    }
-    const within8 = errs.filter(e => e <= 8).length / errs.length;
-    rows.push(`<tr><td>${esc(label)}</td><td>${errs.length}</td>` +
-      `<td>${esc(fmtErr(percentile(errs, 50)))}u</td>` +
-      `<td>${esc(fmtErr(percentile(errs, 90)))}u</td>` +
-      `<td>${esc(fmtErr(errs[errs.length - 1]))}u</td>` +
-      `<td>${esc(fmtPct(within8))}</td></tr>`);
+function segmentRow(label, subset) {
+  const errs = subset.map(r => r.ErrPredicted).filter(Number.isFinite).sort((a, b) => a - b);
+  if (!errs.length) {
+    return "";
   }
-  document.getElementById("segments-body").innerHTML = rows.length
-    ? rows.join("")
+  const within8 = errs.filter(e => e <= 8).length / errs.length;
+  return `<tr><td>${esc(label)}</td><td>${errs.length}</td>` +
+    `<td>${esc(fmtErr(percentile(errs, 50)))}u</td>` +
+    `<td>${esc(fmtErr(percentile(errs, 90)))}u</td>` +
+    `<td>${esc(fmtErr(errs[errs.length - 1]))}u</td>` +
+    `<td>${esc(fmtPct(within8))}</td></tr>`;
+}
+
+function renderSegments(results) {
+  // Base throws only, matching the markdown report: a perturbation probe shares
+  // its base lineup's type/bounces/stability, so folding probes into these
+  // breakdowns would weight every base lineup by its four probes and drag each
+  // segment toward the probe distribution. The probes get their own row.
+  const base = results.filter(r => !(r.PerturbU > 0));
+  const probes = results.filter(r => r.PerturbU > 0);
+  const rows = SEGMENT_DEFS.map(([label, pred]) => segmentRow(label, base.filter(pred)));
+  if (probes.length) {
+    rows.push(segmentRow(`one-tick probes ±${fmtErr(probes[0].PerturbU)}u`, probes));
+  }
+  const filled = rows.filter(Boolean);
+  document.getElementById("segments-body").innerHTML = filled.length
+    ? filled.join("")
     : `<tr><td colspan="6" class="muted">no results in this report</td></tr>`;
 }
 
