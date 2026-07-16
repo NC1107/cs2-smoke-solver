@@ -72,6 +72,10 @@
   </main>
 </div>
 
-<script type="module" src="js/validation.js"></script>
+<!-- The query string forks the CDN cache key: during a deploy restart the
+     reverse proxy briefly answers 404, and Cloudflare caches that 404 for
+     hours under the bare URL. A versioned reference can never collide with
+     an entry poisoned that way. -->
+<script type="module" src="js/validation.js?v=2"></script>
 </body>
 </html>
