@@ -65,15 +65,24 @@ async function init3d() {
   await loadScript("viewer/lib/three.min.js");
   const buf = await fetchMesh(state.currentMap);
   const dv = new DataView(buf);
-  const vCount = dv.getInt32(0, true);
+  // Magic + format version lead the payload (see MeshPayloadSolid). If this
+  // module is a stale cached copy parsing a newer mesh, the header won't match:
+  // fail with a visible "reload" hint instead of drawing a scrambled mesh.
+  const MESH_MAGIC = 0x44334d53; // "SM3D"
+  const MESH_FORMAT = 1;
+  if (dv.getUint32(0, true) !== MESH_MAGIC || dv.getUint32(4, true) !== MESH_FORMAT) {
+    showStale3dNotice();
+    throw new Error("3D mesh format mismatch - stale view3d.js against a newer payload");
+  }
+  const vCount = dv.getInt32(8, true);
   // Two index groups over one shared vertex buffer: the ordinary walls and the
   // "phantom" grenade blockers (clips + glass) the solver collides with but the
   // textured world does not show. See MeshPayloadSolid.
-  const worldICount = dv.getInt32(4, true);
-  const phantomICount = dv.getInt32(8, true);
-  const verts = new Float32Array(buf, 12, vCount * 3);
-  const worldIdx = new Uint32Array(buf, 12 + vCount * 12, worldICount);
-  const phantomIdx = new Uint32Array(buf, 12 + vCount * 12 + worldICount * 4, phantomICount);
+  const worldICount = dv.getInt32(12, true);
+  const phantomICount = dv.getInt32(16, true);
+  const verts = new Float32Array(buf, 20, vCount * 3);
+  const worldIdx = new Uint32Array(buf, 20 + vCount * 12, worldICount);
+  const phantomIdx = new Uint32Array(buf, 20 + vCount * 12 + worldICount * 4, phantomICount);
 
   const colors = state.colors;
   const [RX0, RY0, RX1, RY1] = state.mapData.region;
@@ -375,6 +384,16 @@ async function init3d() {
 export function verticalFovFromDesired(fovDesiredDeg) {
   const hHalf = fovDesiredDeg * Math.PI / 360;
   return 2 * Math.atan(Math.tan(hHalf) / (4 / 3)) * 180 / Math.PI;
+}
+
+// Shown only when this module is a stale cached copy that cannot parse the
+// current mesh payload. A scrambled 3D view is otherwise silent and looks like
+// a solver bug, so name the real cause and the one-key fix.
+function showStale3dNotice() {
+  const el = document.createElement("div");
+  el.className = "stage-notice";
+  el.innerHTML = "3D view is out of date.<br>Press <b>Ctrl+Shift+R</b> to reload.";
+  stage3d.appendChild(el);
 }
 
 let crosshairEl = null;

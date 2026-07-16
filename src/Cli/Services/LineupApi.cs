@@ -40,9 +40,18 @@ public static class LineupApi
     /// Player/NPC clips and sky are excluded exactly as the sim excludes them,
     /// so a "wall" that is really just a movement clip disappears here - which is
     /// how the view stops lying about what blocks a smoke.
-    /// Format: [int32 vertexCount][int32 worldIndexCount][int32 phantomIndexCount]
+    /// Format: [uint32 magic 'SM3D'][uint32 formatVersion]
+    ///         [int32 vertexCount][int32 worldIndexCount][int32 phantomIndexCount]
     ///         [float32 x,y,z per vertex][uint32 world indices][uint32 phantom indices].
+    /// The magic + version lead so a browser running a stale view3d.js against a
+    /// newer payload fails loudly (the old parser reads the magic as a vertex
+    /// count and throws) instead of silently rendering a scrambled mesh.
     /// </summary>
+    // "SM3D" little-endian; bump MeshFormatVersion whenever the byte layout below
+    // changes so the parser can reject a shape it doesn't understand.
+    public const uint MeshMagic = 0x44334D53;
+    public const uint MeshFormatVersion = 1;
+
     public static byte[] MeshPayloadSolid(CollisionMesh mesh)
     {
         var grenadeSolid = mesh.GrenadeSolidFilter();
@@ -71,6 +80,8 @@ public static class LineupApi
         }
         using var ms = new MemoryStream();
         using var bw = new BinaryWriter(ms);
+        bw.Write(MeshMagic);
+        bw.Write(MeshFormatVersion);
         bw.Write(mesh.Vertices.Length / 3);
         bw.Write(world.Count);
         bw.Write(special.Count);

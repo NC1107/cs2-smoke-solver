@@ -256,6 +256,22 @@
   canvas.picking { cursor: crosshair; }
   #stage3d canvas { cursor: grab; touch-action: none; }
   #stage3d canvas.looking, #stage3d canvas.panning { cursor: grabbing; }
+  /* Shown when a stale cached view3d.js refuses to draw a mismatched mesh. */
+  .stage-notice {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    line-height: 1.6;
+    padding: 24px;
+    background: rgba(0, 0, 0, 0.55);
+    color: #fff;
+    font-size: 15px;
+    z-index: 50;
+    pointer-events: none;
+  }
   /* The legend explains markers, so it stays out of the way until there are
      markers to explain, and then folds away again behind its own summary. */
   .key {
