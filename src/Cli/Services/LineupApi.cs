@@ -281,7 +281,7 @@ public static class LineupApi
             : "all";
         // Bump when solver or sim behavior changes: cached answers from older code
         // must never be replayed as current results.
-        const int QueryVersion = 12;
+        const int QueryVersion = 13;
         // meshVersion is the content-hashed mesh identity (not just the game
         // build), so re-extracting a map - e.g. dropping the Retake tape - forces
         // a re-solve instead of replaying results computed against the old mesh.
@@ -358,7 +358,10 @@ public static class LineupApi
         // everything but a usable aim reference, in 32u bands so a pinned spot
         // still wins among near-equals. A map-wide sweep has no "here", so
         // pinned spots lead outright.
-        var bySky = solve.Lineups.OrderBy(l => aimRefs[l].IsSkyShot ? 1 : 0);
+        // Chaotic lineups (rest flips when the feet move one tick) sink below
+        // everything reproducible - the in-game misses users hit were exactly
+        // these, scoring 100% aim stability while being position-fragile.
+        var bySky = solve.Lineups.OrderBy(l => aimRefs[l].IsSkyShot ? 1 : 0).ThenBy(l => l.RestScatter > 16f ? 1 : 0);
         var ranked = (originClick is { } click
                 ? bySky.ThenBy(l => (int)(Vector2.Distance(new Vector2(l.Feet.X, l.Feet.Y), click) / 32f)).ThenByDescending(l => pins[l])
                 : bySky.ThenByDescending(l => pins[l]))
@@ -393,6 +396,10 @@ public static class LineupApi
                 l.Bounces,
                 flightTime = l.FlightTime,
                 stability = l.Stability,
+                // Rest displacement under a one-tick (0.25u) foot shift; big
+                // values mean the lineup is physically fragile however
+                // precisely it is aimed.
+                scatter = l.RestScatter,
                 pin = pins[l] switch { 2 => "corner", 1 => "wall", _ => (string?)null },
                 aimRef = new
                 {

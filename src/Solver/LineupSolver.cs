@@ -17,7 +17,13 @@ public sealed record Lineup(
     float Strength = 1f,
     // Movement-key direction of a running jump throw relative to the facing
     // (see ThrowSpec.RunYawOffsetDeg); 0 for every grounded/W throw.
-    float RunYawOffsetDeg = 0f);
+    float RunYawOffsetDeg = 0f,
+    // Position-chaos score: how far the predicted rest moves when the feet
+    // shift by a single movement-key tick (0.25u). Sub-unit for well-behaved
+    // throws; hundreds of units when a bounce boundary sits inside the
+    // shift, which real-world validation showed the aim-only Stability
+    // score completely misses.
+    float RestScatter = 0f);
 
 /// <summary>
 /// Stage 2 of the inverse solver: sweep standable origins and view angles, keep
@@ -341,6 +347,25 @@ public static partial class LineupSolver
             // draws the real path, and quietly wrong before that, because the
             // bounce and flight-time filters were sifting on the approximation.
             var settled = Settled(best) && InZone(grid, zoneCrossings, best.RestPoint);
+            // Position-chaos probe: the aim-window stability above misses
+            // throws that are stable in ANGLE but explode when the FEET move
+            // one movement tick (a bounce boundary inside 0.25u). In-game
+            // validation showed exactly those throws landing hundreds of
+            // units off while scoring 100% stability.
+            var scatter = 0f;
+            if (settled)
+            {
+                var finalYaw = lineup.YawDeg + aimYaw * StepDeg;
+                var finalPitch = lineup.PitchDeg + aimPitch * StepDeg;
+                foreach (var (dx, dy) in ((float, float)[])[(0.25f, 0f), (-0.25f, 0f), (0f, 0.25f), (0f, -0.25f)])
+                {
+                    var probe = GrenadeTrajectory.SimulateExact(collider, new ThrowSpec(
+                        eye + new Vector3(dx, dy, 0f), finalYaw, finalPitch, lineup.Type, lineup.Strength, lineup.RunYawOffsetDeg), constants);
+                    scatter = MathF.Max(scatter, Settled(probe)
+                        ? Vector3.Distance(probe.RestPoint, best.RestPoint)
+                        : 512f);
+                }
+            }
             verified.Add(lineup with
             {
                 YawDeg = Normalize(lineup.YawDeg + aimYaw * StepDeg),
@@ -349,6 +374,7 @@ public static partial class LineupSolver
                 Bounces = settled ? best.Bounces : lineup.Bounces,
                 FlightTime = settled ? best.FlightTime : lineup.FlightTime,
                 Stability = stability,
+                RestScatter = scatter,
             });
             // Fires from parallel workers; subscribers must be thread-safe.
             onCandidate?.Invoke(lineup.Feet, true);

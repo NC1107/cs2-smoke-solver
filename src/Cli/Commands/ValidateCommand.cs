@@ -106,6 +106,39 @@ public static class ValidateCommand
             return new ValidatePlan(i, l, pos, vel, predicted.RestPoint, predicted.Bounces);
         }).ToList();
 
+        var perturb = Math.Clamp(float.Parse(options.GetValueOrDefault("perturb", "0"), CultureInfo.InvariantCulture), 0f, 8f);
+        if (perturb > 0)
+        {
+            // One-tick-movement probes: the same aim thrown again from feet
+            // shifted by the quantum a single movement-key tick produces
+            // (~0.25u). Grenade flight is continuous in the origin, so these
+            // land within the shift of the base throw - except where a bounce
+            // boundary sits closer than the shift, which is exactly what this
+            // measures in the real game rather than in the sim's opinion.
+            var extra = new List<ValidatePlan>();
+            foreach (var basePlan in plans)
+            {
+                foreach (var (dx, dy) in new[] { (perturb, 0f), (-perturb, 0f), (0f, perturb), (0f, -perturb) })
+                {
+                    var feet = basePlan.Lineup.Feet + new Vector3(dx, dy, 0f);
+                    // Stand the offset on the real floor so a probe next to a
+                    // step edge does not release from inside geometry.
+                    var probeTop = feet + new Vector3(0, 0, 36f);
+                    if (solve.PlayerCollider.FirstHit(probeTop, probeTop - new Vector3(0, 0, 72f)) is { } floor && floor.Normal.Z >= 0.7f)
+                    {
+                        feet.Z = probeTop.Z - 72f * floor.T;
+                    }
+                    var lineup = basePlan.Lineup with { Feet = feet };
+                    var eye = feet + new Vector3(0, 0, GrenadeTrajectory.EyeHeight(lineup.Type));
+                    var (pos, vel) = GrenadeTrajectory.DeriveInitial(new ThrowSpec(eye, lineup.YawDeg, lineup.PitchDeg, lineup.Type, lineup.Strength, lineup.RunYawOffsetDeg), constants);
+                    var predicted = GrenadeTrajectory.SimulateExactRaw(collider, pos, vel, constants);
+                    extra.Add(new ValidatePlan(plans.Count + extra.Count, lineup, pos, vel, predicted.RestPoint, predicted.Bounces, perturb));
+                }
+            }
+            plans.AddRange(extra);
+            Console.WriteLine($"added {extra.Count} one-tick perturbation probes (+-{perturb:F2}u per axis)");
+        }
+
         if (dryRun)
         {
             foreach (var p in plans.Take(20))
@@ -219,11 +252,13 @@ public static class ValidateCommand
 
         var results = new List<ValidateRow>();
         var errors = new List<float>();
+        var perturbErrors = new List<float>();
         var withinPass = 0;
         var within1 = 0;
         var within2 = 0;
         var within8 = 0;
         var notDetonated = 0;
+        var culled = 0;
         foreach (var p in plans)
         {
             if (!matches.TryGetValue(p.Index, out var c))
@@ -236,26 +271,52 @@ public static class ValidateCommand
             if (!detonated)
             {
                 notDetonated++;
+                // An undetonated capture whose last sample is still moving fast
+                // is a projectile the engine CULLED mid-flight (dense batches
+                // keep dozens airborne) - its "rest" is wherever deletion caught
+                // it, not physics. Grading those poisoned a whole campaign's
+                // metrics with phantom 1000u+ errors; they are counted and
+                // skipped, never scored.
+                var lastSample = c.GetProperty("samples").EnumerateArray().LastOrDefault();
+                if (lastSample.ValueKind == JsonValueKind.Array)
+                {
+                    var ls = lastSample.EnumerateArray().Select(e => e.GetSingle()).ToArray();
+                    if (ls.Length >= 7 && new Vector3(ls[4], ls[5], ls[6]).Length() > 50f)
+                    {
+                        culled++;
+                        continue;
+                    }
+                }
             }
             var err = Vector3.Distance(real, p.PredictedRest);
-            errors.Add(err);
-            if (err <= passRadius)
+            // Headline metrics stay base-throws-only so run summaries remain
+            // comparable whether or not a batch used perturbation probes; the
+            // probes get their own block below.
+            if (p.PerturbU > 0f)
             {
-                withinPass++;
+                perturbErrors.Add(err);
             }
-            // The bars the dashboard trends against: 1-2u is "the sim IS the
-            // game" territory, 8u is a landing the player cannot distinguish.
-            if (err <= 1f)
+            else
             {
-                within1++;
-            }
-            if (err <= 2f)
-            {
-                within2++;
-            }
-            if (err <= 8f)
-            {
-                within8++;
+                errors.Add(err);
+                if (err <= passRadius)
+                {
+                    withinPass++;
+                }
+                // The bars the dashboard trends against: 1-2u is "the sim IS
+                // the game" territory, 8u is indistinguishable to a player.
+                if (err <= 1f)
+                {
+                    within1++;
+                }
+                if (err <= 2f)
+                {
+                    within2++;
+                }
+                if (err <= 8f)
+                {
+                    within8++;
+                }
             }
 
             // Auto-diagnosis: replay the sim per tick against the captured real
@@ -316,6 +377,8 @@ public static class ValidateCommand
                 p.Lineup.YawDeg,
                 p.Lineup.PitchDeg,
                 p.Lineup.RunYawOffsetDeg,
+                p.PerturbU,
+                p.Lineup.RestScatter,
                 p.PredictedBounces,
                 realBounces,
                 new[] { p.Pos.X, p.Pos.Y, p.Pos.Z },
@@ -335,12 +398,24 @@ public static class ValidateCommand
             return 1;
         }
         errors.Sort();
+        perturbErrors.Sort();
+        var perturbed = perturbErrors.Count == 0 ? null : new
+        {
+            radius = perturb,
+            count = perturbErrors.Count,
+            errMedian = perturbErrors[perturbErrors.Count / 2],
+            errP90 = perturbErrors[(int)(perturbErrors.Count * 0.9)],
+            errMax = perturbErrors[^1],
+            within1 = perturbErrors.Count(e => e <= 1f),
+            within2 = perturbErrors.Count(e => e <= 2f),
+        };
         var summary = new
         {
             lineups = plans.Count,
             submitted,
             matched = matches.Count,
             notDetonated,
+            culled,
             passRadius,
             withinPass,
             within1,
@@ -350,9 +425,14 @@ public static class ValidateCommand
             errMean = errors.Average(),
             errP90 = errors[(int)(errors.Count * 0.9)],
             errMax = errors[^1],
+            perturbed,
         };
         Console.WriteLine($"predicted-vs-real rest error: median {summary.errMedian:F1}u  mean {summary.errMean:F1}u  p90 {summary.errP90:F1}u  max {summary.errMax:F1}u");
-        Console.WriteLine($"within {passRadius:F0}u: {withinPass}/{errors.Count} ({100.0 * withinPass / errors.Count:F0}%)   within 8u: {within8}/{errors.Count} ({100.0 * within8 / errors.Count:F0}%)   failed to detonate: {notDetonated}");
+        Console.WriteLine($"within {passRadius:F0}u: {withinPass}/{errors.Count} ({100.0 * withinPass / errors.Count:F0}%)   within 8u: {within8}/{errors.Count} ({100.0 * within8 / errors.Count:F0}%)   failed to detonate: {notDetonated}   culled by engine (excluded): {culled}");
+        if (perturbed != null)
+        {
+            Console.WriteLine($"one-tick probes (+-{perturbed.radius:F2}u): {perturbed.count} thrown, median {perturbed.errMedian:F1}u, p90 {perturbed.errP90:F1}u, max {perturbed.errMax:F1}u, within 1u {100.0 * perturbed.within1 / perturbed.count:F0}%, within 2u {100.0 * perturbed.within2 / perturbed.count:F0}%");
+        }
         Console.WriteLine("worst 10 (pre-triaged gap candidates):");
         foreach (var row in results.OrderByDescending(r => r.ErrPredicted).Take(10))
         {
@@ -399,15 +479,20 @@ public static class ValidateCommand
             var es = rows.Select(r => r.ErrPredicted).OrderBy(e => e).ToList();
             md.AppendLine($"| {name} | {es.Count} | {es[es.Count / 2]:F1}u | {es[(int)(es.Count * 0.9)]:F1}u | {es[^1]:F1}u | {100.0 * es.Count(e => e <= passRadius) / es.Count:F0}% | {100.0 * es.Count(e => e <= 8f) / es.Count:F0}% |");
         }
+        // Comparability: the named segments describe base throws only, so a
+        // batch that used perturbation probes reads the same as one that
+        // did not; the probes get their own summary row.
+        var baseResults = results.Where(r => r.PerturbU == 0f).ToList();
         foreach (var t in new[] { "Stand", "Crouch", "JumpThrow", "CrouchJumpThrow", "RunJumpThrow" })
         {
-            Segment(t, results.Where(r => r.Type == t).ToList());
+            Segment(t, baseResults.Where(r => r.Type == t).ToList());
         }
-        Segment("bounces 0-4", results.Where(r => r.PredictedBounces <= 4).ToList());
-        Segment("bounces 5-30", results.Where(r => r.PredictedBounces is > 4 and <= 30).ToList());
-        Segment("bounces >30", results.Where(r => r.PredictedBounces > 30).ToList());
-        Segment("stability 100%", results.Where(r => r.Stability >= 0.99f).ToList());
-        Segment("stability <100%", results.Where(r => r.Stability < 0.99f).ToList());
+        Segment("bounces 0-4", baseResults.Where(r => r.PredictedBounces <= 4).ToList());
+        Segment("bounces 5-30", baseResults.Where(r => r.PredictedBounces is > 4 and <= 30).ToList());
+        Segment("bounces >30", baseResults.Where(r => r.PredictedBounces > 30).ToList());
+        Segment("stability 100%", baseResults.Where(r => r.Stability >= 0.99f).ToList());
+        Segment("stability <100%", baseResults.Where(r => r.Stability < 0.99f).ToList());
+        Segment($"one-tick probes ±{perturb:F2}u", results.Where(r => r.PerturbU > 0f).ToList());
         md.AppendLine();
         md.AppendLine("## Worst 10 (pre-triaged)");
         md.AppendLine();

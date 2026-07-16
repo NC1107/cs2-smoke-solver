@@ -19,6 +19,7 @@ public static class BatchValidateCommand
     {
         var maps = Require(options, "maps").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
         var targetsPerMap = int.Parse(options.GetValueOrDefault("targets-per-map", "3"), CultureInfo.InvariantCulture);
+        var fuzz = int.Parse(options.GetValueOrDefault("fuzz", "0"), CultureInfo.InvariantCulture);
         var batch = options.GetValueOrDefault("batch", $"batch-{DateTime.Now:yyyyMMdd-HHmm}");
         var dataDir = options.GetValueOrDefault("data", "data");
         var calibDir = options.GetValueOrDefault(
@@ -36,7 +37,19 @@ public static class BatchValidateCommand
                 failures++;
                 continue;
             }
-            var targets = PickTargets(map, navPath, calibDir, targetsPerMap);
+            var targets = options.ContainsKey("no-markers")
+                ? []
+                : PickTargets(map, navPath, calibDir, targetsPerMap);
+            if (fuzz > 0)
+            {
+                // An explicit seed makes repeated same-night iterations explore
+                // different random targets; without one the seed is the date,
+                // so a re-run reproduces the same batch.
+                var seed = options.TryGetValue("seed", out var seedRaw)
+                    ? StringComparer.Ordinal.GetHashCode($"{map}|{seedRaw}")
+                    : StringComparer.Ordinal.GetHashCode($"{map}|{DateTime.Now:yyyyMMdd}");
+                targets.AddRange(FuzzTargets(navPath, fuzz, seed));
+            }
             if (targets.Count == 0)
             {
                 Console.Error.WriteLine($"[{map}] skipped: no usable targets");
@@ -155,6 +168,72 @@ public static class BatchValidateCommand
             targets.Add(($"auto-{targets.Count + 1}", best));
         }
         return targets;
+    }
+
+    /// <summary>
+    /// Random walkable targets: a nav area picked with probability
+    /// proportional to its footprint, then a uniform point inside its
+    /// bounding box re-tested against the polygon. Curated markers test the
+    /// spots we know about; fuzzing is how the pipeline finds the failure
+    /// geometry nobody thought to mark.
+    /// </summary>
+    static List<(string Name, float[] Pos)> FuzzTargets(string navPath, int count, int seed)
+    {
+        var areas = (JsonSerializer.Deserialize<List<NavAreaJson>>(File.ReadAllText(navPath)) ?? [])
+            .Select(a => a.Corners)
+            .Where(c => c.Length >= 3 && Area2D(c) > 1000f)
+            .ToList();
+        var targets = new List<(string, float[])>();
+        if (areas.Count == 0)
+        {
+            return targets;
+        }
+        var rng = new Random(seed);
+        var weights = areas.Select(Area2D).ToArray();
+        var total = weights.Sum();
+        while (targets.Count < count)
+        {
+            var pick = (float)(rng.NextDouble() * total);
+            var idx = 0;
+            for (; idx < weights.Length - 1 && pick > weights[idx]; idx++)
+            {
+                pick -= weights[idx];
+            }
+            var corners = areas[idx];
+            var minX = corners.Min(c => c[0]);
+            var maxX = corners.Max(c => c[0]);
+            var minY = corners.Min(c => c[1]);
+            var maxY = corners.Max(c => c[1]);
+            // Rejection-sample the polygon; a handful of tries is plenty for
+            // nav shapes, and a pathological sliver just falls through to the
+            // next weighted pick.
+            for (var attempt = 0; attempt < 8; attempt++)
+            {
+                var x = minX + (float)rng.NextDouble() * (maxX - minX);
+                var y = minY + (float)rng.NextDouble() * (maxY - minY);
+                if (PointInPolygon(corners, x, y))
+                {
+                    targets.Add(($"fuzz-{targets.Count + 1}", new[] { x, y, corners.Average(c => c[2]) }));
+                    break;
+                }
+            }
+        }
+        return targets;
+    }
+
+    static bool PointInPolygon(float[][] corners, float x, float y)
+    {
+        var inside = false;
+        for (int i = 0, j = corners.Length - 1; i < corners.Length; j = i++)
+        {
+            var (xi, yi) = (corners[i][0], corners[i][1]);
+            var (xj, yj) = (corners[j][0], corners[j][1]);
+            if (yi > y != yj > y && x < (xj - xi) * (y - yi) / (yj - yi) + xi)
+            {
+                inside = !inside;
+            }
+        }
+        return inside;
     }
 
     static float Area2D(float[][] corners)

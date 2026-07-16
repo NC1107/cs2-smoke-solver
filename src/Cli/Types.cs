@@ -76,7 +76,9 @@ public sealed class CaptureTailer(string path)
     }
 }
 
-public sealed record ValidatePlan(int Index, Lineup Lineup, Vector3 Pos, Vector3 Vel, Vector3 PredictedRest, int PredictedBounces);
+// PerturbU marks the one-tick-movement probes: the same aim re-thrown from
+// feet shifted by that many units (0 = the lineup's exact spot).
+public sealed record ValidatePlan(int Index, Lineup Lineup, Vector3 Pos, Vector3 Vel, Vector3 PredictedRest, int PredictedBounces, float PerturbU = 0f);
 
 public sealed record ValidateRow(
     int Index,
@@ -90,6 +92,13 @@ public sealed record ValidateRow(
     // .RunYawOffsetDeg); part of the throw's identity, so the dashboard can
     // mint a permalink that reopens this exact lineup in the viewer.
     float RunDeg,
+    // Nonzero on one-tick-movement probes: how far (u) the feet were shifted
+    // from the lineup's exact spot before this throw.
+    float PerturbU,
+    // The solver's predicted position-chaos score for this lineup (rest
+    // displacement under a 0.25u foot shift), recorded so real-throw error
+    // can be correlated against it.
+    float Scatter,
     int PredictedBounces,
     int RealBounces,
     float[] Pos,

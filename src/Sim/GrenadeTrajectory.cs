@@ -282,6 +282,14 @@ public static class GrenadeTrajectory
     /// on velocity, trapezoid z position update, whole-vector 0.45 restitution
     /// on reflection, gated angle damping, and an instant stop rule.
     /// </summary>
+    // NOTE for future sim archaeology: smokes do NOT fizzle at sky-layer
+    // surfaces. A sky-termination rule was tried here (2026-07-16) off
+    // capture evidence of flights ending mid-air, and re-scoring 4,075
+    // recorded throws showed 965+ regressions - accurate flights routinely
+    // cross sky ceilings and land exactly as simulated. The mid-air-ending
+    // captures were undetonated projectiles culled by the engine during
+    // dense validation batches, a harness artifact ValidateCommand now
+    // detects and excludes instead.
     public static TrajectoryResult SimulateExactRaw(TriangleCollider collider, Vector3 position, Vector3 velocity, ThrowConstants? constants = null, List<string>? trace = null, List<(Vector3 Position, Vector3 Velocity)>? tickTrace = null)
     {
         var k = constants ?? ThrowConstants.Default;
