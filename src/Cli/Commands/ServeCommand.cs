@@ -146,6 +146,35 @@ public static class ServeCommand
             return Results.Bytes(payload, "application/json");
         });
 
+        // One fully-analyzed lineup from its physical spec alone - the shape a
+        // map sweep returns per lineup, plus its flight path inline. A shared
+        // dashboard link carries exactly this spec, so the viewer can render the
+        // single throw the user clicked without solving the rest of the map.
+        app.MapGet("/api/lineup-one", (HttpContext context, string? map,
+            float x, float y, float z, string? type, float pitch, float yaw, float strength,
+            float tx, float ty, float tz, float runDeg = 0f) =>
+        {
+            if (map == null || !maps.TryGetValue(map, out var entry))
+            {
+                return ApiError(StatusCodes.Status404NotFound, "unknown map (see /api/maps)");
+            }
+            if (!Enum.TryParse<ThrowType>(type, ignoreCase: true, out var throwType))
+            {
+                return ApiError(StatusCodes.Status400BadRequest, $"unknown throw type '{type}'");
+            }
+            float[] numbers = [x, y, z, pitch, yaw, strength, tx, ty, tz, runDeg];
+            if (numbers.Any(v => !float.IsFinite(v)))
+            {
+                return ApiError(StatusCodes.Status400BadRequest, "non-finite lineup parameter");
+            }
+            var payload = LineupOnePayload(
+                entry.Collider.Value, entry.PlayerCollider.Value, new Vector3(x, y, z), new Vector3(tx, ty, tz),
+                throwType, strength, pitch, yaw, runDeg, entry.Constants);
+            context.Response.Headers.ETag = entry.BuildETag;
+            context.Response.Headers.CacheControl = "public, max-age=604800";
+            return Results.Bytes(payload, "application/json");
+        });
+
         // The positional slack ring for one lineup: how far the feet can drift
         // per direction before the same aim misses the `within` radius. Fetched
         // on "Go to", so it shares the trajectory endpoint's shape and caching.

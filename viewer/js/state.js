@@ -66,6 +66,13 @@ export function filtered() {
   if (!state.result) {
     return [];
   }
+  // A shared single lineup is an explicit pick, not a search result: the
+  // filters describe what to surface in a sweep, so applying them here could
+  // hide the very throw the link was meant to open (a sky shot under the
+  // default sky filter, say).
+  if (state.result.single) {
+    return state.result.lineups.filter(l => !l._removed);
+  }
   const filters = state.filters;
   const t = state.result.target;
   return state.result.lineups.filter(l =>

@@ -84,6 +84,106 @@ public static class LineupApi
     }
 
     /// <summary>
+    /// Everything the viewer shows for one selected lineup, computed from the
+    /// throw's physical spec instead of a map-wide solve: the flight path, its
+    /// rest and bounces, the aim reference, the corner/wall pin, the one-tick
+    /// position-chaos scatter, and the aim-window robustness. A shared link
+    /// carries the spec exactly, so opening it renders that single throw at once
+    /// - no sweeping the rest of the map for spots the user did not ask about.
+    /// The lineup object mirrors a sweep result's shape so the viewer draws it
+    /// identically; the flight points ride alongside so no second fetch is needed.
+    /// </summary>
+    public static byte[] LineupOnePayload(
+        TriangleCollider collider, TriangleCollider playerCollider, Vector3 feet, Vector3 target,
+        ThrowType type, float strength, float pitchDeg, float yawDeg, float runDeg, ThrowConstants constants)
+    {
+        var eye = feet + new Vector3(0, 0, GrenadeTrajectory.EyeHeight(type));
+        var spec = new ThrowSpec(eye, yawDeg, pitchDeg, type, strength, runDeg);
+        var ticks = new List<(Vector3 Position, Vector3 Velocity)>();
+        var (position, velocity) = GrenadeTrajectory.DeriveInitial(spec, constants);
+        var result = GrenadeTrajectory.SimulateExactRaw(collider, position, velocity, constants, tickTrace: ticks);
+
+        static bool Settled(TrajectoryResult r) =>
+            !r.Lost && r.FlightTime < GrenadeTrajectory.MaxFlightSeconds - 0.01f;
+
+        // One-tick (0.25u) foot-shift scatter: the same four-probe measure the
+        // solver's verify stage records, so a link to a fragile lineup reads as
+        // fragile here too.
+        var scatter = 0f;
+        if (Settled(result))
+        {
+            foreach (var (dx, dy) in ((float, float)[])[(0.25f, 0f), (-0.25f, 0f), (0f, 0.25f), (0f, -0.25f)])
+            {
+                var probe = GrenadeTrajectory.SimulateExact(collider, new ThrowSpec(
+                    eye + new Vector3(dx, dy, 0f), yawDeg, pitchDeg, type, strength, runDeg), constants);
+                scatter = MathF.Max(scatter, Settled(probe) ? Vector3.Distance(probe.RestPoint, result.RestPoint) : 512f);
+            }
+        }
+
+        // Aim robustness: the share of a +-1.2 deg aim window whose exact rest
+        // still lands within a smoke radius of the target - the same "how
+        // forgiving is the aim" idea as the solver's stability, judged against
+        // the shared target rather than the solve's internal zone.
+        const float StepDeg = 0.6f;
+        const int AimReach = 2;
+        const float CoverRadius = 72f;
+        var hits = 0;
+        var total = 0;
+        for (var dYaw = -AimReach; dYaw <= AimReach; dYaw++)
+        {
+            for (var dPitch = -AimReach; dPitch <= AimReach; dPitch++)
+            {
+                total++;
+                var probe = GrenadeTrajectory.SimulateExact(collider, new ThrowSpec(
+                    eye, yawDeg + dYaw * StepDeg, pitchDeg + dPitch * StepDeg, type, strength, runDeg), constants);
+                if (Settled(probe) &&
+                    new Vector2(probe.RestPoint.X - target.X, probe.RestPoint.Y - target.Y).Length() <= CoverRadius)
+                {
+                    hits++;
+                }
+            }
+        }
+        var stability = total == 0 ? 0f : (float)hits / total;
+
+        var aim = AimReference.Analyze(collider, feet, type, pitchDeg, yawDeg);
+        var pin = LineupSolver.PositionPin(playerCollider, feet);
+
+        var json = new StringBuilder("{\"points\":[");
+        for (var i = 0; i < ticks.Count; i++)
+        {
+            var p = ticks[i].Position;
+            json.Append(i == 0 ? "" : ",").Append(CultureInfo.InvariantCulture, $"[{p.X:F1},{p.Y:F1},{p.Z:F1}]");
+        }
+        json.Append("],\"lineup\":").Append(JsonSerializer.Serialize(new
+        {
+            feet = new[] { feet.X, feet.Y, feet.Z },
+            yaw = yawDeg,
+            pitch = pitchDeg,
+            type = type.ToString(),
+            how = Describe(type, strength, runDeg),
+            strength,
+            click = ClickName(strength),
+            runDeg,
+            rest = new[] { result.RestPoint.X, result.RestPoint.Y, result.RestPoint.Z },
+            result.Bounces,
+            flightTime = result.FlightTime,
+            stability,
+            scatter,
+            pin = pin switch { 2 => "corner", 1 => "wall", _ => (string?)null },
+            aimRef = new
+            {
+                tier = aim.Tier,
+                sky = aim.SkyFraction,
+                edgeDeg = float.IsFinite(aim.NearestSilhouetteDeg) ? (float?)aim.NearestSilhouetteDeg : null,
+                reticleDeg = float.IsFinite(aim.NearestReticleDeg) ? (float?)aim.NearestReticleDeg : null,
+            },
+            console = SetposCommand(feet, pitchDeg, yawDeg),
+            lost = result.Lost,
+        })).Append('}');
+        return Encoding.UTF8.GetBytes(json.ToString());
+    }
+
+    /// <summary>
     /// How far the player can drift from a lineup's exact stand spot, per world
     /// direction, before the same aim angles stop landing within `within` units
     /// of the target. This is the honest answer to "how precisely must I stand

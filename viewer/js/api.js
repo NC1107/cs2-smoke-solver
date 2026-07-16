@@ -96,6 +96,23 @@ export async function fetchTrajectory(map, l) {
   return res.json();
 }
 
+// One fully-analyzed lineup from its physical spec alone: the same shape a map
+// sweep returns per lineup, plus its flight path inline. Opening a shared link
+// renders just that throw with this, instead of sweeping the whole map.
+export async function fetchLineupOne(map, target, l) {
+  const q = new URLSearchParams({
+    map, x: l.feet[0], y: l.feet[1], z: l.feet[2],
+    type: l.type, pitch: l.pitch, yaw: l.yaw, strength: l.strength,
+    runDeg: l.runDeg ?? 0,
+    tx: target[0], ty: target[1], tz: target[2] ?? 0,
+  });
+  const res = await fetch(`/api/lineup-one?${q}`);
+  if (!res.ok) {
+    throw new Error(`lineup-one HTTP ${res.status}`);
+  }
+  return res.json();
+}
+
 // The positional slack ring: per world direction, how far the feet can drift
 // from the lineup's exact spot before the same aim misses `within` units of
 // the target. Cached on the lineup by the caller (keyed by `within`).

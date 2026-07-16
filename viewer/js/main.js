@@ -3,7 +3,7 @@
 // here (setTarget, select, runQuery) via the init*/set*Callbacks hooks.
 
 import { state, filtered, esc } from "./state.js";
-import { loadMapList, loadMapData, runQuery as postLineupQuery, fetchTrajectory, fetchSlack } from "./api.js";
+import { loadMapList, loadMapData, runQuery as postLineupQuery, fetchTrajectory, fetchLineupOne, fetchSlack } from "./api.js";
 import { loadRadar, readColors, recolorRadar, draw, scheduleDraw, resize, resetView, initMap2d } from "./map2d.js";
 import { ensure3d, resetEnsure3d, teardown3d, current3d, sync3d, syncProgress3d, set3dCallbacks, applyTheme3d } from "./view3d.js";
 import { resetEnsureTexturedScene } from "./textured-scene.js";
@@ -545,10 +545,10 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
     statusEl.textContent = "link copied - it opens this exact lineup";
   }
 
-  // Landing on a shared link: set the target, probe the lineup's own origin
-  // (cheap, and usually a query-cache hit for a link someone else already
-  // solved), and select the result matching the linked physics. If map data
-  // changed since the link was minted, fall back to the full sweep.
+  // Landing on a shared link: set the target, then render the ONE throw the
+  // link fully describes - no sweeping the map for other spots the sharer did
+  // not point at. A target-only link (no `l`) just lands on the target with
+  // "Search map" queued up.
   async function applyPermalink(params) {
     const t = params.get("t")?.split(",").map(Number);
     if (!t || t.length < 2 || t.some(v => !Number.isFinite(v))) {
@@ -565,18 +565,33 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
     if ([strength, fx, fy, fz, pitch, yaw, runDeg].some(v => !Number.isFinite(v))) {
       return;
     }
-    await runQuery({ target: state.target, origin: [fx, fy] });
-    const match = state.result?.lineups.findIndex(c =>
-      c.type === type && Math.abs(c.strength - strength) < 0.01 &&
-      Math.hypot(c.feet[0] - fx, c.feet[1] - fy, c.feet[2] - fz) <= 1 &&
-      Math.abs(c.pitch - pitch) < 0.1 && Math.abs(c.yaw - yaw) < 0.1 &&
-      Math.abs((c.runDeg ?? 0) - runDeg) < 1) ?? -1;
-    if (match >= 0) {
-      select(match);
-      return;
+    await showSingleLineup({ type, strength, feet: [fx, fy, fz], pitch, yaw, runDeg });
+  }
+
+  // Render exactly one lineup from its physical spec: the server analyzes just
+  // that throw (path, rest, aim reference, pin, scatter) and the viewer shows
+  // it selected, bypassing the filters since it is an explicit pick. "Search
+  // map" is still one click away for anyone who wants the alternatives.
+  async function showSingleLineup(spec) {
+    state.busy = true;
+    statusEl.textContent = "loading the shared lineup…";
+    syncControls();
+    try {
+      const { points, lineup } = await fetchLineupOne(state.currentMap, state.target, spec);
+      lineup._idx = 0;
+      lineup._path = points; // pre-set so select() draws without a second fetch
+      state.result = { target: [...state.target], origins: 0, coverage: null, lineups: [lineup], single: true };
+      state.selected = -1;
+      select(0);
+      statusEl.textContent = `showing the shared lineup · "Search map" finds other spots for this target`;
+    } catch (err) {
+      statusEl.textContent = err.name === "AbortError"
+        ? "cancelled"
+        : `could not load the shared lineup (${err.message}) - "Search map" to solve the target`;
+    } finally {
+      state.busy = false;
+      syncControls();
     }
-    statusEl.textContent = "the linked lineup no longer exists on current map data - sweeping the whole map for its target";
-    await runQuery({ target: state.target });
   }
 
   function setTarget(t, note) {
