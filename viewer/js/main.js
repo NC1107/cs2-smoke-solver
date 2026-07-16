@@ -689,16 +689,36 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
     return p;
   }
 
+  // Rendering a preview pulls in the 26-92MB textured GLB. A phone can't hold
+  // that: the tab OOMs and the browser reloads it - and because a shared-lineup
+  // link auto-selects its one lineup on load, that reload re-selects and reloads
+  // again, an endless refresh loop. So on touch / low-memory devices the preview
+  // is an explicit tap, never automatic, and the heavy load can only follow a
+  // deliberate action (never a page load).
+  const heavyPreviewRisk = window.matchMedia?.("(pointer: coarse)").matches ||
+    (navigator.deviceMemory && navigator.deviceMemory < 4);
+
+  function previewTapButton(l, thumbEl, label) {
+    thumbEl.classList.remove("loading");
+    thumbEl.innerHTML = `<button type="button" class="preview-load">${label}</button>`;
+    thumbEl.querySelector("button").onclick = () => {
+      l._previewRequested = true;
+      loadPreviewThumb(l, thumbEl);
+    };
+  }
+
   // Renders entirely client-side (capturePreview reuses the shared
-  // camera/canvas already in this page), so no server round-trip - just a
-  // one-time texture load (size varies by map, 26-92MB) the first time any
-  // preview is requested.
+  // camera/canvas already in this page), so no server round-trip.
   // Cached on the lineup itself so reselecting it (or the same result set
   // surviving a re-render) never re-renders a frame that already exists.
   async function loadPreviewThumb(l, thumbEl) {
     if (l._previewUrl) {
       thumbEl.innerHTML = `<img src="${l._previewUrl}" alt="first-person preview of this lineup">`;
       thumbEl.onclick = () => enlargePreview(l);
+      return;
+    }
+    if (heavyPreviewRisk && !l._previewRequested) {
+      previewTapButton(l, thumbEl, "Tap to load preview");
       return;
     }
     thumbEl.textContent = "rendering preview…";
@@ -711,8 +731,13 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
       thumbEl.onclick = () => enlargePreview(l);
     } catch (err) {
       resetEnsureTexturedScene();
-      thumbEl.classList.remove("loading");
-      thumbEl.textContent = `preview failed: ${err.message}`;
+      l._previewRequested = false;
+      if (heavyPreviewRisk) {
+        previewTapButton(l, thumbEl, "Preview failed - tap to retry");
+      } else {
+        thumbEl.classList.remove("loading");
+        thumbEl.textContent = `preview failed: ${err.message}`;
+      }
     }
   }
 
