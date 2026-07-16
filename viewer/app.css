@@ -555,3 +555,127 @@
       border-bottom: none;
     }
   }
+
+  /* Accuracy dashboard (validation.html). The toolbar link is the one anchor
+     in the app styled as a button, so it needs its own underline override -
+     plain buttons never carry one, but a's user-agent default does. */
+  .nav-link { text-decoration: none; }
+  .accuracy-explainer { margin: 0; padding: 8px 12px 0; color: var(--muted); font-size: 12px; }
+  .accuracy-layout {
+    display: grid;
+    grid-template-columns: 260px 1fr;
+    gap: 12px;
+    padding: 12px;
+    align-items: start;
+  }
+  .accuracy-sidebar {
+    border: var(--border);
+    border-radius: 8px;
+    background: var(--panel);
+    padding: 8px;
+  }
+  .accuracy-picker > summary {
+    cursor: pointer;
+    font-weight: 650;
+    font-size: 12.5px;
+    padding: 2px;
+    user-select: none;
+  }
+  .accuracy-picker[open] > summary { margin-bottom: 6px; border-bottom: var(--border); padding-bottom: 6px; }
+  .run-list { display: grid; gap: 6px; max-height: 70vh; overflow-y: auto; }
+  .run-group-label {
+    color: var(--muted);
+    font-size: 10.5px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    margin: 6px 2px 0;
+  }
+  .run-group-label:first-child { margin-top: 0; }
+  .run-entry {
+    display: block;
+    width: 100%;
+    text-align: left;
+    font: inherit;
+    color: var(--ink);
+    background: var(--surface);
+    border: var(--border);
+    border-radius: 5px;
+    padding: 6px 8px;
+    cursor: pointer;
+  }
+  .run-entry:hover { border-color: var(--muted); }
+  .run-entry.selected { border-color: var(--accent); }
+  .run-entry-top { font-size: 12.5px; font-weight: 600; }
+  .run-entry-top .run-name { font-weight: 400; color: var(--muted); }
+  .run-entry-meta { color: var(--muted); font-size: 10.5px; margin-top: 1px; }
+  .run-entry-stats {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    color: var(--muted);
+    font-size: 10.5px;
+    margin-top: 3px;
+    font-variant-numeric: tabular-nums;
+  }
+  .accuracy-main { min-width: 0; display: flex; flex-direction: column; gap: 16px; padding: 0 12px 20px; }
+  .accuracy-main h2 { font-size: 14px; margin: 0; }
+  .accuracy-main h2:empty { display: none; }
+  .accuracy-main h3 { font-size: 12.5px; margin: 0 0 8px; }
+  /* Used both in the sidebar (run count, empty-state copy) and the main
+     column (segment/table empty states, trend note), so it is not scoped
+     to either. */
+  .muted { color: var(--muted); font-weight: 400; }
+  .report-error { color: var(--heat-none); font-size: 12px; margin: 0; }
+  .report-error[hidden] { display: none; }
+  .metric-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+    gap: 8px;
+  }
+  .metric-card {
+    border: var(--border);
+    border-radius: 6px;
+    background: var(--panel);
+    padding: 8px 10px;
+  }
+  .metric-label { color: var(--muted); font-size: 10.5px; }
+  .metric-value { font-size: 17px; font-weight: 650; font-variant-numeric: tabular-nums; margin-top: 2px; }
+  .metric-value.good { color: var(--heat-ok); }
+  .metric-value.bad { color: var(--heat-none); }
+  /* Every table on this page can outgrow a phone's width (worst offenders has
+     nine columns); the wrapper scrolls instead of the page, per the same
+     rule the .cmd blocks already follow. */
+  .table-wrap { overflow-x: auto; border: var(--border); border-radius: 6px; }
+  .acc-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 11.5px;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+  .acc-table th, .acc-table td { padding: 5px 8px; text-align: left; border-bottom: var(--border); }
+  .acc-table thead th { color: var(--muted); font-weight: 600; background: var(--panel); }
+  .acc-table tbody tr:last-child td { border-bottom: none; }
+  .acc-click-left { color: var(--click-left); font-weight: 600; }
+  .acc-click-mid { color: var(--click-mid); font-weight: 600; }
+  .acc-click-right { color: var(--click-right); font-weight: 600; }
+  .chip-row { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    border: var(--border);
+    border-radius: 999px;
+    padding: 3px 9px;
+    font-size: 11px;
+    background: var(--panel);
+  }
+  .trend-svg { width: 100%; height: auto; display: block; }
+  .trend-legend { display: flex; gap: 14px; color: var(--muted); font-size: 11px; margin-top: 4px; }
+  .trend-legend i { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 4px; vertical-align: -1px; }
+  @media (max-width: 760px) {
+    .accuracy-layout { grid-template-columns: 1fr; padding: 8px; }
+    .accuracy-main { padding: 0 8px 20px; }
+    .run-list { max-height: 45vh; }
+  }

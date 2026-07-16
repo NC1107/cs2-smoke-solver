@@ -97,7 +97,11 @@ public static class ValidateCommand
         var plans = lineups.Select((l, i) =>
         {
             var eye = l.Feet + new Vector3(0, 0, GrenadeTrajectory.EyeHeight(l.Type));
-            var (pos, vel) = GrenadeTrajectory.DeriveInitial(new ThrowSpec(eye, l.YawDeg, l.PitchDeg, l.Type, l.Strength), constants);
+            // RunYawOffsetDeg must ride along: a lateral strafe-jump lineup
+            // thrown with the W-direction velocity is a different throw, and
+            // grading the real one against that prediction reports a phantom
+            // launch error on every directional run-jump.
+            var (pos, vel) = GrenadeTrajectory.DeriveInitial(new ThrowSpec(eye, l.YawDeg, l.PitchDeg, l.Type, l.Strength, l.RunYawOffsetDeg), constants);
             var predicted = GrenadeTrajectory.SimulateExactRaw(collider, pos, vel, constants);
             return new ValidatePlan(i, l, pos, vel, predicted.RestPoint, predicted.Bounces);
         }).ToList();
@@ -299,6 +303,7 @@ public static class ValidateCommand
                 new[] { p.Lineup.Feet.X, p.Lineup.Feet.Y, p.Lineup.Feet.Z },
                 p.Lineup.YawDeg,
                 p.Lineup.PitchDeg,
+                p.Lineup.RunYawOffsetDeg,
                 p.PredictedBounces,
                 realBounces,
                 new[] { p.Pos.X, p.Pos.Y, p.Pos.Z },
@@ -348,12 +353,17 @@ public static class ValidateCommand
             map = mesh.MapName,
             build = mesh.GameBuildId,
             timestamp = DateTime.Now.ToString("o"),
+            // Human labels for the dashboard: which spot this was ("A site",
+            // a marker name) and which batch run produced it.
+            name = options.GetValueOrDefault("name", ""),
+            batch = options.GetValueOrDefault("batch", ""),
             target = new[] { solve.Target.X, solve.Target.Y, solve.Target.Z },
             tolerance,
             summary,
             results,
         }, new JsonSerializerOptions { WriteIndented = true }));
         Console.WriteLine($"wrote {reportPath}");
+        RebuildValidationIndex();
 
         var md = new StringBuilder();
         md.AppendLine($"# Validation run: {mesh.MapName} @ ({solve.Target.X:F0},{solve.Target.Y:F0},{solve.Target.Z:F0})");
@@ -401,5 +411,58 @@ public static class ValidateCommand
         File.WriteAllText(mdPath, md.ToString());
         Console.WriteLine($"wrote {mdPath}");
         return 0;
+    }
+
+    /// <summary>
+    /// Regenerates data/validation/index.json from every report on disk. The
+    /// dashboard reads only this file to enumerate runs, so the index is a pure
+    /// derivation - rebuilt whole each time rather than appended to, which also
+    /// heals it after reports are hand-deleted or synced from another machine.
+    /// </summary>
+    public static void RebuildValidationIndex(string dir = "data/validation")
+    {
+        if (!Directory.Exists(dir))
+        {
+            return;
+        }
+        var runs = new List<object>();
+        foreach (var path in Directory.EnumerateFiles(dir, "*.json").OrderBy(p => p, StringComparer.Ordinal))
+        {
+            var file = Path.GetFileName(path);
+            if (file == "index.json")
+            {
+                continue;
+            }
+            try
+            {
+                var doc = JsonSerializer.Deserialize<JsonElement>(File.ReadAllText(path));
+                // Older reports predate the name/batch labels; they index fine
+                // with empty strings.
+                runs.Add(new
+                {
+                    file,
+                    map = doc.GetProperty("map").GetString(),
+                    name = doc.TryGetProperty("name", out var nameEl) ? nameEl.GetString() : "",
+                    batch = doc.TryGetProperty("batch", out var batchEl) ? batchEl.GetString() : "",
+                    timestamp = doc.GetProperty("timestamp").GetString(),
+                    target = doc.GetProperty("target").EnumerateArray().Select(e => e.GetSingle()).ToArray(),
+                    summary = doc.GetProperty("summary"),
+                });
+            }
+            catch (Exception e) when (e is JsonException or KeyNotFoundException)
+            {
+                Console.Error.WriteLine($"index: skipping unreadable report {file}: {e.Message}");
+            }
+        }
+        var indexPath = Path.Combine(dir, "index.json");
+        // Temp+rename so a dashboard fetch can never observe a half-written index.
+        var temp = indexPath + ".tmp";
+        File.WriteAllText(temp, JsonSerializer.Serialize(new
+        {
+            generated = DateTime.Now.ToString("o"),
+            runs,
+        }, new JsonSerializerOptions { WriteIndented = true }));
+        File.Move(temp, indexPath, overwrite: true);
+        Console.WriteLine($"index: {runs.Count} run(s) -> {indexPath}");
     }
 }

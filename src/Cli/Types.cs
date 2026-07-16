@@ -86,6 +86,10 @@ public sealed record ValidateRow(
     float[] Feet,
     float Yaw,
     float Pitch,
+    // Movement-key direction of a running jump throw (ThrowSpec
+    // .RunYawOffsetDeg); part of the throw's identity, so the dashboard can
+    // mint a permalink that reopens this exact lineup in the viewer.
+    float RunDeg,
     int PredictedBounces,
     int RealBounces,
     float[] Pos,

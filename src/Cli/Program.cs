@@ -22,6 +22,7 @@ var commands = new Dictionary<string, Func<Dictionary<string, string>, int>>
     ["throw"] = ThrowCommand.Run,
     ["calibrate"] = CalibrateCommand.Run,
     ["validate"] = ValidateCommand.Run,
+    ["batchvalidate"] = BatchValidateCommand.Run,
     ["exportgltf"] = ExportGltfCommand.Run,
     ["bestlineup"] = BestLineupCommand.Run,
     ["pointlineup"] = PointLineupCommand.Run,
@@ -43,6 +44,7 @@ if (args.Length == 0 || !commands.TryGetValue(args[0], out var command))
     Console.Error.WriteLine("  throw      --geo <file.s2geo> --pos x,y,z --ang pitch,yaw [--type ...] [--strength ...]");
     Console.Error.WriteLine("  calibrate  --geo <file.s2geo> --throws data/throws.json [--out data/throw-constants.json]");
     Console.Error.WriteLine("  validate   --geo ... --nav ... --target x,y[,z] | --markers <file> [--pass 1] [--limit N]");
+    Console.Error.WriteLine("  batchvalidate --maps a,b,c [--targets-per-map 3] [--limit 50] [--batch label] (unattended accuracy sweep via the rig server)");
     Console.Error.WriteLine("  bestlineup --geo ... --nav ... --target x,y[,z] --near x,y,z (nearest practical lineup)");
     Console.Error.WriteLine("  pointlineup --geo ... --from x,y,z --target x,y,z [--mode quick|deep] (fixed-spot solve)");
     Console.Error.WriteLine("  exportgltf --vpk <map.vpk> [--out out.glb] (textured render mesh export)");

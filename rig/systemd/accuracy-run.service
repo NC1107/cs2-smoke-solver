@@ -1,0 +1,11 @@
+[Unit]
+Description=Nightly simulation-accuracy sweep (batchvalidate over all maps, push to live site)
+After=network.target
+
+[Service]
+Type=oneshot
+EnvironmentFile=/home/npc/Documents/projects/cs2-smoke-solver/rig/rig.env
+WorkingDirectory=/home/npc/Documents/projects/cs2-smoke-solver
+ExecStart=/home/npc/Documents/projects/cs2-smoke-solver/rig/accuracy-run.sh --push --targets-per-map 3 --limit 60
+# A full sweep is hours of solver + server time; never let two overlap.
+TimeoutStartSec=6h

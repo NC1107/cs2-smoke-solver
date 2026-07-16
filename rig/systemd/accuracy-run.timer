@@ -1,0 +1,10 @@
+[Unit]
+Description=Run the accuracy sweep nightly
+
+[Timer]
+OnCalendar=*-*-* 03:30
+# Machine asleep/off at 03:30 still gets its run on next boot.
+Persistent=true
+
+[Install]
+WantedBy=timers.target

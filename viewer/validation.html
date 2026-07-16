@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Smoke Solver &middot; Accuracy</title>
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+
+<div class="toolbar">
+  <span class="brand">Smoke Solver &middot; Accuracy</span>
+  <a class="btn" href="/">&larr; map</a>
+</div>
+
+<p class="accuracy-explainer">These are automated in-game validation runs: every lineup the solver produced was actually thrown on the real CS2 server, and its landing spot compared against the prediction.</p>
+
+<div class="accuracy-layout">
+  <aside class="accuracy-sidebar">
+    <details class="accuracy-picker" open>
+      <summary>Runs <span id="run-count" class="muted"></span></summary>
+      <div id="run-list" class="run-list"></div>
+    </details>
+  </aside>
+
+  <main class="accuracy-main" id="accuracy-main">
+    <p id="report-error" class="report-error" hidden></p>
+    <h2 id="report-title"></h2>
+
+    <section class="acc-section" id="section-cards">
+      <div class="metric-grid" id="summary-cards"></div>
+    </section>
+
+    <section class="acc-section">
+      <h3>Segments</h3>
+      <div class="table-wrap">
+        <table class="acc-table">
+          <thead><tr><th>segment</th><th>n</th><th>median</th><th>p90</th><th>max</th><th>&le;8u</th></tr></thead>
+          <tbody id="segments-body"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="acc-section">
+      <h3>Divergence breakdown <span class="muted">(misses over 8u)</span></h3>
+      <div class="chip-row" id="divergence-chips"></div>
+    </section>
+
+    <section class="acc-section">
+      <h3>Worst offenders <span class="muted">(top 25 by predicted-vs-real error)</span></h3>
+      <div class="table-wrap">
+        <table class="acc-table">
+          <thead><tr>
+            <th>err</th><th>divergence</th><th>type</th><th>click</th>
+            <th>sim/real bounces</th><th>stability</th>
+            <th>predicted rest</th><th>real rest</th><th></th>
+          </tr></thead>
+          <tbody id="worst-body"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="acc-section">
+      <h3>Trend <span class="muted">across all runs</span></h3>
+      <div id="trend-wrap"></div>
+    </section>
+  </main>
+</div>
+
+<script type="module" src="js/validation.js"></script>
+</body>
+</html>
