@@ -671,9 +671,23 @@
     font-size: 11px;
     background: var(--panel);
   }
-  .trend-svg { width: 100%; height: auto; display: block; }
-  .trend-legend { display: flex; gap: 14px; color: var(--muted); font-size: 11px; margin-top: 4px; }
-  .trend-legend i { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 4px; vertical-align: -1px; }
+  .chart-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 10px; }
+  #overtime-charts { display: grid; gap: 10px; }
+  .chart-block {
+    border: var(--border);
+    border-radius: 6px;
+    background: var(--panel);
+    padding: 8px 10px;
+    min-width: 0;
+  }
+  .chart-title { font-size: 11.5px; font-weight: 600; margin-bottom: 4px; }
+  .acc-chart { width: 100%; height: auto; display: block; }
+  /* One rule instead of a fill/font-size attribute on every <text>: the
+     charts are built as strings, and repeating presentation attributes there
+     is where they would drift. */
+  .acc-chart text { fill: var(--muted); font-size: 9.5px; }
+  .chart-legend { display: flex; flex-wrap: wrap; gap: 4px 14px; color: var(--muted); font-size: 11px; margin-top: 4px; }
+  .chart-legend i { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 4px; vertical-align: -1px; }
   @media (max-width: 760px) {
     .accuracy-layout { grid-template-columns: 1fr; padding: 8px; }
     .accuracy-main { padding: 0 8px 20px; }

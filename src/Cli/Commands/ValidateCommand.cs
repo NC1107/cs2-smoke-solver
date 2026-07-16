@@ -220,6 +220,8 @@ public static class ValidateCommand
         var results = new List<ValidateRow>();
         var errors = new List<float>();
         var withinPass = 0;
+        var within1 = 0;
+        var within2 = 0;
         var within8 = 0;
         var notDetonated = 0;
         foreach (var p in plans)
@@ -240,6 +242,16 @@ public static class ValidateCommand
             if (err <= passRadius)
             {
                 withinPass++;
+            }
+            // The bars the dashboard trends against: 1-2u is "the sim IS the
+            // game" territory, 8u is a landing the player cannot distinguish.
+            if (err <= 1f)
+            {
+                within1++;
+            }
+            if (err <= 2f)
+            {
+                within2++;
             }
             if (err <= 8f)
             {
@@ -331,6 +343,8 @@ public static class ValidateCommand
             notDetonated,
             passRadius,
             withinPass,
+            within1,
+            within2,
             within8,
             errMedian = errors[errors.Count / 2],
             errMean = errors.Average(),
