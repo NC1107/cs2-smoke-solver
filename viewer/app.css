@@ -302,6 +302,12 @@
      labeled rows; as one nine-item strip they read as noise. */
   .key-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
   .key-row > .key-label { color: var(--ink); font-weight: 600; min-width: 58px; }
+  /* Section divider inside a chip that carries more than one kind of entry
+     (the 3D chip holds both navigation controls and a color legend). */
+  .key-subhead { color: var(--muted); font-weight: 700; text-transform: uppercase;
+    letter-spacing: 0.05em; font-size: 9px; opacity: 0.65; margin-top: 4px; }
+  .key-body > .key-subhead:first-child { margin-top: 0; }
+  .key .swatch.phantom { background: #ff2fd0; }
   #key-heat { display: none; }
   .key.heat #key-markers { display: none; }
   .key.heat #key-heat { display: grid; gap: 5px; }

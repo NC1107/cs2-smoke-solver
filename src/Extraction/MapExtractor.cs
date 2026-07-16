@@ -131,6 +131,17 @@ public static class MapExtractor
         targetName.Contains("retake", StringComparison.OrdinalIgnoreCase) ||
         model.Contains("/retake_", StringComparison.OrdinalIgnoreCase);
 
+    // Wingman (2v2) reuses the Defusal map with parts walled off - on de_overpass
+    // the whole B route is sealed by a set of [PR#]brush.blocker func_brush and
+    // func_clip_vphysics entities, all flagged startdisabled=1 and never re-enabled
+    // by any Defusal entity I/O (verified: zero connections target them). A
+    // start-disabled brush is not solid at round start, which is the state this
+    // mesh models (the same reason doors read as open and glass as broken), so
+    // baking it in invents an invisible wall a smoke bounces off in Defusal.
+    static bool StartsDisabled(EntityLump.Entity entity) =>
+        entity.TryGetValue("startdisabled", out var v) &&
+        v?.ToString() is "1" or "true" or "True";
+
     static void AppendSolidEntityModels(
         Package package,
         List<float> vertices,
@@ -155,6 +166,10 @@ public static class MapExtractor
                     continue;
                 }
                 if (IsRetakeOnly(entity.GetStringProperty("targetname") ?? string.Empty, model))
+                {
+                    continue;
+                }
+                if (StartsDisabled(entity))
                 {
                     continue;
                 }
