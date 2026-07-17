@@ -43,8 +43,9 @@ function lineupSummaryHtml(l) {
     : l.pin === "wall" ? `<span class="ref pin" title="stand spot presses against a wall - walk into it to remove position error">wall</span>`
     : "";
   const fav = l._favorite ? `<span class="ref fav" title="favorited">★</span>` : "";
+  const spawn = l._spawn ? `<span class="ref spawn" title="throwable from a player spawn">spawn</span>` : "";
   return `<b class="${clickClass(l.strength)}">${clickShort(l.strength)}</b><span>${typeLabel(l)}</span>` +
-    `<span>${l.Bounces}b</span><span>${l.flightTime.toFixed(1)}s</span>${pin}${ref}${fav}` +
+    `<span>${l.Bounces}b</span><span>${l.flightTime.toFixed(1)}s</span>${spawn}${pin}${ref}${fav}` +
     `<span class="pct">${(l.stability * 100).toFixed(0)}%</span>`;
 }
 

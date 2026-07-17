@@ -177,6 +177,18 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
     canvas.classList.remove("picking");
   }
 
+  // Flag lineups thrown from (near) a player spawn so the card can badge them
+  // [spawn] - the "can I smoke this off spawn?" question. The map sweep samples
+  // a grid rather than landing exactly on each spawn, so ~48u (about one player
+  // width) counts a stand spot as "at" a spawn.
+  const SPAWN_LINEUP_RADIUS = 48;
+  function tagSpawnLineups(lineups) {
+    const spawns = state.spawns ? [...state.spawns.t, ...state.spawns.ct] : [];
+    for (const l of lineups) {
+      l._spawn = spawns.some(s => Math.hypot(s[0] - l.feet[0], s[1] - l.feet[1]) <= SPAWN_LINEUP_RADIUS);
+    }
+  }
+
   // A different map is entirely different geometry/nav/lineups, so this is a
   // full reset (target, results, 3D scene) rather than an incremental swap -
   // there is only ever "the current map," never a per-map cache to switch
@@ -205,7 +217,12 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
     // Spawns are a bonus overlay: fetch without blocking the map load, and
     // reveal the toggle once they arrive (syncControls hides it when absent).
     fetchSpawns(name).then(s => {
-      if (state.currentMap === name) { state.spawns = s; syncControls(); }
+      if (state.currentMap !== name) { return; }
+      state.spawns = s;
+      // A solve may have finished before spawns arrived; tag and redraw so its
+      // spawn lineups get their badge without needing a re-solve.
+      if (state.result?.lineups) { tagSpawnLineups(state.result.lineups); renderLineups(); }
+      syncControls();
     }).catch(() => {});
     try {
       await loadRadar();
@@ -496,6 +513,7 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
         return;
       }
       next.lineups.forEach((l, i) => { l._idx = i; });
+      tagSpawnLineups(next.lineups);
       state.result = next;
       // Adopt the server's resolved target, which carries the ground Z it snapped
       // a 2D (Z-less) pick onto. Keeps the 2D and 3D target at the same height the

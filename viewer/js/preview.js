@@ -93,13 +93,26 @@ export async function capturePreview({ feet, type, pitchDeg, yawDeg, fovDesiredD
   out.height = src.height;
   const ctx = out.getContext("2d");
   ctx.drawImage(src, 0, 0);
-  const cx = out.width / 2, cy = out.height / 2, r = out.width / 120;
+  // CS2's default reticle (four gapped arms with a black outline), matching the
+  // live 3D crosshair so the captured frame lines up the same way in game.
+  const cx = out.width / 2, cy = out.height / 2;
+  const arm = out.width / 130, gap = out.width / 300;
+  const drawReticle = () => {
+    ctx.beginPath();
+    ctx.moveTo(cx, cy - gap - arm); ctx.lineTo(cx, cy - gap);
+    ctx.moveTo(cx, cy + gap); ctx.lineTo(cx, cy + gap + arm);
+    ctx.moveTo(cx - gap - arm, cy); ctx.lineTo(cx - gap, cy);
+    ctx.moveTo(cx + gap, cy); ctx.lineTo(cx + gap + arm, cy);
+    ctx.stroke();
+  };
+  const green = Math.max(1.5, out.width / 750);
+  ctx.lineCap = "butt";
+  ctx.strokeStyle = "rgba(0,0,0,0.9)";
+  ctx.lineWidth = green + 2;
+  drawReticle();
   ctx.strokeStyle = "#00ff00";
-  ctx.lineWidth = Math.max(1, out.width / 900);
-  ctx.beginPath();
-  ctx.moveTo(cx - r, cy); ctx.lineTo(cx + r, cy);
-  ctx.moveTo(cx, cy - r); ctx.lineTo(cx, cy + r);
-  ctx.stroke();
+  ctx.lineWidth = green;
+  drawReticle();
   const dataUrl = out.toDataURL("image/png");
 
   cam.position.copy(savedPos);

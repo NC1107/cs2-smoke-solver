@@ -113,6 +113,14 @@ public static class ServeCommand
                     {
                         continue;
                     }
+                    // Skip Wingman (2v2) spawns - they belong to the smaller 2v2
+                    // layout (enabled=0 in Defusal) and sit in walled-off areas.
+                    // Valve tags them targetname "[PR#]spawnpoints.2v2".
+                    var name = e.TryGetProperty("Name", out var n) ? n.GetString() ?? "" : "";
+                    if (name.Contains("2v2", StringComparison.OrdinalIgnoreCase))
+                    {
+                        continue;
+                    }
                     var o = e.GetProperty("Origin");
                     bucket.Add([o[0].GetSingle(), o[1].GetSingle(), o[2].GetSingle()]);
                 }

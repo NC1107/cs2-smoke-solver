@@ -241,14 +241,18 @@
      you actually line up against the geometry, the same as in game. */
   body.preview-mode .preview-crosshair,
   body.crosshair-3d .preview-crosshair { display: block; }
-  .preview-crosshair span {
+  /* CS2's default reticle: four short green arms with a center gap and a 1px
+     black outline, so lining a lineup up against geometry on screen matches
+     exactly what the crosshair sits on in game (not a solid "+"). */
+  .preview-crosshair i {
     position: absolute;
     background: #00ff00;
-    box-shadow: 0 0 1px #000;
+    box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.9);
   }
-  /* Two bars forming a "+", each centered on the viewport midpoint. */
-  .preview-crosshair span:first-child { left: -5.5px; top: -1px; width: 11px; height: 2px; }
-  .preview-crosshair span:last-child { left: -1px; top: -5.5px; width: 2px; height: 11px; }
+  .preview-crosshair .ch-t { left: -1px; top: -10px; width: 2px; height: 6px; }
+  .preview-crosshair .ch-b { left: -1px; top: 4px; width: 2px; height: 6px; }
+  .preview-crosshair .ch-l { top: -1px; left: -10px; width: 6px; height: 2px; }
+  .preview-crosshair .ch-r { top: -1px; left: 4px; width: 6px; height: 2px; }
   /* touch-action: none hands every touch gesture to our pointer handlers;
      without it the browser races us for pan/zoom on touch screens. */
   canvas { position: absolute; inset: 0; width: 100%; height: 100%; cursor: grab; touch-action: none; }
@@ -565,6 +569,8 @@
   .ref.flat { color: var(--muted); border: var(--border); }
   .ref.edge { color: var(--accent); border: 1px solid var(--accent); }
   .ref.pin { color: var(--click-left); border: 1px solid var(--click-left); font-weight: 600; }
+  /* Filled gold pill so a spawn-throwable lineup stands out at a glance. */
+  .ref.spawn { color: #1a1a1a; background: #d9a441; border: 1px solid #d9a441; font-weight: 700; }
   .ref.fav { color: var(--target); border: none; padding: 0; }
   @media (max-width: 640px) {
     /* Finger-sized controls: the desktop paddings produce ~20px-tall hit

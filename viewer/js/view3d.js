@@ -440,7 +440,8 @@ export function ensureCrosshair() {
   }
   crosshairEl = document.createElement("div");
   crosshairEl.className = "preview-crosshair";
-  crosshairEl.innerHTML = "<span></span><span></span>";
+  // Four gapped arms = CS2's default reticle (see .preview-crosshair CSS).
+  crosshairEl.innerHTML = '<i class="ch-t"></i><i class="ch-b"></i><i class="ch-l"></i><i class="ch-r"></i>';
   stage3d.appendChild(crosshairEl);
 }
 
