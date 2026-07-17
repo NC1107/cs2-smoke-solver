@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Smoke Solver</title>
 <link rel="icon" href="viewer/favicon.svg" type="image/svg+xml">
-<link rel="stylesheet" href="viewer/app.css?v=10">
+<link rel="stylesheet" href="viewer/app.css?v=11">
 </head>
 <body>
 
@@ -37,6 +37,11 @@
             <button id="spawns" class="btn" hidden title="Show T/CT spawn positions - with a target set, click a spawn to solve a smoke from it">Spawns</button>
           </div>
           <button id="prosmokes" class="btn" hidden title="Density heatmap from pro HLTV demos: where pros throw smokes from (blue) and where they land (orange)">Pro smokes</button>
+          <div id="prosmokes-side" class="seg" hidden role="group" aria-label="Filter pro smokes by team">
+            <button class="seg-btn active" data-side="all">All</button>
+            <button class="seg-btn" data-side="t" title="Attacker smokes, thrown from the T side toward the objective">T</button>
+            <button class="seg-btn" data-side="ct" title="Defender smokes, thrown from the CT side to hold angles">CT</button>
+          </div>
         </div>
 
         <div class="action-group">
@@ -219,9 +224,9 @@ give weapon_smokegrenade<button data-copy="cmd-setup" class="btn">copy</button><
       <div class="preview-thumb" id="preview-thumb"></div>
     </div>
     <div class="list-pager" id="list-pager" hidden>
-      <button class="pager-arrow" id="pager-prev" aria-label="Previous page">←</button>
+      <button class="btn pager-arrow" id="pager-prev" aria-label="Previous page">←</button>
       <span class="pager-label" id="pager-label">page <b>1</b> of <b>1</b></span>
-      <button class="pager-arrow" id="pager-next" aria-label="Next page">→</button>
+      <button class="btn pager-arrow" id="pager-next" aria-label="Next page">→</button>
       <span class="pager-count" id="pager-count">0 results</span>
     </div>
     <div id="lineup-list"></div>
@@ -259,6 +264,6 @@ give weapon_smokegrenade<button data-copy="cmd-setup" class="btn">copy</button><
      4h, so bumping ?v= here is what busts that cache. Bump on any change to a
      directly-referenced asset. (The permanent cure is CF Browser Cache TTL ->
      "Respect Existing Headers", after which this is belt-and-suspenders.) -->
-<script type="module" src="viewer/js/main.js?v=10"></script>
+<script type="module" src="viewer/js/main.js?v=11"></script>
 </body>
 </html>

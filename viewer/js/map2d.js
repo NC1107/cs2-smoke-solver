@@ -3,8 +3,8 @@
 // actions (set target, select, run query) go through callbacks that main.js
 // registers, so this module never imports the orchestrator.
 
-import { cacheBust } from "./api.js?v=10";
-import { isDrag, state, filtered, typeLabel, clickShort, clickClass, esc, SMOKE_BLOOM_RADIUS, PICK_RADIUS_PX, TOUCH_PICK_RADIUS_PX, HEAT_CELL } from "./state.js?v=10";
+import { cacheBust } from "./api.js?v=11";
+import { isDrag, state, filtered, typeLabel, clickShort, clickClass, esc, SMOKE_BLOOM_RADIUS, PICK_RADIUS_PX, TOUCH_PICK_RADIUS_PX, HEAT_CELL } from "./state.js?v=11";
 
 const canvas = state.canvas;
 const ctx = canvas.getContext("2d");
@@ -120,8 +120,8 @@ export function draw() {
   ctx.drawImage(radarCanvas, RX0, -RY1, RX1 - RX0, RY1 - RY0);
   if (state.prosmokesOn && state.prosmokes) {
     // Landings warm (where pros smoke), throw spots cool (where they throw from).
-    drawProHeat(state.prosmokes.lands, "255,120,20");
-    drawProHeat(state.prosmokes.throws, "40,150,255");
+    drawProHeat(state.prosmokes.lands, "255,120,20", state.proSide);
+    drawProHeat(state.prosmokes.throws, "40,150,255", state.proSide);
   }
   if (scale > 0.12) {
     ctx.fillStyle = colors.muted;
@@ -271,10 +271,16 @@ export function draw() {
 
 // Additive-alpha density heat: overlapping points brighten into hotspots. The
 // blob radius is in world units so the smoothing tracks the map, not the zoom.
-function drawProHeat(pts, rgb) {
+function drawProHeat(pts, rgb, side = "all") {
   const r = 60;
+  // Each point's last element is its team (0 = T, 1 = CT); "all" keeps both.
+  const wantTeam = side === "t" ? 0 : side === "ct" ? 1 : -1;
   ctx.globalCompositeOperation = "lighter";
-  for (const [x, y] of pts) {
+  for (const p of pts) {
+    if (wantTeam !== -1 && p[p.length - 1] !== wantTeam) {
+      continue;
+    }
+    const x = p[0], y = p[1];
     const g = ctx.createRadialGradient(x, -y, 0, x, -y, r);
     g.addColorStop(0, `rgba(${rgb},0.20)`);
     g.addColorStop(1, `rgba(${rgb},0)`);

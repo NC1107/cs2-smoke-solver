@@ -38,6 +38,8 @@ export const state = {
   // whether the density heatmap of them is shown.
   prosmokes: null,
   prosmokesOn: false,
+  // Which team's smokes the pro heatmap shows: "all", "t" (attacker), "ct" (defender).
+  proSide: "all",
   hovered: -1,
   canvas: document.getElementById("map"),
   stage3d: document.getElementById("stage3d"),

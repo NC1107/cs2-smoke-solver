@@ -2,18 +2,18 @@
 // import the feature modules; they call back into the orchestrators defined
 // here (setTarget, select, runQuery) via the init*/set*Callbacks hooks.
 
-import { state, filtered, esc } from "./state.js?v=10";
-import { loadMapList, loadMapData, runQuery as postLineupQuery, fetchTrajectory, fetchLineupOne, fetchSlack, fetchSpawns, fetchProSmokes } from "./api.js?v=10";
-import { loadRadar, readColors, recolorRadar, draw, scheduleDraw, resize, resetView, initMap2d } from "./map2d.js?v=10";
-import { ensure3d, resetEnsure3d, teardown3d, current3d, sync3d, syncProgress3d, set3dCallbacks, applyTheme3d } from "./view3d.js?v=10";
-import { resetEnsureTexturedScene } from "./textured-scene.js?v=10";
-import { capturePreview } from "./preview.js?v=10";
+import { state, filtered, esc } from "./state.js?v=11";
+import { loadMapList, loadMapData, runQuery as postLineupQuery, fetchTrajectory, fetchLineupOne, fetchSlack, fetchSpawns, fetchProSmokes } from "./api.js?v=11";
+import { loadRadar, readColors, recolorRadar, draw, scheduleDraw, resize, resetView, initMap2d } from "./map2d.js?v=11";
+import { ensure3d, resetEnsure3d, teardown3d, current3d, sync3d, syncProgress3d, set3dCallbacks, applyTheme3d } from "./view3d.js?v=11";
+import { resetEnsureTexturedScene } from "./textured-scene.js?v=11";
+import { capturePreview } from "./preview.js?v=11";
 // Every local import across viewer/js carries the SAME ?v= token, bumped
 // together on any change. The HTML is served no-cache, so a fresh load pulls
 // main.js?v=N, which pulls every module at ?v=N - the whole graph refreshes as
 // one consistent set past Cloudflare's 4h JS cache, with no duplicate module
 // instances (which a partial versioning would cause). Bump the token everywhere.
-import { renderLineups, initPanel, revealSelected, resultStatusText } from "./panel.js?v=10";
+import { renderLineups, initPanel, revealSelected, resultStatusText } from "./panel.js?v=11";
 
 (async () => {
   // Map switching means a failed load is no longer necessarily terminal (the
@@ -44,6 +44,7 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
   const resetViewBtn = document.getElementById("reset-view");
   const spawnsBtn = document.getElementById("spawns");
   const proSmokesBtn = document.getElementById("prosmokes");
+  const proSideSeg = document.getElementById("prosmokes-side");
   const texturedBtn = document.getElementById("textured3d");
   const topDownBtn = document.getElementById("topdown");
   const crosshairBtn = document.getElementById("crosshair3d");
@@ -176,6 +177,11 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
     spawnsBtn.classList.toggle("active", state.spawnsOn);
     proSmokesBtn.hidden = !(state.prosmokes && (state.prosmokes.throws.length || state.prosmokes.lands.length));
     proSmokesBtn.classList.toggle("active", state.prosmokesOn);
+    // The T/CT filter only makes sense while the heatmap is on.
+    proSideSeg.hidden = proSmokesBtn.hidden || !state.prosmokesOn;
+    for (const b of proSideSeg.children) {
+      b.classList.toggle("active", b.dataset.side === state.proSide);
+    }
     // 2D's "recenter" is Reset view; the 3D view controls are an icon strip.
     resetViewBtn.hidden = in3d;
     viewIcons.hidden = !in3d;
@@ -735,7 +741,16 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
   });
   proSmokesBtn.addEventListener("click", () => {
     state.prosmokesOn = !state.prosmokesOn;
-    proSmokesBtn.classList.toggle("active", state.prosmokesOn);
+    syncControls();
+    draw();
+  });
+  proSideSeg.addEventListener("click", (e) => {
+    const btn = e.target.closest(".seg-btn");
+    if (!btn) {
+      return;
+    }
+    state.proSide = btn.dataset.side;
+    syncControls();
     draw();
   });
   searchBtn.addEventListener("click", () => {
