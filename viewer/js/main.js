@@ -47,8 +47,6 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
   const crosshairBtn = document.getElementById("crosshair3d");
   const collisionBtn = document.getElementById("collision3d");
   const reticleBtn = document.getElementById("reticle3d");
-  const grenadeBtn = document.getElementById("grenade3d");
-  const grenadeRulerEl = document.getElementById("grenade-ruler");
   const viewIcons = document.getElementById("view-icons");
   const rulerEl = document.getElementById("lineup-ruler");
   const clearBtn = document.getElementById("clear");
@@ -79,18 +77,11 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
     syncControls();
     current3d()?.focusStage();
   });
-  grenadeBtn.addEventListener("click", () => {
-    state.grenadeReticleOn = !state.grenadeReticleOn;
-    buildRuler(grenadeRulerEl);
-    syncControls();
-    current3d()?.focusStage();
-  });
 
-  // The CS2 grenade/lineup ruler: a full-screen cross with a numbered tick scale
-  // (-5..5) on both axes, so a grenade lines up by tick exactly like it does in
-  // game. Built once as percentage-positioned ticks so it scales with the
-  // viewport without a resize handler; colour (green lineup / gold grenade)
-  // comes from the element's own class.
+  // The full-screen "+" lineup crosshair: a numbered tick ruler (-5..5) on both
+  // axes, so a grenade lines up by tick like CS2's grenade crosshair. Built once
+  // as percentage-positioned ticks so it scales with the viewport, no resize
+  // handler needed.
   function buildRuler(el) {
     if (el.dataset.built) { return; }
     el.dataset.built = "1";
@@ -187,10 +178,8 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
     crosshairBtn.classList.toggle("active", state.crosshairOn);
     collisionBtn.classList.toggle("active", state.collisionOn);
     reticleBtn.classList.toggle("active", state.reticleOn);
-    grenadeBtn.classList.toggle("active", state.grenadeReticleOn);
     document.body.classList.toggle("crosshair-3d", in3d && state.crosshairOn);
     rulerEl.hidden = !(in3d && state.reticleOn);
-    grenadeRulerEl.hidden = !(in3d && state.grenadeReticleOn);
 
     // Nothing to explain until there are markers on the map to explain.
     keyEl.hidden = !hasTarget;

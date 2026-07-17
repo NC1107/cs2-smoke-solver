@@ -26,11 +26,9 @@ export const state = {
   // The magenta collision-box overlay (grenade-clips/glass) - on by default so
   // the 3D view keeps showing what really stops a smoke; toggleable.
   collisionOn: true,
-  // The CS2-style numbered "lineup crosshair" ruler overlay (off by default).
+  // The full-screen "+" lineup crosshair - a numbered tick ruler overlay for
+  // lining grenades up by tick, like CS2's grenade crosshair (off by default).
   reticleOn: false,
-  // The CS2 grenade crosshair (the gold full-screen ruler you get holding a
-  // nade) as its own overlay, distinct from the green lineup ruler.
-  grenadeReticleOn: false,
   // Player spawn positions for the current map ({ t: [[x,y,z]...], ct: [...] })
   // and whether their markers are shown. Fetched on map load; clicking a shown
   // spawn solves a smoke from that exact spot to the current target.
