@@ -34,6 +34,10 @@ export const state = {
   // spawn solves a smoke from that exact spot to the current target.
   spawns: null,
   spawnsOn: false,
+  // Pro smoke throw/land points from parsed HLTV demos ({ throws, lands }) and
+  // whether the density heatmap of them is shown.
+  prosmokes: null,
+  prosmokesOn: false,
   hovered: -1,
   canvas: document.getElementById("map"),
   stage3d: document.getElementById("stage3d"),

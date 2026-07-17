@@ -1,6 +1,6 @@
 // Fetch wrappers. No DOM access here; callers own status text and overlays.
 
-import { state } from "./state.js";
+import { state } from "./state.js?v=10";
 
 // Cache-bust a data URL with the map build: re-processed radars/GLBs change
 // content without changing name, and the query string gets a fresh copy past
@@ -35,6 +35,14 @@ export async function fetchSpawns(map) {
     throw new Error(`HTTP ${res.status}`);
   }
   return res.json();
+}
+
+// Pro smoke throw origins and landings parsed from HLTV demos (rig/parse-demo-
+// smokes.py): { map, demos, throws: [[x,y]...], lands: [[x,y]...] }. Returns null
+// when a map has no parsed demos, so the toggle stays hidden.
+export async function fetchProSmokes(map) {
+  const res = await fetch(cacheBust(`data/${encodeURIComponent(map)}.prosmokes.json`));
+  return res.ok ? res.json() : null;
 }
 
 // The /api/lineup POST. The server streams NDJSON progress lines (phase

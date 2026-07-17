@@ -2,17 +2,18 @@
 // import the feature modules; they call back into the orchestrators defined
 // here (setTarget, select, runQuery) via the init*/set*Callbacks hooks.
 
-import { state, filtered, esc } from "./state.js";
-import { loadMapList, loadMapData, runQuery as postLineupQuery, fetchTrajectory, fetchLineupOne, fetchSlack, fetchSpawns } from "./api.js";
-import { loadRadar, readColors, recolorRadar, draw, scheduleDraw, resize, resetView, initMap2d } from "./map2d.js";
-import { ensure3d, resetEnsure3d, teardown3d, current3d, sync3d, syncProgress3d, set3dCallbacks, applyTheme3d } from "./view3d.js";
-import { resetEnsureTexturedScene } from "./textured-scene.js";
-import { capturePreview } from "./preview.js";
-// Versioned import: panel.js is imported only here, so bumping this query
-// delivers a panel.js change to browsers holding it in Cloudflare's 4h cache
-// without a hard refresh. Safe precisely because there is one importer - its
-// own (unversioned) state.js stays the shared singleton. Bump with main.js?v=.
-import { renderLineups, initPanel, revealSelected, resultStatusText } from "./panel.js?v=4";
+import { state, filtered, esc } from "./state.js?v=10";
+import { loadMapList, loadMapData, runQuery as postLineupQuery, fetchTrajectory, fetchLineupOne, fetchSlack, fetchSpawns, fetchProSmokes } from "./api.js?v=10";
+import { loadRadar, readColors, recolorRadar, draw, scheduleDraw, resize, resetView, initMap2d } from "./map2d.js?v=10";
+import { ensure3d, resetEnsure3d, teardown3d, current3d, sync3d, syncProgress3d, set3dCallbacks, applyTheme3d } from "./view3d.js?v=10";
+import { resetEnsureTexturedScene } from "./textured-scene.js?v=10";
+import { capturePreview } from "./preview.js?v=10";
+// Every local import across viewer/js carries the SAME ?v= token, bumped
+// together on any change. The HTML is served no-cache, so a fresh load pulls
+// main.js?v=N, which pulls every module at ?v=N - the whole graph refreshes as
+// one consistent set past Cloudflare's 4h JS cache, with no duplicate module
+// instances (which a partial versioning would cause). Bump the token everywhere.
+import { renderLineups, initPanel, revealSelected, resultStatusText } from "./panel.js?v=10";
 
 (async () => {
   // Map switching means a failed load is no longer necessarily terminal (the
@@ -42,6 +43,7 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
   const view3dBtn = document.getElementById("view3d");
   const resetViewBtn = document.getElementById("reset-view");
   const spawnsBtn = document.getElementById("spawns");
+  const proSmokesBtn = document.getElementById("prosmokes");
   const texturedBtn = document.getElementById("textured3d");
   const topDownBtn = document.getElementById("topdown");
   const crosshairBtn = document.getElementById("crosshair3d");
@@ -172,6 +174,8 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
     view3dBtn.classList.toggle("active", in3d);
     spawnsBtn.hidden = !(state.spawns && (state.spawns.t.length || state.spawns.ct.length));
     spawnsBtn.classList.toggle("active", state.spawnsOn);
+    proSmokesBtn.hidden = !(state.prosmokes && (state.prosmokes.throws.length || state.prosmokes.lands.length));
+    proSmokesBtn.classList.toggle("active", state.prosmokesOn);
     // 2D's "recenter" is Reset view; the 3D view controls are an icon strip.
     resetViewBtn.hidden = in3d;
     viewIcons.hidden = !in3d;
@@ -251,6 +255,8 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
     state.currentMap = name;
     state.spawns = null;
     state.spawnsOn = false;
+    state.prosmokes = null;
+    state.prosmokesOn = false;
     localStorage.setItem("smokesolver.lastMap", name);
     resetSearch();
     syncUrl();
@@ -271,6 +277,9 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
       // spawn lineups get their badge without needing a re-solve.
       if (state.result?.lineups) { tagSpawnLineups(state.result.lineups); renderLineups(); }
       syncControls();
+    }).catch(() => {});
+    fetchProSmokes(name).then(d => {
+      if (state.currentMap === name) { state.prosmokes = d; syncControls(); }
     }).catch(() => {});
     try {
       await loadRadar();
@@ -723,6 +732,11 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
     spawnsBtn.classList.toggle("active", state.spawnsOn);
     draw();
     sync3d();
+  });
+  proSmokesBtn.addEventListener("click", () => {
+    state.prosmokesOn = !state.prosmokesOn;
+    proSmokesBtn.classList.toggle("active", state.prosmokesOn);
+    draw();
   });
   searchBtn.addEventListener("click", () => {
     if (state.target && !state.busy) {
