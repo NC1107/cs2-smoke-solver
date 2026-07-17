@@ -360,7 +360,7 @@
     display: flex;
   }
   #preview-pane .preview-thumb { margin-top: 0; flex: 1; aspect-ratio: auto; }
-  #lineup-list { flex: 1; overflow-y: auto; overflow-x: hidden; }
+  #lineup-list { flex: 1; overflow-y: auto; overflow-x: hidden; display: grid; gap: 6px; align-content: start; }
   .paste { display: flex; gap: 5px; }
   .paste input {
     flex: 1;
@@ -399,7 +399,6 @@
     --btn-radius: 3px;
     color: var(--muted);
   }
-  #lineup-list { display: grid; gap: 6px; align-content: start; }
   #lineup-list:empty { display: none; }
   .lineup {
     border: var(--border);

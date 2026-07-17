@@ -336,7 +336,7 @@ public class CalibrationThrowerPlugin : BasePlugin
             if (!_sawPartialRequest)
             {
                 _sawPartialRequest = true;
-                try { File.Move(claimed, RequestPath, overwrite: true); } catch (IOException) { }
+                try { File.Move(claimed, RequestPath, overwrite: true); } catch (IOException) { /* best-effort requeue; a locked file is retried on the next poll */ }
                 return;
             }
             _sawPartialRequest = false;
@@ -346,11 +346,11 @@ public class CalibrationThrowerPlugin : BasePlugin
                 File.Move(claimed, bad, overwrite: true);
                 Server.PrintToConsole($"[CalibrationThrower] malformed request quarantined to {bad}: {e.Message}");
             }
-            catch (IOException) { }
+            catch (IOException) { /* quarantine is best-effort; there is nothing else to do if the move fails */ }
         }
         catch (Exception e)
         {
-            try { File.Delete(claimed); } catch (IOException) { }
+            try { File.Delete(claimed); } catch (IOException) { /* best-effort cleanup of the claimed file */ }
             Server.PrintToConsole($"[CalibrationThrower] request failed: {e}");
         }
     }
@@ -447,7 +447,7 @@ public class CalibrationThrowerPlugin : BasePlugin
 
     const int SmokeGrenadeItemDef = 45;
 
-    bool ThrowSynthetic(Vector pos, Vector vel)
+    static bool ThrowSynthetic(Vector pos, Vector vel)
     {
         var owner = Utilities.GetPlayers().FirstOrDefault(p => p.IsValid && p.PlayerPawn.Value != null);
         var ownerPawn = owner?.PlayerPawn.Value;
@@ -965,7 +965,7 @@ public class CalibrationThrowerPlugin : BasePlugin
             File.WriteAllText(Path.Combine(CalibDir, "settings.json"),
                 JsonSerializer.Serialize(new { showTestSmokes = _showTestSmokes }));
         }
-        catch (IOException) { }
+        catch (IOException) { /* persisting the toggle is best-effort; it defaults next launch */ }
         Reply(player, command, _showTestSmokes
             ? Calib($"test smokes: {ChatColors.Gold}visible{ChatColors.Default} (bloom and linger like real throws)")
             : Calib($"test smokes: {ChatColors.Gold}hidden{ChatColors.Default} (recorded and cleared at bloom)"));

@@ -308,7 +308,8 @@ function gapSegments(points) {
 }
 
 function polyline(pts, color) {
-  return `<polyline points="${pts.map(p => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(" ")}" fill="none" stroke="${color}" stroke-width="1.5"/>`;
+  const points = pts.map(p => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(" ");
+  return `<polyline points="${points}" fill="none" stroke="${color}" stroke-width="1.5"/>`;
 }
 
 function dotsWithTitles(pts, color) {
@@ -673,9 +674,10 @@ function renderWorst(report) {
   }
   body.innerHTML = rows.map(r => {
     const click = clickShort(r.Strength);
+    const divergence = r.DivergenceClass ? esc(`${r.DivergenceClass}@${r.DivergenceTick ?? "?"}`) : "-";
     return `<tr>` +
       `<td>${r.ErrPredicted.toFixed(0)}u</td>` +
-      `<td>${r.DivergenceClass ? esc(`${r.DivergenceClass}@${r.DivergenceTick ?? "?"}`) : "-"}</td>` +
+      `<td>${divergence}</td>` +
       `<td>${esc(typeLabelFor(r))}</td>` +
       `<td class="acc-click-${click}">${click}</td>` +
       `<td>${r.PredictedBounces}/${Number.isFinite(r.RealBounces) ? r.RealBounces : "-"}</td>` +
