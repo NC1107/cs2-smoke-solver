@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Smoke Solver</title>
 <link rel="icon" href="viewer/favicon.svg" type="image/svg+xml">
-<link rel="stylesheet" href="viewer/app.css?v=4">
+<link rel="stylesheet" href="viewer/app.css?v=5">
 </head>
 <body>
 
@@ -24,18 +24,33 @@
       <summary>actions</summary>
       <div class="card-body">
         <button id="pick" class="btn primary">Target</button>
-        <button id="search-all" class="btn" hidden>Search map</button>
-        <button id="heat" class="btn" hidden>Heatmap</button>
-        <button id="reset-view" class="btn" title="Recenter and re-fit the map (double-click does this too)">Reset view</button>
-        <button id="spawns" class="btn" hidden title="Show T/CT spawn positions - with a target set, click a spawn to solve a smoke from it">Spawns</button>
-        <button id="view3d" class="btn">3D</button>
-        <button id="textured3d" class="btn" hidden title="Load real map textures for the 3D view (one-time, size varies by map)">Textured</button>
-        <button id="topdown" class="btn" hidden title="Look straight down at the whole map">Top-down</button>
-        <button id="crosshair3d" class="btn" hidden title="Show or hide the center crosshair">Crosshair</button>
-        <button id="clear" class="btn" hidden>Clear</button>
         <div class="paste">
           <input id="getpos-in" placeholder="paste getpos → target" aria-label="Paste getpos output to set target">
           <button id="getpos-set" class="btn">set</button>
+        </div>
+
+        <div class="action-group">
+          <span class="action-label key-subhead">search</span>
+          <button id="search-all" class="btn" hidden>Search map</button>
+          <div class="btn-row">
+            <button id="heat" class="btn" hidden>Heatmap</button>
+            <button id="spawns" class="btn" hidden title="Show T/CT spawn positions - with a target set, click a spawn to solve a smoke from it">Spawns</button>
+          </div>
+        </div>
+
+        <div class="action-group">
+          <span class="action-label key-subhead">view</span>
+          <button id="view3d" class="btn">3D</button>
+          <div class="btn-row">
+            <button id="topdown" class="btn" hidden title="Look straight down at the whole map">Top-down</button>
+            <button id="crosshair3d" class="btn" hidden title="Show or hide the center crosshair">Crosshair</button>
+          </div>
+          <button id="textured3d" class="btn" hidden title="Load real map textures for the 3D view (one-time, size varies by map)">Textured</button>
+        </div>
+
+        <div class="action-group action-utility">
+          <button id="reset-view" class="btn" title="Recenter and re-fit the map (double-click does this too)">Reset</button>
+          <button id="clear" class="btn" hidden>Clear</button>
         </div>
       </div>
     </details>
@@ -182,6 +197,7 @@
     </div>
   </details>
   <div class="panel" id="panel" hidden>
+    <div class="panel-resize" id="panel-resize" title="Drag to resize" role="separator" aria-label="Resize panel"></div>
     <details class="setup">
       <summary>practice setup</summary>
       <div class="cmd" id="cmd-setup">sv_cheats 1; mp_warmup_end; mp_roundtime_defuse 60;
@@ -192,6 +208,12 @@ give weapon_smokegrenade<button data-copy="cmd-setup" class="btn">copy</button><
     </details>
     <div id="preview-pane" hidden>
       <div class="preview-thumb" id="preview-thumb"></div>
+    </div>
+    <div class="list-pager" id="list-pager" hidden>
+      <button class="pager-arrow" id="pager-prev" aria-label="Previous page">←</button>
+      <span class="pager-label" id="pager-label">page <b>1</b> of <b>1</b></span>
+      <button class="pager-arrow" id="pager-next" aria-label="Next page">→</button>
+      <span class="pager-count" id="pager-count">0 results</span>
     </div>
     <div id="lineup-list"></div>
   </div>
@@ -228,6 +250,6 @@ give weapon_smokegrenade<button data-copy="cmd-setup" class="btn">copy</button><
      4h, so bumping ?v= here is what busts that cache. Bump on any change to a
      directly-referenced asset. (The permanent cure is CF Browser Cache TTL ->
      "Respect Existing Headers", after which this is belt-and-suspenders.) -->
-<script type="module" src="viewer/js/main.js?v=4"></script>
+<script type="module" src="viewer/js/main.js?v=5"></script>
 </body>
 </html>

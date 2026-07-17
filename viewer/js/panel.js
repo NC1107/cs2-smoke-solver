@@ -98,6 +98,9 @@ export function renderLineups() {
   const focusIdx = list.contains(document.activeElement)
     ? document.activeElement.dataset.idx : undefined;
   list.innerHTML = "";
+  // The header pager lives outside the list; hide it until updatePager shows it
+  // for a non-empty result, so it never lingers over an empty/cleared panel.
+  document.getElementById("list-pager").hidden = true;
   if (!state.result) {
     return;
   }
@@ -135,17 +138,12 @@ export function renderLineups() {
   const start = page * PAGE_SIZE;
   const pageItems = shown.slice(start, start + PAGE_SIZE);
 
-  const note = document.createElement("div");
-  note.className = "list-note";
-  note.textContent = pageCount > 1
-    ? `${shown.length} results · page ${page + 1} of ${pageCount}`
-    : `${shown.length} result${shown.length === 1 ? "" : "s"}`;
-  list.appendChild(note);
+  updatePager(shown.length, page, pageCount);
 
   const box = document.createElement("div");
   box.className = "lineup-options";
   box.setAttribute("role", "group");
-  box.setAttribute("aria-label", `lineup results, ${note.textContent}`);
+  box.setAttribute("aria-label", `lineup results, page ${page + 1} of ${pageCount}, ${shown.length} total`);
   for (const l of pageItems) {
     // The selected lineup expands where it sits. Rendering its detail card at
     // the top of the panel instead meant that picking the 40th result put the
@@ -158,9 +156,6 @@ export function renderLineups() {
     home.tabIndex = 0;
   }
   list.appendChild(box);
-  if (pageCount > 1) {
-    list.appendChild(buildPager(pageCount));
-  }
 
   // Selecting re-renders the list; keep keyboard focus on the same lineup.
   if (focusIdx !== undefined) {
@@ -173,30 +168,18 @@ export function renderLineups() {
   }
 }
 
-// Prev/next pager shown only when the results span more than one page. Turning
-// a page re-renders the list at the new offset; it deliberately does not touch
-// the selection, so a lineup selected on another page stays selected.
-function buildPager(pageCount) {
-  const nav = document.createElement("div");
-  nav.className = "list-pager";
-  nav.append(
-    pagerButton("‹ prev", page > 0, () => { page -= 1; renderLineups(); }),
-    Object.assign(document.createElement("span"), {
-      className: "pager-label", textContent: `page ${page + 1} of ${pageCount}` }),
-    pagerButton("next ›", page < pageCount - 1, () => { page += 1; renderLineups(); }));
-  return nav;
-}
-
-function pagerButton(label, enabled, onClick) {
-  const b = document.createElement("button");
-  b.type = "button";
-  b.className = "btn pager-btn";
-  b.textContent = label;
-  b.disabled = !enabled;
-  if (enabled) {
-    b.addEventListener("click", onClick);
-  }
-  return b;
+// Updates the fixed header row (`<- page N of M ->   results`) that sits above
+// the scrolling list. Turning a page re-renders but deliberately does not touch
+// the selection, so a lineup selected on another page stays selected. Prev/next
+// are wired once in initPanel; this only refreshes the labels and disabled state.
+function updatePager(total, page, pageCount) {
+  const pager = document.getElementById("list-pager");
+  pager.hidden = false;
+  pager.classList.toggle("single-page", pageCount <= 1);
+  document.getElementById("pager-label").innerHTML = `page <b>${page + 1}</b> of <b>${pageCount}</b>`;
+  document.getElementById("pager-count").textContent = `${total} result${total === 1 ? "" : "s"}`;
+  document.getElementById("pager-prev").disabled = page <= 0;
+  document.getElementById("pager-next").disabled = page >= pageCount - 1;
 }
 
 function optionButton(l) {
@@ -284,5 +267,46 @@ export function initPanel(cb) {
       setTargetFromGetpos();
     }
   });
+  document.getElementById("pager-prev").addEventListener("click", () => { page -= 1; renderLineups(); });
+  document.getElementById("pager-next").addEventListener("click", () => { page += 1; renderLineups(); });
+  initPanelResize();
   wireCopyButtons(document.body);
+}
+
+// Drag the panel's left edge to widen/narrow it; the chosen width persists so a
+// player who needs to see the full command lines keeps them. Width rides a CSS
+// custom property (--panel-w) rather than an inline width so the mobile
+// full-width bottom-sheet rule still wins. Arrow keys resize for keyboard users;
+// double-click resets to the default.
+function initPanelResize() {
+  const panel = document.getElementById("panel");
+  const handle = document.getElementById("panel-resize");
+  const MIN = 300, MAX = 640, STEP = 24, KEY = "smokesolver.panelWidth";
+  const setW = w => {
+    w = Math.min(MAX, Math.max(MIN, Math.round(w)));
+    panel.style.setProperty("--panel-w", w + "px");
+    return w;
+  };
+  const saved = Number.parseInt(localStorage.getItem(KEY), 10);
+  if (saved) { setW(saved); }
+  let startX = 0, startW = 0;
+  const onMove = e => setW(startW + (startX - e.clientX));
+  const onUp = () => {
+    handle.classList.remove("dragging");
+    window.removeEventListener("pointermove", onMove);
+    window.removeEventListener("pointerup", onUp);
+    localStorage.setItem(KEY, String(panel.getBoundingClientRect().width | 0));
+  };
+  handle.addEventListener("pointerdown", e => {
+    e.preventDefault();
+    startX = e.clientX;
+    startW = panel.getBoundingClientRect().width;
+    handle.classList.add("dragging");
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+  });
+  handle.addEventListener("dblclick", () => {
+    panel.style.removeProperty("--panel-w");
+    localStorage.removeItem(KEY);
+  });
 }

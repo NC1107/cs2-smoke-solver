@@ -12,7 +12,7 @@ import { capturePreview } from "./preview.js";
 // delivers a panel.js change to browsers holding it in Cloudflare's 4h cache
 // without a hard refresh. Safe precisely because there is one importer - its
 // own (unversioned) state.js stays the shared singleton. Bump with main.js?v=.
-import { renderLineups, initPanel, revealSelected, resultStatusText } from "./panel.js?v=3";
+import { renderLineups, initPanel, revealSelected, resultStatusText } from "./panel.js?v=4";
 
 (async () => {
   // Map switching means a failed load is no longer necessarily terminal (the

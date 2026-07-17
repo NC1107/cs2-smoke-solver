@@ -497,11 +497,18 @@ public static class LineupApi
         // A probe means "I stand HERE": closeness to the click outranks
         // everything but a usable aim reference, in 32u bands so a pinned spot
         // still wins among near-equals. A map-wide sweep has no "here", so
-        // pinned spots lead outright.
+        // easiest-movement then pinned spots lead outright.
         // Chaotic lineups (rest flips when the feet move one tick) sink below
         // everything reproducible - the in-game misses users hit were exactly
         // these, scoring 100% aim stability while being position-fragile.
-        var bySky = solve.Lineups.OrderBy(l => aimRefs[l].IsSkyShot ? 1 : 0).ThenBy(l => l.RestScatter > 16f ? 1 : 0);
+        // Movement complexity ranks by how hard the throw is to execute -
+        // stand < crouch < jump < crouch-jump < run-jump - which the ThrowType
+        // enum is already ordered by. Click strength (left/mid/right) is not an
+        // execution-difficulty axis, so it is deliberately not a factor here.
+        var bySky = solve.Lineups
+            .OrderBy(l => aimRefs[l].IsSkyShot ? 1 : 0)
+            .ThenBy(l => l.RestScatter > 16f ? 1 : 0)
+            .ThenBy(l => (int)l.Type);
         var ranked = (originClick is { } click
                 ? bySky.ThenBy(l => (int)(Vector2.Distance(new Vector2(l.Feet.X, l.Feet.Y), click) / 32f)).ThenByDescending(l => pins[l])
                 : bySky.ThenByDescending(l => pins[l]))

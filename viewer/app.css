@@ -133,6 +133,7 @@
     border: var(--border);
     border-radius: 6px;
     padding: 8px;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.25);
   }
   #controls summary {
     display: none;
@@ -163,6 +164,38 @@
   /* The paste row keeps its own input+button split: the card-wide
      width:100% above is for stacked buttons, not row members. */
   #controls .paste .btn { width: auto; }
+  /* Actions card: hero action, then labeled groups (search / view), then a quiet
+     utility strip. Progressive disclosure still hides buttons until usable;
+     :has() collapses a whole group (label + divider) when all its buttons are
+     hidden, so an empty group never leaves a floating heading. */
+  #controls .action-group {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding-top: 7px;
+    border-top: var(--border);
+  }
+  #controls .action-group:not(:has(.btn:not([hidden]))) { display: none; }
+  #controls .action-label { margin-top: 0; }
+  #controls .btn-row { display: flex; gap: 6px; }
+  #controls .btn-row .btn {
+    flex: 1;
+    min-width: 0;
+    width: auto;
+    text-align: center;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  #controls .action-utility { flex-direction: row; gap: 6px; }
+  #controls .action-utility .btn {
+    flex: 1;
+    width: auto;
+    text-align: center;
+    --btn-font-size: 11px;
+    color: var(--muted);
+  }
+  #controls .action-utility .btn:hover { color: var(--ink); }
   /* The filter rows (label + description) also render inside the narrow
      sidebar card; there the label sits above its select and the description
      hugs the left edge - the intro's wide two-column metrics don't fit. */
@@ -286,7 +319,7 @@
     color: var(--muted);
     background: var(--glass);
     border: var(--border);
-    border-radius: 5px;
+    border-radius: 6px;
     max-width: min(420px, calc(100% - 20px));
   }
   .key[hidden] { display: none; }
@@ -340,13 +373,17 @@
   .panel {
     position: absolute;
     right: 10px;
-    top: 10px;
-    width: min(320px, calc(100% - 20px));
+    /* Floats up from the vertical middle instead of hugging the bottom edge; a
+       short list sits mid-screen, a long one scrolls inside #lineup-list once it
+       hits the cap rather than stretching floor-to-ceiling. */
+    top: 42%;
+    width: min(var(--panel-w, 340px), calc(100% - 20px));
     background: var(--glass-heavy);
     border: var(--border);
     border-radius: 6px;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.25);
     font-size: 12px;
-    max-height: calc(100% - 20px);
+    max-height: calc(58% - 44px);
     overflow: hidden;
     display: flex;
     flex-direction: column;
@@ -354,6 +391,28 @@
     padding: 9px 10px;
   }
   .panel[hidden] { display: none; }
+  /* Drag the left edge to widen/narrow the panel; width persists (main.js). */
+  .panel-resize {
+    position: absolute;
+    left: 0; top: 0; bottom: 0;
+    width: 10px;
+    margin-left: -5px;
+    cursor: ew-resize;
+    z-index: 3;
+    touch-action: none;
+  }
+  .panel-resize::after {
+    content: "";
+    position: absolute;
+    left: 4px; top: 50%;
+    width: 2px; height: 28px;
+    margin-top: -14px;
+    border-radius: 2px;
+    background: var(--border-color, rgba(128, 128, 128, 0.5));
+    opacity: 0;
+    transition: opacity 0.12s;
+  }
+  .panel-resize:hover::after, .panel-resize.dragging::after { opacity: 1; background: var(--accent); }
   #preview-pane[hidden] { display: none; }
   #preview-pane {
     /* Drag the corner if the render is too small to read. */
@@ -413,6 +472,8 @@
   .lineup:hover, .lineup.selected { border-color: var(--accent); }
   .lineup .row1 {
     display: flex;
+    flex-wrap: wrap;
+    row-gap: 3px;
     gap: 7px;
     align-items: baseline;
     font-family: ui-monospace, Menlo, monospace;
@@ -446,8 +507,8 @@
   .preview-thumb.loading { animation: preview-pulse 1.2s ease-in-out infinite; }
   @keyframes preview-pulse { 0%, 100% { opacity: 0.6; } 50% { opacity: 1; } }
   .preview-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
-  .lineup-actions { display: flex; gap: 5px; margin-top: 6px; }
-  .lineup-actions .btn { flex: 1; --btn-pad: 3px 6px; }
+  .lineup-actions { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 6px; }
+  .lineup-actions .btn { flex: 1 1 auto; min-width: 64px; --btn-pad: 3px 6px; }
   .lineup-actions .remove-btn:hover { border-color: var(--click-right); color: var(--click-right); }
   .lineup-actions .fav-btn:hover { border-color: var(--target); color: var(--target); }
   .preview-modal {
@@ -534,17 +595,30 @@
   .filter-desc { margin: 1px 0 0 96px; color: var(--muted); font-size: 11px; line-height: 1.35; }
   .intro-choices { display: flex; gap: 8px; flex-wrap: wrap; }
   .intro-choices .btn { --btn-pad: 7px 14px; --btn-font-size: 12.5px; }
-  .list-note { color: var(--muted); font-size: 11px; }
+  /* Pager header: "<- page N of M ->   results", fixed above the scrolling list
+     (#lineup-list is the only flex:1 scroller). */
   .list-pager {
-    display: flex; align-items: center; justify-content: space-between;
-    gap: 8px; margin-top: 6px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex: none;
+    font-size: 11px;
+    color: var(--muted);
   }
-  .list-pager .pager-label { color: var(--muted); font-size: 11px; }
-  .pager-btn { --btn-pad: 4px 12px; }
-  .pager-btn:disabled { opacity: 0.4; cursor: default; }
+  .list-pager[hidden] { display: none; }
+  .pager-arrow { --btn-pad: 2px 7px; --btn-font-size: 12px; line-height: 1; }
+  .pager-arrow:disabled { opacity: 0.35; cursor: default; }
+  .list-pager .pager-label { color: var(--ink); white-space: nowrap; }
+  .list-pager .pager-label b { font-variant-numeric: tabular-nums; }
+  .list-pager .pager-count { margin-left: auto; white-space: nowrap; font-variant-numeric: tabular-nums; }
+  /* One page: hide the arrows and "page N of M", leave just the count. */
+  .list-pager.single-page .pager-arrow,
+  .list-pager.single-page .pager-label { display: none; }
   .lineup-options { display: grid; gap: 4px; }
   .lineup-option {
     display: flex;
+    flex-wrap: wrap;
+    row-gap: 3px;
     gap: 6px;
     align-items: baseline;
     width: 100%;
@@ -580,6 +654,11 @@
     #controls { width: 168px; }
     #controls summary { display: list-item; }
     #controls details[open] > .card-body { margin-top: 6px; }
+    /* Two-up button rows are too tight once mobile padding grows; stack them. */
+    #controls .btn-row, #controls .action-utility { flex-direction: column; }
+    .pager-arrow { min-width: 44px; min-height: 44px; }
+    /* Full-width bottom sheet on phones: no horizontal resize. */
+    .panel-resize { display: none; }
     .key { left: auto; right: 10px; top: 10px; bottom: auto; max-width: calc(100% - 178px); }
     /* Keep the controls chip out from under the marker legend on phones. */
     .key.help3d { top: auto; bottom: 10px; }
