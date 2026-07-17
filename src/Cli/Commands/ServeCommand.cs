@@ -23,6 +23,9 @@ public static class ServeCommand
     // Lineup query bodies are a handful of numbers; anything bigger is abuse.
     const int MaxLineupBodyBytes = 4096;
 
+    const string JsonContentType = "application/json";
+    const string UnknownMapError = "unknown map (see /api/maps)";
+
     public static int Run(Dictionary<string, string> options)
     {
         var port = int.Parse(options.GetValueOrDefault("port", "8137"), CultureInfo.InvariantCulture);
@@ -85,7 +88,7 @@ public static class ServeCommand
         {
             if (map == null || !maps.TryGetValue(map, out var entry))
             {
-                return ApiError(StatusCodes.Status404NotFound, "unknown map (see /api/maps)");
+                return ApiError(StatusCodes.Status404NotFound, UnknownMapError);
             }
             context.Response.Headers.ETag = entry.BuildETag;
             // Revalidate rather than cache blind for a week: the ETag is now the
@@ -125,7 +128,7 @@ public static class ServeCommand
         {
             if (map == null || !maps.TryGetValue(map, out var entry))
             {
-                return ApiError(StatusCodes.Status404NotFound, "unknown map (see /api/maps)");
+                return ApiError(StatusCodes.Status404NotFound, UnknownMapError);
             }
             if (!Enum.TryParse<ThrowType>(type, ignoreCase: true, out var throwType))
             {
@@ -143,7 +146,7 @@ public static class ServeCommand
             // recomputing for a lineup the viewer has already drawn.
             context.Response.Headers.ETag = entry.BuildETag;
             context.Response.Headers.CacheControl = "public, max-age=604800";
-            return Results.Bytes(payload, "application/json");
+            return Results.Bytes(payload, JsonContentType);
         });
 
         // One fully-analyzed lineup from its physical spec alone - the shape a
@@ -156,7 +159,7 @@ public static class ServeCommand
         {
             if (map == null || !maps.TryGetValue(map, out var entry))
             {
-                return ApiError(StatusCodes.Status404NotFound, "unknown map (see /api/maps)");
+                return ApiError(StatusCodes.Status404NotFound, UnknownMapError);
             }
             if (!Enum.TryParse<ThrowType>(type, ignoreCase: true, out var throwType))
             {
@@ -172,7 +175,7 @@ public static class ServeCommand
                 throwType, strength, pitch, yaw, runDeg, entry.Constants);
             context.Response.Headers.ETag = entry.BuildETag;
             context.Response.Headers.CacheControl = "public, max-age=604800";
-            return Results.Bytes(payload, "application/json");
+            return Results.Bytes(payload, JsonContentType);
         });
 
         // The positional slack ring for one lineup: how far the feet can drift
@@ -184,7 +187,7 @@ public static class ServeCommand
         {
             if (map == null || !maps.TryGetValue(map, out var entry))
             {
-                return ApiError(StatusCodes.Status404NotFound, "unknown map (see /api/maps)");
+                return ApiError(StatusCodes.Status404NotFound, UnknownMapError);
             }
             if (!Enum.TryParse<ThrowType>(type, ignoreCase: true, out var throwType))
             {
@@ -204,7 +207,7 @@ public static class ServeCommand
                 pitch, yaw, runDeg, new Vector3(tx, ty, tz), within, entry.Constants);
             context.Response.Headers.ETag = entry.BuildETag;
             context.Response.Headers.CacheControl = "public, max-age=604800";
-            return Results.Bytes(payload, "application/json");
+            return Results.Bytes(payload, JsonContentType);
         });
 
         app.MapPost("/api/lineup", async (HttpContext context) =>
@@ -407,7 +410,7 @@ public static class ServeCommand
     static Task WriteApiError(HttpContext context, int status, string message)
     {
         context.Response.StatusCode = status;
-        context.Response.ContentType = "application/json";
+        context.Response.ContentType = JsonContentType;
         return context.Response.WriteAsync(JsonSerializer.Serialize(new { error = message }));
     }
 }

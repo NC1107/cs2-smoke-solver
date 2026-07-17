@@ -21,7 +21,7 @@ export function loadScript(src) {
 export function disposeSceneContents(scene) {
   scene?.traverse(obj => {
     obj.geometry?.dispose();
-    for (const m of [].concat(obj.material ?? [])) {
+    for (const m of [obj.material ?? []].flat()) {
       m.map?.dispose();
       m.dispose?.();
     }

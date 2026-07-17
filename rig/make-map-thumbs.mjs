@@ -10,8 +10,8 @@
 //
 // Usage: node rig/make-map-thumbs.mjs [data-dir]
 import sharp from "sharp";
-import fs from "fs";
-import path from "path";
+import fs from "node:fs";
+import path from "node:path";
 
 const dataDir = process.argv[2] ?? "data";
 const WIDTH = 220;

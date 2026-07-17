@@ -38,7 +38,7 @@ public static class PointLineupCommand
         // state and must not be mutated (--markers already clones for this).
         options = new Dictionary<string, string>(options);
         options.TryAdd("attrs", SingleTargetDefaultAttrs);
-        var (mesh, _, _, attributeFilter) = LoadCommon(options);
+        var (mesh, _, _, _) = LoadCommon(options);
         var constants = LoadConstants(options);
         var feet = ParseVec(Require(options, "from"));
         var (target, _) = ParseVec2or3(Require(options, "target"));
@@ -110,7 +110,7 @@ public static class PointLineupCommand
             foreach (var c in samples.OrderBy(s => s.Err + TypePenalty(s.Type)))
             {
                 if (accepted.Count >= topN) { break; }
-                if (accepted.Any(a => a.Type == c.Type && a.Strength == c.Strength &&
+                if (accepted.Any(a => a.Type == c.Type && MathF.Abs(a.Strength - c.Strength) < 0.01f &&
                                       MathF.Abs(a.Yaw - c.Yaw) < 6f && MathF.Abs(a.Pitch - c.Pitch) < 8f))
                 {
                     continue;

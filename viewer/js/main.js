@@ -266,7 +266,7 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
       if (focusables.length === 0) {
         return;
       }
-      const first = focusables[0], last = focusables[focusables.length - 1];
+      const first = focusables[0], last = focusables.at(-1);
       if (e.shiftKey && document.activeElement === first) {
         e.preventDefault();
         last.focus();
@@ -404,7 +404,8 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
       // Naming what is being counted matters: the total is every spot a player
       // can stand within throw range of the target, not the whole map, which is
       // why it lands near the same figure regardless of how big the map is.
-      statusEl.textContent = `checked ${p.checked.length}${p.total ? ` / ${p.total}` : ""} stand spots in throw range…`;
+      const ofTotal = p.total ? ` / ${p.total}` : "";
+      statusEl.textContent = `checked ${p.checked.length}${ofTotal} stand spots in throw range…`;
     } else if (msg.verified) {
       p.verified.push(...msg.verified);
       statusEl.textContent = `verifying ${p.verified.length} / ${p.candidates ?? "?"} candidates against the exact sim…`;
@@ -419,11 +420,11 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
   function advancedParams() {
     const p = {};
     const tol = document.getElementById("a-tolerance").value;
-    if (tol) { p.tolerance = parseFloat(tol); }
+    if (tol) { p.tolerance = Number.parseFloat(tol); }
     const reach = document.getElementById("a-reach").value;
-    if (reach) { p.originReach = parseFloat(reach); }
+    if (reach) { p.originReach = Number.parseFloat(reach); }
     const stab = document.getElementById("a-stability").value;
-    if (stab) { p.minStability = parseFloat(stab); }
+    if (stab) { p.minStability = Number.parseFloat(stab); }
     if (document.getElementById("a-scan").value === "fine") { p.fineScan = true; }
     return p;
   }
@@ -456,7 +457,7 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
     const type = state.filters.type.value;
     if (type) { p.types = [type]; }
     const strength = state.filters.strength.value;
-    if (strength) { p.strengths = [parseFloat(strength)]; }
+    if (strength) { p.strengths = [Number.parseFloat(strength)]; }
     return p;
   }
 
@@ -801,8 +802,8 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
   // The precision the accuracy ring is judged against: the precision filter
   // when set, otherwise whatever landing tolerance the solve itself used.
   function slackWithin() {
-    return parseFloat(state.filters.precision.value) ||
-      parseFloat(document.getElementById("a-tolerance").value) || 80;
+    return Number.parseFloat(state.filters.precision.value) ||
+      Number.parseFloat(document.getElementById("a-tolerance").value) || 80;
   }
 
   async function goToLineup(l) {

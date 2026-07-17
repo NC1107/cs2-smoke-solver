@@ -31,7 +31,7 @@ public static class CalibrateCommand
 {
     public static int Run(Dictionary<string, string> options)
     {
-        var (mesh, _, _, attributeFilter) = LoadCommon(options);
+        var (mesh, _, _, _) = LoadCommon(options);
         var outPath = options.GetValueOrDefault("out", "data/throw-constants.json");
         using var doc = JsonDocument.Parse(File.ReadAllText(Require(options, "throws")));
 

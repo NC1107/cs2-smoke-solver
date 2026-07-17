@@ -25,7 +25,7 @@ cd "$REPO"
 # Prefer the published binary (rig/deploy: dotnet publish src/Cli -o rig/bin):
 # it is decoupled from the working tree, so a mid-edit compile error cannot
 # turn into silent in-game failures. dotnet run remains as a dev fallback.
-if [ -x "$REPO/rig/bin/SmokeSolver.Cli" ]; then
+if [[ -x "$REPO/rig/bin/SmokeSolver.Cli" ]]; then
   CLI=("$REPO/rig/bin/SmokeSolver.Cli")
 else
   CLI=(dotnet run --project src/Cli -c Release -v q --)
@@ -35,7 +35,7 @@ logw() { printf '%s watcher %s\n' "$(date '+%F %T')" "$*" | tee -a "$LOG"; }
 
 # Requests written while the watcher was down must not fire hours later.
 for f in "$CALIB"/test-request.json "$CALIB"/lineup-request.json "$CALIB"/plineup-request.json; do
-  if [ -f "$f" ]; then
+  if [[ -f "$f" ]]; then
     logw "discarding stale request left from previous session: $f"
     rm -f "$f"
   fi
@@ -69,7 +69,7 @@ map_assets() {
   local map="$1"
   GEO="data/$map.s2geo"
   NAV="data/$map.navareas.json"
-  if [ ! -f "$GEO" ] || [ ! -f "$NAV" ]; then
+  if [[ ! -f "$GEO" || ! -f "$NAV" ]]; then
     python3 rig/relay-chat.py "no extracted geometry for map '$map' - run the extract command first"
     return 1
   fi
@@ -105,7 +105,7 @@ service_lineup() {
   map="${map:-de_dust2}"
   map_assets "$map" || { rm -f "$f"; return; }
   logw "$relay for '$name' from ($from) on $map mode=$mode"
-  if [ "$relay" = "relay-plineup.py" ]; then
+  if [[ "$relay" == "relay-plineup.py" ]]; then
     result=$("${CLI[@]}" pointlineup --geo "$GEO" --from " $from" --target " $target" \
              --mode "$mode" 2>> "$LOG" | tail -1)
     # A miss from the exact spot is a dead end. Fall back to the nearest spot

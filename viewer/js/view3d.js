@@ -505,7 +505,7 @@ export function sync3d() {
     const dot = new THREE.Mesh(targetGeo, targetMat);
     dot.position.set(target[0], target[1], tz + 6);
     targetGroup.add(dot);
-    const zoneRadius = state.filters.precision.value ? parseFloat(state.filters.precision.value) : SMOKE_BLOOM_RADIUS;
+    const zoneRadius = state.filters.precision.value ? Number.parseFloat(state.filters.precision.value) : SMOKE_BLOOM_RADIUS;
     const bloom = new THREE.Mesh(bloomGeo, bloomMat);
     bloom.scale.setScalar(zoneRadius);
     bloom.position.copy(dot.position);

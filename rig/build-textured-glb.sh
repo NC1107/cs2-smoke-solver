@@ -20,11 +20,11 @@ set -euo pipefail
 map="${1:?usage: build-textured-glb.sh <map> [vpk-dir]}"
 vpkdir="${2:-${CS2_MAPS_DIR:-$HOME/.local/share/Steam/steamapps/common/Counter-Strike Global Offensive/game/csgo/maps}}"
 vpk="$vpkdir/$map.vpk"
-[ -f "$vpk" ] || { echo "no VPK at $vpk" >&2; exit 1; }
+[[ -f "$vpk" ]] || { echo "no VPK at $vpk" >&2; exit 1; }
 
 repo="$(cd "$(dirname "$0")/.." && pwd)"
 dll="$repo/src/Cli/bin/Release/net10.0/SmokeSolver.Cli.dll"
-[ -f "$dll" ] || { echo "build the CLI first: dotnet build src/Cli -c Release" >&2; exit 1; }
+[[ -f "$dll" ]] || { echo "build the CLI first: dotnet build src/Cli -c Release" >&2; exit 1; }
 
 # The raw export also drops hundreds of loose PNGs beside its output; a scratch
 # dir keeps them out of data/ and cleans them up on exit. It defaults to $HOME

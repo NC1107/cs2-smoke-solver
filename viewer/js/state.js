@@ -57,7 +57,7 @@ function skyAllowed(l, setting) {
   if (!(l.aimRef?.sky > 0.95)) {
     return true;
   }
-  return setting !== "off" && skyAngle(l) <= parseFloat(setting);
+  return setting !== "off" && skyAngle(l) <= Number.parseFloat(setting);
 }
 
 // These pure helpers live here (not in a feature module) because map2d,
@@ -78,12 +78,12 @@ export function filtered() {
   return state.result.lineups.filter(l =>
     !l._removed &&
     (!filters.type.value || l.type === filters.type.value) &&
-    (!filters.strength.value || Math.abs(l.strength - parseFloat(filters.strength.value)) < 0.01) &&
-    (!filters.bounces.value || l.Bounces <= parseInt(filters.bounces.value)) &&
-    (!filters.flight.value || l.flightTime <= parseFloat(filters.flight.value)) &&
-    (!filters.stability.value || l.stability >= parseFloat(filters.stability.value)) &&
+    (!filters.strength.value || Math.abs(l.strength - Number.parseFloat(filters.strength.value)) < 0.01) &&
+    (!filters.bounces.value || l.Bounces <= Number.parseInt(filters.bounces.value)) &&
+    (!filters.flight.value || l.flightTime <= Number.parseFloat(filters.flight.value)) &&
+    (!filters.stability.value || l.stability >= Number.parseFloat(filters.stability.value)) &&
     (!filters.sky.value || skyAllowed(l, filters.sky.value)) &&
-    (!filters.precision.value || Math.hypot(l.rest[0] - t[0], l.rest[1] - t[1]) <= parseFloat(filters.precision.value)));
+    (!filters.precision.value || Math.hypot(l.rest[0] - t[0], l.rest[1] - t[1]) <= Number.parseFloat(filters.precision.value)));
 }
 
 export const typeShort = { Stand: "stand", Crouch: "crouch", JumpThrow: "jump", CrouchJumpThrow: "crouch+jump", RunJumpThrow: "run+jump" };

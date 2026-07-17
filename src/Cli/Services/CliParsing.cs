@@ -106,7 +106,9 @@ public static class CliParsing
     {
         var m = System.Text.RegularExpressions.Regex.Match(
             line,
-            @"setpos\s+(-?[\d.]+)\s+(-?[\d.]+)\s+(-?[\d.]+)\s*;?\s*(?:setang\s+(-?[\d.]+)\s+(-?[\d.]+))?");
+            @"setpos\s+(-?[\d.]+)\s+(-?[\d.]+)\s+(-?[\d.]+)\s*;?\s*(?:setang\s+(-?[\d.]+)\s+(-?[\d.]+))?",
+            System.Text.RegularExpressions.RegexOptions.None,
+            TimeSpan.FromSeconds(1));
         if (!m.Success)
         {
             throw new ArgumentException($"cannot parse getpos line: '{line}'");

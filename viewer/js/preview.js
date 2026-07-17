@@ -3,7 +3,7 @@
 // user's own browser against the shared camera/canvas the interactive view
 // owns - no server round-trip.
 
-import { state, EYE_HEIGHT_BY_TYPE, DEFAULT_EYE_HEIGHT } from "./state.js";
+import { EYE_HEIGHT_BY_TYPE, DEFAULT_EYE_HEIGHT } from "./state.js";
 import { ensure3d, current3d, verticalFovFromDesired, ensureCrosshair } from "./view3d.js";
 import { ensureTexturedScene, currentTexturedScene } from "./textured-scene.js";
 

@@ -94,7 +94,7 @@ public static class MapRegistry
             // mesh for the full cache week. The payload hash changes whenever
             // the bytes do, so both the client ETag and the precompressed
             // brotli cache below invalidate exactly when the mesh does.
-            var meshVersion = $"{mesh.GameBuildId}-{Convert.ToHexString(System.Security.Cryptography.SHA1.HashData(payload))[..12].ToLowerInvariant()}";
+            var meshVersion = $"{mesh.GameBuildId}-{Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(payload))[..12].ToLowerInvariant()}";
             var entry = new MapEntry(mesh, attributeFilter, navAreas, constants, payload, payloadGzip, $"\"{meshVersion}\"");
             var brotliPath = BrotliCachePath(dataDir, mesh.MapName, meshVersion);
             if (File.Exists(brotliPath))

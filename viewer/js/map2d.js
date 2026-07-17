@@ -28,7 +28,7 @@ export function readColors() {
 }
 function hex2rgb(h) {
   const v = h.replace("#", "");
-  return [parseInt(v.slice(0, 2), 16), parseInt(v.slice(2, 4), 16), parseInt(v.slice(4, 6), 16)];
+  return [Number.parseInt(v.slice(0, 2), 16), Number.parseInt(v.slice(2, 4), 16), Number.parseInt(v.slice(4, 6), 16)];
 }
 function lerp(a, b, t) {
   return [0, 1, 2].map(i => Math.round(a[i] + (b[i] - a[i]) * t));
@@ -129,7 +129,7 @@ export function draw() {
   if (state.target) {
     // Circle = the landing zone in play: the precision filter radius when
     // set, otherwise the settled smoke bloom radius (visual estimate).
-    const zoneRadius = state.filters.precision.value ? parseFloat(state.filters.precision.value) : SMOKE_BLOOM_RADIUS;
+    const zoneRadius = state.filters.precision.value ? Number.parseFloat(state.filters.precision.value) : SMOKE_BLOOM_RADIUS;
     ctx.strokeStyle = colors.target;
     ctx.fillStyle = colors.target;
     ctx.lineWidth = 2 / scale;
@@ -169,7 +169,7 @@ export function draw() {
     }
     ctx.globalAlpha = 1;
   }
-  if (state.heatOn && state.result && state.result.coverage && !state.heatSpots) {
+  if (state.heatOn && state.result?.coverage && !state.heatSpots) {
     // Coverage heat map, colorblind-safe (M14): solid blue fill where a
     // verified lineup stands, faint blue fill where only the coarse voxel sim
     // reaches (its candidates failed exact verification), orange outline with

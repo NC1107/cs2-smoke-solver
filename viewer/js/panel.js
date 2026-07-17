@@ -257,7 +257,7 @@ function setTargetFromGetpos() {
     return;
   }
   callbacks.onSetTarget(
-    [parseFloat(m[1]), parseFloat(m[2]), parseFloat(m[3]) - DEFAULT_EYE_HEIGHT],
+    [Number.parseFloat(m[1]), Number.parseFloat(m[2]), Number.parseFloat(m[3]) - DEFAULT_EYE_HEIGHT],
     `target ${(+m[1]).toFixed(0)}, ${(+m[2]).toFixed(0)}`);
 }
 

@@ -507,7 +507,7 @@ function runEntryEl(run) {
     `<div class="run-entry-meta">${esc(fmtLocal(run.timestamp))}</div>` +
     `<div class="run-entry-stats">` +
     `<span>${run.summary?.lineups ?? "?"} throws</span>` +
-    `<span>med ${esc(fmtErr(run.summary?.errMedian ?? NaN))}u</span>` +
+    `<span>med ${esc(fmtErr(run.summary?.errMedian ?? Number.NaN))}u</span>` +
     `<span>${esc(fmtPct(within8Fraction(run.summary)))} &le;8u</span>` +
     `</div>`;
   btn.addEventListener("click", () => selectRun(run.file));

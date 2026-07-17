@@ -354,13 +354,11 @@ public static class LineupApi
         {
             return "target is outside the map bounds";
         }
-        if (query.TryGetProperty("origin", out var originEl))
+        if (query.TryGetProperty("origin", out var originEl) &&
+            (originEl.ValueKind != JsonValueKind.Array || originEl.GetArrayLength() < 2 ||
+             originEl.EnumerateArray().Any(e => e.ValueKind != JsonValueKind.Number || !float.IsFinite(e.GetSingle()))))
         {
-            if (originEl.ValueKind != JsonValueKind.Array || originEl.GetArrayLength() < 2 ||
-                originEl.EnumerateArray().Any(e => e.ValueKind != JsonValueKind.Number || !float.IsFinite(e.GetSingle())))
-            {
-                return "origin must be [x,y] with finite numbers";
-            }
+            return "origin must be [x,y] with finite numbers";
         }
         if (query.TryGetProperty("originReach", out var reachEl) &&
             (reachEl.ValueKind != JsonValueKind.Number || !float.IsFinite(reachEl.GetSingle()) ||
@@ -428,7 +426,7 @@ public static class LineupApi
         // build), so re-extracting a map - e.g. dropping the Retake tape - forces
         // a re-solve instead of replaying results computed against the old mesh.
         var seed = $"v{QueryVersion}|{mesh.MapName}|{meshVersion}|{JsonSerializer.Serialize(constants)}|{tx},{ty},{tz}|{origin}|{reach:F0}|{tol:F0}|{stab:F2}|{(fine ? 1 : 0)}|{typesKey}|{strengthsKey}|{attrs}";
-        var hash = System.Security.Cryptography.SHA1.HashData(Encoding.UTF8.GetBytes(seed));
+        var hash = System.Security.Cryptography.SHA256.HashData(Encoding.UTF8.GetBytes(seed));
         return Convert.ToHexString(hash)[..20].ToLowerInvariant();
     }
 

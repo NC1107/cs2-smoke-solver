@@ -411,8 +411,8 @@ public static class GrenadeTrajectory
             }
         }
         var contact = Vector3.Lerp(free, solid, lo);
-        var (fx, fy, fz) = grid.CellOf(contact);
-        var (sx, sy, sz) = grid.CellOf(Vector3.Lerp(free, solid, hi));
+        var (fx, fy, _) = grid.CellOf(contact);
+        var (sx, sy, _) = grid.CellOf(Vector3.Lerp(free, solid, hi));
         if (sx != fx)
         {
             return (contact, 0);
