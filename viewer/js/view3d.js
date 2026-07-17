@@ -13,6 +13,22 @@ const stage3d = state.stage3d;
 // magenta that appears nowhere else in the palette, so a smoke-stopping surface
 // the textured world hides cannot be mistaken for a real wall or a marker.
 const PHANTOM_COLOR = 0xff2fd0;
+
+// A soft round sprite for the progress point clouds. GL points render as hard
+// squares by default, which read as blocky next to the 2D view's round dots;
+// mapping this radial-alpha circle onto the material makes them dots too.
+function circleSprite() {
+  const c = document.createElement("canvas");
+  c.width = c.height = 64;
+  const g = c.getContext("2d");
+  const grad = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+  grad.addColorStop(0, "rgba(255,255,255,1)");
+  grad.addColorStop(0.65, "rgba(255,255,255,1)");
+  grad.addColorStop(1, "rgba(255,255,255,0)");
+  g.fillStyle = grad;
+  g.fillRect(0, 0, 64, 64);
+  return new THREE.CanvasTexture(c);
+}
 let three = null;
 let threePromise = null; // memoized in-flight init so re-toggles share one
 
@@ -164,10 +180,18 @@ async function init3d() {
   scene.add(targetGroup);
   const progressGroup = new THREE.Group();
   scene.add(progressGroup);
+  const spawnGroup = new THREE.Group();
+  scene.add(spawnGroup);
+
+  // Spawn markers: diamonds in team colors (T gold, CT blue), matching the 2D
+  // overlay. Raycast-picked so clicking one solves a smoke from that exact spot.
+  const spawnGeo = new THREE.OctahedronGeometry(11);
+  const spawnMatT = new THREE.MeshBasicMaterial({ color: 0xd9a441 });
+  const spawnMatCt = new THREE.MeshBasicMaterial({ color: 0x4a90d9 });
 
   // Shared marker assets: sync3d re-parents these instead of allocating new
   // GPU buffers per rebuild (three.js never frees them on plain .remove()).
-  const markerGeo = new THREE.SphereGeometry(14, 10, 8);
+  const markerGeo = new THREE.SphereGeometry(8, 12, 10);
   const markerMats = {
     left: new THREE.MeshBasicMaterial({ color: colors["click-left"] }),
     mid: new THREE.MeshBasicMaterial({ color: colors["click-mid"] }),
@@ -176,7 +200,7 @@ async function init3d() {
   const targetGeo = new THREE.SphereGeometry(10, 16, 12);
   const targetMat = new THREE.MeshBasicMaterial({ color: colors.target });
   const bloomGeo = new THREE.SphereGeometry(1, 24, 16); // unit sphere, scaled to the zone radius
-  const bloomMat = new THREE.MeshBasicMaterial({ color: colors.target, transparent: true, opacity: 0.14, depthWrite: false });
+  const bloomMat = new THREE.MeshBasicMaterial({ color: colors.target, transparent: true, opacity: 0.10, depthWrite: false });
   const lineMat = new THREE.LineBasicMaterial({ color: colors.accent });
   // The accuracy ring around a lineup's feet ("Go to"): how far the player can
   // drift before the aim misses. Green like verified heat - it means "safe".
@@ -187,10 +211,11 @@ async function init3d() {
   // so the live progress dots are Points clouds (one draw call each) rather
   // than a mesh per origin, which would stall the view exactly when it is
   // meant to be showing that the solver is making progress.
+  const dotTex = circleSprite();
   const progressCheckedMat = new THREE.PointsMaterial({
-    size: 22, vertexColors: true, transparent: true, opacity: 0.6, depthWrite: false });
+    size: 20, map: dotTex, vertexColors: true, transparent: true, opacity: 0.6, depthWrite: false });
   const progressVerifiedMat = new THREE.PointsMaterial({
-    size: 40, color: colors["heat-ok"], transparent: true, opacity: 0.95, depthWrite: false });
+    size: 34, map: dotTex, color: colors["heat-ok"], transparent: true, opacity: 0.95, depthWrite: false });
 
   const raycaster = new THREE.Raycaster();
   const meshObj = scene.children.find(o => o.isMesh);
@@ -224,6 +249,12 @@ async function init3d() {
       if (mhits.length > 0 && mhits[0].object.userData.idx !== undefined) {
         return { markerIdx: mhits[0].object.userData.idx };
       }
+      if (state.spawnsOn && spawnGroup.children.length) {
+        const shits = raycaster.intersectObjects(spawnGroup.children, false);
+        if (shits.length > 0 && shits[0].object.userData.spawn) {
+          return { spawnOrigin: shits[0].object.userData.spawn };
+        }
+      }
     }
     const hits = raycaster.intersectObject(meshObj, false);
     return hits.length > 0 ? { point: hits[0].point } : null;
@@ -250,6 +281,12 @@ async function init3d() {
       if (!hit) { return; }
       if (hit.markerIdx !== undefined) {
         callbacks.onSelect(hit.markerIdx);
+        return;
+      }
+      if (hit.spawnOrigin) {
+        if (state.target && !state.heatOn) {
+          callbacks.onRunQuery({ target: state.target, origin: hit.spawnOrigin });
+        }
         return;
       }
       const pnt = hit.point;
@@ -301,7 +338,7 @@ async function init3d() {
   three = {
     renderer, scene, camera, markerGroup, targetGroup, progressGroup, resize3d,
     markerGeo, markerMats, targetGeo, targetMat, bloomGeo, bloomMat, lineMat,
-    slackFillMat, slackLineMat,
+    slackFillMat, slackLineMat, spawnGroup, spawnGeo, spawnMatT, spawnMatCt,
     progressCheckedMat, progressVerifiedMat, surfaceZAt,
     get isLive() { return live; },
     get isTextured() { return activeScene !== scene; },
@@ -489,6 +526,17 @@ export function syncProgress3d() {
   three.requestRender();
 }
 
+// Diamond markers for each spawn, floating just clear of the point, tagged with
+// the [x, y] origin so a tap solves a smoke from that exact spawn (pickAt/onTap).
+function addSpawns3d(pts, material) {
+  for (const [x, y, z] of pts) {
+    const m = new THREE.Mesh(three.spawnGeo, material);
+    m.position.set(x, y, z + 14);
+    m.userData.spawn = [x, y];
+    three.spawnGroup.add(m);
+  }
+}
+
 export function sync3d() {
   if (!three || stage3d.style.display === "none") {
     return;
@@ -496,6 +544,11 @@ export function sync3d() {
   const { markerGroup, targetGroup, markerGeo, markerMats, targetGeo, targetMat, bloomGeo, bloomMat, lineMat } = three;
   clearGroup(markerGroup);
   clearGroup(targetGroup);
+  clearGroup(three.spawnGroup);
+  if (state.spawnsOn && state.spawns) {
+    addSpawns3d(state.spawns.t, three.spawnMatT);
+    addSpawns3d(state.spawns.ct, three.spawnMatCt);
+  }
   const target = state.target;
   if (target) {
     // A 3D-picked target carries its exact Z; a 2D-picked one does not, so drop
@@ -514,7 +567,9 @@ export function sync3d() {
   if (state.result) {
     for (const l of filtered()) {
       const m = new THREE.Mesh(markerGeo, markerMats[clickClass(l.strength)]);
-      m.position.set(l.feet[0], l.feet[1], l.feet[2] + 20);
+      // Sit half-out of the floor it stands on (center on the surface) rather
+      // than floating above it, so tightly-packed throw spots stay legible.
+      m.position.set(l.feet[0], l.feet[1], l.feet[2] + 1);
       m.userData.idx = l._idx;
       if (l._idx === state.selected) { m.scale.setScalar(1.8); }
       markerGroup.add(m);

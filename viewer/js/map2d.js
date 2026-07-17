@@ -132,13 +132,14 @@ export function draw() {
     const zoneRadius = state.filters.precision.value ? Number.parseFloat(state.filters.precision.value) : SMOKE_BLOOM_RADIUS;
     ctx.strokeStyle = colors.target;
     ctx.fillStyle = colors.target;
-    ctx.lineWidth = 2 / scale;
-    ctx.globalAlpha = 0.12;
+    ctx.lineWidth = 1.5 / scale;
+    ctx.globalAlpha = 0.07;
     ctx.beginPath();
     ctx.arc(state.target[0], -state.target[1], zoneRadius, 0, Math.PI * 2);
     ctx.fill();
-    ctx.globalAlpha = 1;
+    ctx.globalAlpha = 0.85;
     ctx.stroke();
+    ctx.globalAlpha = 1;
     ctx.beginPath();
     ctx.arc(state.target[0], -state.target[1], 3 / scale, 0, Math.PI * 2);
     ctx.fill();
@@ -255,8 +256,49 @@ export function draw() {
     }
     drawMarker(l, isSelected, clickColor);
   });
+  if (state.spawnsOn && state.spawns) {
+    drawSpawnSet(state.spawns.t, SPAWN_T_COLOR);
+    drawSpawnSet(state.spawns.ct, SPAWN_CT_COLOR);
+  }
   document.getElementById("key-count").textContent =
     state.result ? (state.heatOn ? `${state.result.coverage?.length ?? 0} origins` : `${shown.length}/${state.result.lineups.length}`) : "";
+}
+
+// T gold, CT blue - team colors, distinct from the click-strength marker palette.
+const SPAWN_T_COLOR = "#d9a441";
+const SPAWN_CT_COLOR = "#4a90d9";
+
+// Spawn points as small diamonds so they never read as lineup dots.
+function drawSpawnSet(pts, color) {
+  const r = 6 / scale;
+  ctx.lineWidth = 1.4 / scale;
+  ctx.strokeStyle = state.colors.panel;
+  ctx.fillStyle = color;
+  for (const [x, y] of pts) {
+    const px = x, py = -y;
+    ctx.beginPath();
+    ctx.moveTo(px, py - r);
+    ctx.lineTo(px + r, py);
+    ctx.lineTo(px, py + r);
+    ctx.lineTo(px - r, py);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+  }
+}
+
+// The shown spawn nearest a click within grab range, or null - so clicking a
+// spawn marker solves from that exact spot rather than the approximate pixel.
+function nearestSpawn(wx, wy, radius) {
+  if (!state.spawnsOn || !state.spawns) {
+    return null;
+  }
+  let best = null, bestD = radius;
+  for (const p of [...state.spawns.t, ...state.spawns.ct]) {
+    const d = Math.hypot(p[0] - wx, p[1] - wy);
+    if (d < bestD) { bestD = d; best = p; }
+  }
+  return best;
 }
 
 // Shape encodes movement (fill = grounded, hollow = jump variant), color
@@ -397,7 +439,9 @@ export function initMap2d(cb) {
       callbacks.onSelect(bestIdx);
       return;
     }
-    callbacks.onRunQuery({ target: state.target, origin: [wx, wy] });
+    const spawn = nearestSpawn(wx, wy, pickPx / scale);
+    const origin = spawn ? [spawn[0], spawn[1]] : [wx, wy];
+    callbacks.onRunQuery({ target: state.target, origin });
   });
   canvas.addEventListener("pointercancel", e => {
     touches.delete(e.pointerId);

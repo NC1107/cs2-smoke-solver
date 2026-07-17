@@ -247,8 +247,8 @@
     box-shadow: 0 0 1px #000;
   }
   /* Two bars forming a "+", each centered on the viewport midpoint. */
-  .preview-crosshair span:first-child { left: -8px; top: -1px; width: 16px; height: 2px; }
-  .preview-crosshair span:last-child { left: -1px; top: -8px; width: 2px; height: 16px; }
+  .preview-crosshair span:first-child { left: -5.5px; top: -1px; width: 11px; height: 2px; }
+  .preview-crosshair span:last-child { left: -1px; top: -5.5px; width: 2px; height: 11px; }
   /* touch-action: none hands every touch gesture to our pointer handlers;
      without it the browser races us for pan/zoom on touch screens. */
   canvas { position: absolute; inset: 0; width: 100%; height: 100%; cursor: grab; touch-action: none; }

@@ -23,6 +23,11 @@ export const state = {
   heatSpots: false,
   // 3D center-crosshair preference; main.js loads/persists it in localStorage.
   crosshairOn: true,
+  // Player spawn positions for the current map ({ t: [[x,y,z]...], ct: [...] })
+  // and whether their markers are shown. Fetched on map load; clicking a shown
+  // spawn solves a smoke from that exact spot to the current target.
+  spawns: null,
+  spawnsOn: false,
   hovered: -1,
   canvas: document.getElementById("map"),
   stage3d: document.getElementById("stage3d"),

@@ -3,7 +3,7 @@
 // here (setTarget, select, runQuery) via the init*/set*Callbacks hooks.
 
 import { state, filtered, esc } from "./state.js";
-import { loadMapList, loadMapData, runQuery as postLineupQuery, fetchTrajectory, fetchLineupOne, fetchSlack } from "./api.js";
+import { loadMapList, loadMapData, runQuery as postLineupQuery, fetchTrajectory, fetchLineupOne, fetchSlack, fetchSpawns } from "./api.js";
 import { loadRadar, readColors, recolorRadar, draw, scheduleDraw, resize, resetView, initMap2d } from "./map2d.js";
 import { ensure3d, resetEnsure3d, teardown3d, current3d, sync3d, syncProgress3d, set3dCallbacks, applyTheme3d } from "./view3d.js";
 import { resetEnsureTexturedScene } from "./textured-scene.js";
@@ -41,6 +41,7 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
   const heatBtn = document.getElementById("heat");
   const view3dBtn = document.getElementById("view3d");
   const resetViewBtn = document.getElementById("reset-view");
+  const spawnsBtn = document.getElementById("spawns");
   const texturedBtn = document.getElementById("textured3d");
   const topDownBtn = document.getElementById("topdown");
   const crosshairBtn = document.getElementById("crosshair3d");
@@ -122,6 +123,8 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
     document.getElementById("key-heat-spots").hidden = !state.heatSpots;
 
     view3dBtn.classList.toggle("active", in3d);
+    spawnsBtn.hidden = !(state.spawns && (state.spawns.t.length || state.spawns.ct.length));
+    spawnsBtn.classList.toggle("active", state.spawnsOn);
     // 2D's "recenter" is Reset view; 3D's is Top-down. Only the live one shows.
     resetViewBtn.hidden = in3d;
     texturedBtn.hidden = !in3d;
@@ -186,6 +189,8 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
     canvas.style.display = "block";
     texturedBtn.classList.remove("active");
     state.currentMap = name;
+    state.spawns = null;
+    state.spawnsOn = false;
     localStorage.setItem("smokesolver.lastMap", name);
     resetSearch();
     syncUrl();
@@ -197,6 +202,11 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
       bootError(`data/${name}.viewer-map.json`);
       return false;
     }
+    // Spawns are a bonus overlay: fetch without blocking the map load, and
+    // reveal the toggle once they arrive (syncControls hides it when absent).
+    fetchSpawns(name).then(s => {
+      if (state.currentMap === name) { state.spawns = s; syncControls(); }
+    }).catch(() => {});
     try {
       await loadRadar();
     } catch {
@@ -627,6 +637,12 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
     }
   });
   resetViewBtn.addEventListener("click", resetView);
+  spawnsBtn.addEventListener("click", () => {
+    state.spawnsOn = !state.spawnsOn;
+    spawnsBtn.classList.toggle("active", state.spawnsOn);
+    draw();
+    sync3d();
+  });
   searchBtn.addEventListener("click", () => {
     if (state.target && !state.busy) {
       statusEl.textContent = "searching map…";

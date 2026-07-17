@@ -28,6 +28,15 @@ export async function loadMapData(map) {
   return res.json();
 }
 
+// T/CT spawn positions from the map's entity lump: { t: [[x,y,z]...], ct: [...] }.
+export async function fetchSpawns(map) {
+  const res = await fetch(`/api/spawns?map=${encodeURIComponent(map)}`);
+  if (!res.ok) {
+    throw new Error(`HTTP ${res.status}`);
+  }
+  return res.json();
+}
+
 // The /api/lineup POST. The server streams NDJSON progress lines (phase
 // markers and batches of checked origins) before the final result line;
 // each progress line is handed to `onProgress` so the map can paint the

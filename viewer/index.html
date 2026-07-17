@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Smoke Solver</title>
 <link rel="icon" href="viewer/favicon.svg" type="image/svg+xml">
-<link rel="stylesheet" href="viewer/app.css?v=3">
+<link rel="stylesheet" href="viewer/app.css?v=4">
 </head>
 <body>
 
@@ -27,6 +27,7 @@
         <button id="search-all" class="btn" hidden>Search map</button>
         <button id="heat" class="btn" hidden>Heatmap</button>
         <button id="reset-view" class="btn" title="Recenter and re-fit the map (double-click does this too)">Reset view</button>
+        <button id="spawns" class="btn" hidden title="Show T/CT spawn positions - with a target set, click a spawn to solve a smoke from it">Spawns</button>
         <button id="view3d" class="btn">3D</button>
         <button id="textured3d" class="btn" hidden title="Load real map textures for the 3D view (one-time, size varies by map)">Textured</button>
         <button id="topdown" class="btn" hidden title="Look straight down at the whole map">Top-down</button>
@@ -227,6 +228,6 @@ give weapon_smokegrenade<button data-copy="cmd-setup" class="btn">copy</button><
      4h, so bumping ?v= here is what busts that cache. Bump on any change to a
      directly-referenced asset. (The permanent cure is CF Browser Cache TTL ->
      "Respect Existing Headers", after which this is belt-and-suspenders.) -->
-<script type="module" src="viewer/js/main.js?v=3"></script>
+<script type="module" src="viewer/js/main.js?v=4"></script>
 </body>
 </html>

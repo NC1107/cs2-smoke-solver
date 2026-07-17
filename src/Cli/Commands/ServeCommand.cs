@@ -84,6 +84,42 @@ public static class ServeCommand
             .OrderBy(kv => kv.Key, StringComparer.Ordinal)
             .Select(kv => new { map = kv.Key, hasLineups = kv.Value.NavAreas != null })));
 
+        // Player spawn positions, read straight from the extracted entity lump
+        // (info_player_terrorist / _counterterrorist). Lets the viewer answer
+        // "what can I smoke from spawn?" - e.g. a T insta-window on mirage -
+        // without the target-first sweep. No radar regen: it reads the same
+        // entities.json ViewerDataCommand already leaves in data/.
+        app.MapGet("/api/spawns", (string? map) =>
+        {
+            if (map == null || !maps.ContainsKey(map))
+            {
+                return ApiError(StatusCodes.Status404NotFound, UnknownMapError);
+            }
+            var path = Path.Combine(root, "data", $"{map}.entities.json");
+            var t = new List<float[]>();
+            var ct = new List<float[]>();
+            if (File.Exists(path))
+            {
+                using var doc = JsonDocument.Parse(File.ReadAllText(path));
+                foreach (var e in doc.RootElement.EnumerateArray())
+                {
+                    var bucket = e.GetProperty("ClassName").GetString() switch
+                    {
+                        "info_player_terrorist" => t,
+                        "info_player_counterterrorist" => ct,
+                        _ => null,
+                    };
+                    if (bucket == null)
+                    {
+                        continue;
+                    }
+                    var o = e.GetProperty("Origin");
+                    bucket.Add([o[0].GetSingle(), o[1].GetSingle(), o[2].GetSingle()]);
+                }
+            }
+            return Results.Json(new { t, ct });
+        });
+
         app.MapGet("/api/mesh", (HttpContext context, string? map) =>
         {
             if (map == null || !maps.TryGetValue(map, out var entry))
