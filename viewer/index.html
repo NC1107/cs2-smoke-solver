@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Smoke Solver</title>
 <link rel="icon" href="viewer/favicon.svg" type="image/svg+xml">
-<link rel="stylesheet" href="viewer/app.css?v=6">
+<link rel="stylesheet" href="viewer/app.css?v=7">
 </head>
 <body>
 
@@ -50,7 +50,9 @@
               <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 2.5v7M7 6.5l3 3 3-3"/><rect x="4" y="12" width="12" height="5" rx="1"/></svg></button>
             <button id="crosshair3d" class="icon-btn" title="Show or hide the center crosshair" aria-label="Crosshair">
               <svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="5.5"/><path d="M10 1.5v4M10 14.5v4M1.5 10h4M14.5 10h4"/></svg></button>
-            <button id="reticle3d" class="icon-btn" title="Lineup crosshair: a numbered ruler reticle to line grenades up by tick, like CS2" aria-label="Lineup crosshair">
+            <button id="grenade3d" class="icon-btn" title="Grenade crosshair: the CS2 gold ruler reticle you get holding a nade, to line up by tick" aria-label="Grenade crosshair">
+              <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 1.5v17M1.5 10h17M6.5 8v4M13.5 8v4M8 6.5h4M8 13.5h4"/></svg></button>
+            <button id="reticle3d" class="icon-btn" title="Lineup crosshair: a green numbered ruler reticle to line grenades up by tick" aria-label="Lineup crosshair">
               <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M1.5 10h17M5 7.5v5M10 6.5v7M15 7.5v5"/></svg></button>
           </div>
         </div>
@@ -167,6 +169,7 @@
   <canvas id="map" aria-label="Top-down map; click to set a smoke target and throw origins"></canvas>
   <div id="stage3d" style="position:absolute; inset:0; display:none"></div>
   <div id="lineup-ruler" class="lineup-ruler" hidden aria-hidden="true"></div>
+  <div id="grenade-ruler" class="grenade-ruler" hidden aria-hidden="true"></div>
   <div id="tip"></div>
   <details class="key" id="key-dots" hidden>
     <summary>legend <span id="key-count"></span></summary>
@@ -258,6 +261,6 @@ give weapon_smokegrenade<button data-copy="cmd-setup" class="btn">copy</button><
      4h, so bumping ?v= here is what busts that cache. Bump on any change to a
      directly-referenced asset. (The permanent cure is CF Browser Cache TTL ->
      "Respect Existing Headers", after which this is belt-and-suspenders.) -->
-<script type="module" src="viewer/js/main.js?v=6"></script>
+<script type="module" src="viewer/js/main.js?v=7"></script>
 </body>
 </html>

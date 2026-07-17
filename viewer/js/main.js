@@ -47,6 +47,8 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
   const crosshairBtn = document.getElementById("crosshair3d");
   const collisionBtn = document.getElementById("collision3d");
   const reticleBtn = document.getElementById("reticle3d");
+  const grenadeBtn = document.getElementById("grenade3d");
+  const grenadeRulerEl = document.getElementById("grenade-ruler");
   const viewIcons = document.getElementById("view-icons");
   const rulerEl = document.getElementById("lineup-ruler");
   const clearBtn = document.getElementById("clear");
@@ -73,42 +75,47 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
   });
   reticleBtn.addEventListener("click", () => {
     state.reticleOn = !state.reticleOn;
-    buildLineupRuler();
+    buildRuler(rulerEl);
+    syncControls();
+    current3d()?.focusStage();
+  });
+  grenadeBtn.addEventListener("click", () => {
+    state.grenadeReticleOn = !state.grenadeReticleOn;
+    buildRuler(grenadeRulerEl);
     syncControls();
     current3d()?.focusStage();
   });
 
-  // The CS2 "lineup crosshair": a green ruler with a numbered horizontal scale
-  // (-5..5) and a vertical tick scale, built once as percentage-positioned
-  // ticks so it scales with the viewport without a resize handler.
-  function buildLineupRuler() {
-    if (rulerEl.dataset.built) { return; }
-    rulerEl.dataset.built = "1";
+  // The CS2 grenade/lineup ruler: a full-screen cross with a numbered tick scale
+  // (-5..5) on both axes, so a grenade lines up by tick exactly like it does in
+  // game. Built once as percentage-positioned ticks so it scales with the
+  // viewport without a resize handler; colour (green lineup / gold grenade)
+  // comes from the element's own class.
+  function buildRuler(el) {
+    if (el.dataset.built) { return; }
+    el.dataset.built = "1";
     const frag = document.createDocumentFragment();
     frag.append(
       Object.assign(document.createElement("div"), { className: "rl-h" }),
       Object.assign(document.createElement("div"), { className: "rl-v" }));
-    const UNIT = 8; // percent of the viewport per numbered division
+    const rl = (cls, css, text) => {
+      const d = document.createElement("div");
+      d.className = cls;
+      d.style.cssText = css;
+      if (text !== undefined) { d.textContent = text; }
+      return d;
+    };
+    const UNIT = 8, LEN = 10; // percent per division; tick length in px
     for (let i = -5; i <= 5; i++) {
-      const x = 50 + i * UNIT, len = i === 0 ? 16 : 10;
-      const tick = document.createElement("div");
-      tick.className = "rl-tick";
-      tick.style.cssText = `left:${x}%;top:calc(50% - ${len / 2}px);width:2px;height:${len}px;transform:translateX(-50%)`;
-      const num = document.createElement("div");
-      num.className = "rl-num";
-      num.textContent = String(i);
-      num.style.cssText = `left:${x}%;top:calc(50% + ${len / 2 + 3}px)`;
-      frag.append(tick, num);
+      if (i === 0) { continue; }
+      const x = 50 + i * UNIT, y = 50 - i * UNIT; // right and up are positive
+      frag.append(
+        rl("rl-tick", `left:${x}%;top:calc(50% - ${LEN / 2}px);width:2px;height:${LEN}px;transform:translateX(-50%)`),
+        rl("rl-num", `left:${x}%;top:calc(50% + ${LEN / 2 + 3}px);transform:translateX(-50%)`, String(i)),
+        rl("rl-tick", `top:${y}%;left:calc(50% - ${LEN / 2}px);height:2px;width:${LEN}px;transform:translateY(-50%)`),
+        rl("rl-num", `top:${y}%;left:calc(50% + ${LEN / 2 + 5}px);transform:translateY(-50%)`, String(i)));
     }
-    for (let j = -5; j <= 5; j++) {
-      if (j === 0) { continue; }
-      const y = 50 + j * UNIT;
-      const tick = document.createElement("div");
-      tick.className = "rl-tick";
-      tick.style.cssText = `top:${y}%;left:calc(50% - 5px);height:2px;width:10px;transform:translateY(-50%)`;
-      frag.append(tick);
-    }
-    rulerEl.append(frag);
+    el.append(frag);
   }
 
   // Fetched once per lineup and cached on it: a throw's arc is fixed for a given
@@ -180,8 +187,10 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
     crosshairBtn.classList.toggle("active", state.crosshairOn);
     collisionBtn.classList.toggle("active", state.collisionOn);
     reticleBtn.classList.toggle("active", state.reticleOn);
+    grenadeBtn.classList.toggle("active", state.grenadeReticleOn);
     document.body.classList.toggle("crosshair-3d", in3d && state.crosshairOn);
     rulerEl.hidden = !(in3d && state.reticleOn);
+    grenadeRulerEl.hidden = !(in3d && state.grenadeReticleOn);
 
     // Nothing to explain until there are markers on the map to explain.
     keyEl.hidden = !hasTarget;

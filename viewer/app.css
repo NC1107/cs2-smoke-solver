@@ -198,7 +198,7 @@
   #controls .action-utility .btn:hover { color: var(--ink); }
   /* The 3D view controls as a compact icon strip (textured / collision / top-
      down / crosshair / lineup ruler). */
-  #controls .icon-row { display: flex; gap: 5px; }
+  #controls .icon-row { display: flex; flex-wrap: wrap; gap: 5px; }
   #controls .icon-row[hidden] { display: none; }
   #controls .icon-btn {
     flex: 1 1 0;
@@ -223,23 +223,23 @@
   /* Collision toggle glows the same magenta as the overlay it controls. */
   #controls #collision3d.active { border-color: #ff2fd0; color: #ff2fd0; }
 
-  /* The CS2 lineup crosshair: a full-screen green ruler with a numbered
-     horizontal scale, built by main.js as percentage-positioned ticks so it
-     scales with the viewport. */
-  .lineup-ruler {
+  /* Full-screen ruler crosshairs (green CS2 "lineup" reticle, gold CS2 grenade
+     reticle), built by main.js as percentage-positioned ticks so they scale
+     with the viewport. Colour comes from the element's own class. */
+  .lineup-ruler, .grenade-ruler {
     position: absolute;
     inset: 0;
     z-index: 41;
     pointer-events: none;
-    color: #00ff00;
   }
-  .lineup-ruler[hidden] { display: none; }
-  .lineup-ruler .rl-h { position: absolute; left: 0; right: 0; top: 50%; border-top: 1px solid currentColor; box-shadow: 0 0 1px #000; }
-  .lineup-ruler .rl-v { position: absolute; top: 0; bottom: 0; left: 50%; border-left: 1px solid currentColor; box-shadow: 0 0 1px #000; }
-  .lineup-ruler .rl-tick { position: absolute; background: currentColor; box-shadow: 0 0 1px #000; }
-  .lineup-ruler .rl-num {
+  .lineup-ruler { color: #00ff00; }
+  .grenade-ruler { color: #ffe23a; }
+  .lineup-ruler[hidden], .grenade-ruler[hidden] { display: none; }
+  .rl-h { position: absolute; left: 0; right: 0; top: 50%; border-top: 1px solid currentColor; box-shadow: 0 0 1px #000; }
+  .rl-v { position: absolute; top: 0; bottom: 0; left: 50%; border-left: 1px solid currentColor; box-shadow: 0 0 1px #000; }
+  .rl-tick { position: absolute; background: currentColor; box-shadow: 0 0 1px #000; }
+  .rl-num {
     position: absolute;
-    transform: translateX(-50%);
     font: 700 10px/1 ui-monospace, Menlo, monospace;
     text-shadow: 0 0 2px #000, 0 0 3px #000;
   }
