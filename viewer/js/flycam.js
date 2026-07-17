@@ -222,11 +222,14 @@ export function createFlyCamera(camera, domElement, { onTap, onLongPress, reques
         velocity.set(0, 0, 0);
         return;
       }
+      // W/S fly along the full look direction - look down and W descends - so
+      // dropping to a lower spot rarely needs the Ctrl "down" bind. Strafe (A/D)
+      // stays level regardless of pitch, computed from the horizontal heading.
       camera.getWorldDirection(fwd);
-      fwd.z = 0;
-      if (fwd.lengthSq() < 1e-6) { fwd.set(0, 1, 0); }
       fwd.normalize();
       right.set(fwd.y, -fwd.x, 0);
+      if (right.lengthSq() < 1e-6) { right.set(1, 0, 0); }
+      right.normalize();
       wanted.set(0, 0, 0);
       if (keys.has("KeyW")) { wanted.add(fwd); }
       if (keys.has("KeyS")) { wanted.sub(fwd); }

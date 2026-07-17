@@ -157,6 +157,7 @@ async function init3d() {
   // The phantom blockers: grenade-clips, physics-clips, and glass the solver
   // treats as solid but the textured world hides. Drawn in a distinct warning
   // tint over the walls, so an invisible wall that stops a smoke is obvious.
+  let phantomVisual = null;
   if (phantomICount > 0) {
     const pgeo = new THREE.BufferGeometry();
     pgeo.setAttribute("position", posAttr);
@@ -165,8 +166,11 @@ async function init3d() {
     const pmat = new THREE.MeshLambertMaterial({
       color: PHANTOM_COLOR, emissive: PHANTOM_COLOR, emissiveIntensity: 0.35,
       transparent: true, opacity: 0.55, side: THREE.DoubleSide, depthWrite: false });
-    const phantomVisual = new THREE.Mesh(pgeo, pmat);
+    phantomVisual = new THREE.Mesh(pgeo, pmat);
     phantomVisual.renderOrder = 1;
+    // The collision toggle can hide these or overlay them on the textured world
+    // (setTextured re-parents it below), so it follows the active scene.
+    phantomVisual.visible = state.collisionOn;
     scene.add(phantomVisual);
   }
   scene.add(new THREE.HemisphereLight(0xffffff, 0x33302a, 0.95));
@@ -366,12 +370,18 @@ async function init3d() {
       if (on === this.isTextured) { return; }
       const dest = on ? await ensureTexturedScene() : scene;
       const src = on ? scene : currentTexturedScene();
-      for (const g of [markerGroup, targetGroup, progressGroup]) {
+      for (const g of [markerGroup, targetGroup, progressGroup, phantomVisual].filter(Boolean)) {
         src?.remove(g);
         dest.add(g);
       }
       activeScene = dest;
       dirty = true;
+    },
+    // Show/hide the magenta collision-box overlay (grenade-clips, glass) - it
+    // rides the active scene, so this works over the flat mesh and the textured
+    // world alike.
+    setCollisionOverlay(on) {
+      if (phantomVisual) { phantomVisual.visible = on; dirty = true; }
     },
     // Any external state change (target/lineup selection, theme flip) that
     // doesn't go through camera movement still needs its one frame drawn.

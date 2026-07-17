@@ -45,6 +45,10 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
   const texturedBtn = document.getElementById("textured3d");
   const topDownBtn = document.getElementById("topdown");
   const crosshairBtn = document.getElementById("crosshair3d");
+  const collisionBtn = document.getElementById("collision3d");
+  const reticleBtn = document.getElementById("reticle3d");
+  const viewIcons = document.getElementById("view-icons");
+  const rulerEl = document.getElementById("lineup-ruler");
   const clearBtn = document.getElementById("clear");
   const keyEl = document.getElementById("key-dots");
   const mapSelect = document.getElementById("map-select");
@@ -61,6 +65,51 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
     syncControls();
     current3d()?.focusStage();
   });
+  collisionBtn.addEventListener("click", () => {
+    state.collisionOn = !state.collisionOn;
+    current3d()?.setCollisionOverlay(state.collisionOn);
+    syncControls();
+    current3d()?.focusStage();
+  });
+  reticleBtn.addEventListener("click", () => {
+    state.reticleOn = !state.reticleOn;
+    buildLineupRuler();
+    syncControls();
+    current3d()?.focusStage();
+  });
+
+  // The CS2 "lineup crosshair": a green ruler with a numbered horizontal scale
+  // (-5..5) and a vertical tick scale, built once as percentage-positioned
+  // ticks so it scales with the viewport without a resize handler.
+  function buildLineupRuler() {
+    if (rulerEl.dataset.built) { return; }
+    rulerEl.dataset.built = "1";
+    const frag = document.createDocumentFragment();
+    frag.append(
+      Object.assign(document.createElement("div"), { className: "rl-h" }),
+      Object.assign(document.createElement("div"), { className: "rl-v" }));
+    const UNIT = 8; // percent of the viewport per numbered division
+    for (let i = -5; i <= 5; i++) {
+      const x = 50 + i * UNIT, len = i === 0 ? 16 : 10;
+      const tick = document.createElement("div");
+      tick.className = "rl-tick";
+      tick.style.cssText = `left:${x}%;top:calc(50% - ${len / 2}px);width:2px;height:${len}px;transform:translateX(-50%)`;
+      const num = document.createElement("div");
+      num.className = "rl-num";
+      num.textContent = String(i);
+      num.style.cssText = `left:${x}%;top:calc(50% + ${len / 2 + 3}px)`;
+      frag.append(tick, num);
+    }
+    for (let j = -5; j <= 5; j++) {
+      if (j === 0) { continue; }
+      const y = 50 + j * UNIT;
+      const tick = document.createElement("div");
+      tick.className = "rl-tick";
+      tick.style.cssText = `top:${y}%;left:calc(50% - 5px);height:2px;width:10px;transform:translateY(-50%)`;
+      frag.append(tick);
+    }
+    rulerEl.append(frag);
+  }
 
   // Fetched once per lineup and cached on it: a throw's arc is fixed for a given
   // map build, and only the selected one is ever drawn. A failure here is not
@@ -125,13 +174,14 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
     view3dBtn.classList.toggle("active", in3d);
     spawnsBtn.hidden = !(state.spawns && (state.spawns.t.length || state.spawns.ct.length));
     spawnsBtn.classList.toggle("active", state.spawnsOn);
-    // 2D's "recenter" is Reset view; 3D's is Top-down. Only the live one shows.
+    // 2D's "recenter" is Reset view; the 3D view controls are an icon strip.
     resetViewBtn.hidden = in3d;
-    texturedBtn.hidden = !in3d;
-    topDownBtn.hidden = !in3d;
-    crosshairBtn.hidden = !in3d;
+    viewIcons.hidden = !in3d;
     crosshairBtn.classList.toggle("active", state.crosshairOn);
+    collisionBtn.classList.toggle("active", state.collisionOn);
+    reticleBtn.classList.toggle("active", state.reticleOn);
     document.body.classList.toggle("crosshair-3d", in3d && state.crosshairOn);
+    rulerEl.hidden = !(in3d && state.reticleOn);
 
     // Nothing to explain until there are markers on the map to explain.
     keyEl.hidden = !hasTarget;
@@ -327,8 +377,8 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
   const filterEls = Object.values(state.filters);
   const filterRowsHtml = () => filterEls
     .map(f => `<div class="filter-row" data-for="${f.id}">` +
-      `<label class="filter-head" for="${f.id}"><b>${esc(f.dataset.label)}:</b>` +
-      `<button type="button" class="desc-toggle" aria-expanded="false" aria-label="What does ${esc(f.dataset.label)} do?">?</button>` +
+      `<label class="filter-head" for="${f.id}">` +
+      `<b class="filter-info" tabindex="0" role="button" aria-label="What does ${esc(f.dataset.label)} do?">${esc(f.dataset.label)}:</b>` +
       `<span class="filter-slot"></span></label>` +
       `<p class="filter-desc" hidden>${esc(f.dataset.desc)}</p></div>`)
     .join("");
@@ -336,19 +386,34 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
   // used to exist only inside the intro, so the one explanation of what
   // "reliability" or "sky aim" means vanished forever the moment it closed
   // (and returning visitors never saw it at all).
-  // Descriptions collapse behind a ? per row: inline they made the card
-  // taller than a phone screen. One delegated handler serves every context
-  // (sidebar, intro, advanced card). preventDefault stops the wrapping
-  // label from also activating its control.
+  // Each title carries a dotted underline; its explanation pops up on hover or
+  // keyboard focus, and a click pins it open (touch has no hover). One delegated
+  // set of handlers serves every context (sidebar, intro, advanced card).
+  const descOf = el => el.closest(".filter-row")?.querySelector(".filter-desc");
+  const showDesc = el => { const d = descOf(el); if (d) { d.hidden = false; } };
+  const hideDesc = el => { const d = descOf(el); if (d && !d.classList.contains("pinned")) { d.hidden = true; } };
+  document.addEventListener("pointerover", e => {
+    if (e.target instanceof Element && e.target.classList.contains("filter-info")) { showDesc(e.target); }
+  });
+  document.addEventListener("pointerout", e => {
+    if (e.target instanceof Element && e.target.classList.contains("filter-info")) { hideDesc(e.target); }
+  });
+  document.addEventListener("focusin", e => {
+    if (e.target instanceof Element && e.target.classList.contains("filter-info")) { showDesc(e.target); }
+  });
+  document.addEventListener("focusout", e => {
+    if (e.target instanceof Element && e.target.classList.contains("filter-info")) { hideDesc(e.target); }
+  });
   document.addEventListener("click", e => {
-    if (!(e.target instanceof Element) || !e.target.classList.contains("desc-toggle")) {
+    if (!(e.target instanceof Element) || !e.target.classList.contains("filter-info")) {
       return;
     }
     e.preventDefault();
-    const desc = e.target.closest(".filter-row")?.querySelector(".filter-desc");
+    const desc = descOf(e.target);
     if (desc) {
-      desc.hidden = !desc.hidden;
-      e.target.setAttribute("aria-expanded", String(!desc.hidden));
+      const pin = !desc.classList.contains("pinned");
+      desc.classList.toggle("pinned", pin);
+      desc.hidden = !pin;
     }
   });
   filterBody.innerHTML = filterRowsHtml();

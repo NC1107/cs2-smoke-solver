@@ -196,6 +196,53 @@
     color: var(--muted);
   }
   #controls .action-utility .btn:hover { color: var(--ink); }
+  /* The 3D view controls as a compact icon strip (textured / collision / top-
+     down / crosshair / lineup ruler). */
+  #controls .icon-row { display: flex; gap: 5px; }
+  #controls .icon-row[hidden] { display: none; }
+  #controls .icon-btn {
+    flex: 1 1 0;
+    min-width: 32px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 6px 0;
+    border: var(--border);
+    border-radius: 5px;
+    background: var(--surface);
+    color: var(--ink);
+    cursor: pointer;
+  }
+  #controls .icon-btn:hover { border-color: var(--accent); }
+  #controls .icon-btn svg {
+    width: 18px; height: 18px;
+    fill: none; stroke: currentColor; stroke-width: 1.6;
+    stroke-linecap: round; stroke-linejoin: round;
+  }
+  #controls .icon-btn.active { border-color: var(--accent); color: var(--accent); }
+  /* Collision toggle glows the same magenta as the overlay it controls. */
+  #controls #collision3d.active { border-color: #ff2fd0; color: #ff2fd0; }
+
+  /* The CS2 lineup crosshair: a full-screen green ruler with a numbered
+     horizontal scale, built by main.js as percentage-positioned ticks so it
+     scales with the viewport. */
+  .lineup-ruler {
+    position: absolute;
+    inset: 0;
+    z-index: 41;
+    pointer-events: none;
+    color: #00ff00;
+  }
+  .lineup-ruler[hidden] { display: none; }
+  .lineup-ruler .rl-h { position: absolute; left: 0; right: 0; top: 50%; border-top: 1px solid currentColor; box-shadow: 0 0 1px #000; }
+  .lineup-ruler .rl-v { position: absolute; top: 0; bottom: 0; left: 50%; border-left: 1px solid currentColor; box-shadow: 0 0 1px #000; }
+  .lineup-ruler .rl-tick { position: absolute; background: currentColor; box-shadow: 0 0 1px #000; }
+  .lineup-ruler .rl-num {
+    position: absolute;
+    transform: translateX(-50%);
+    font: 700 10px/1 ui-monospace, Menlo, monospace;
+    text-shadow: 0 0 2px #000, 0 0 3px #000;
+  }
   /* The filter rows (label + description) also render inside the narrow
      sidebar card; there the label sits above its select and the description
      hugs the left edge - the intro's wide two-column metrics don't fit. */
@@ -205,24 +252,34 @@
   #controls .filter-head b { min-width: 0; }
   #controls .filter-slot { flex-basis: 100%; }
   #controls .filter-desc { margin-left: 0; }
-  /* The per-row "what does this do" chip, same idiom as the legend's ? */
-  .desc-toggle {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 15px;
-    height: 15px;
-    padding: 0;
-    margin-left: 5px;
-    border: var(--border);
-    border-radius: 50%;
-    background: transparent;
-    color: var(--muted);
-    font: 700 9px/1 ui-sans-serif, system-ui, sans-serif;
-    cursor: pointer;
-    flex: none;
+  /* Each title is its own explain-me affordance: a dotted underline that reveals
+     the description as a hover/focus popup (click pins it - touch has no hover),
+     replacing the old per-row "?" chip. */
+  .filter-row { position: relative; }
+  .filter-info {
+    text-decoration: underline dotted;
+    text-decoration-thickness: 1px;
+    text-underline-offset: 3px;
+    cursor: help;
+    color: var(--ink);
   }
-  .desc-toggle[aria-expanded="true"] { color: var(--accent); border-color: var(--accent); }
+  .filter-info:hover, .filter-info:focus-visible { text-decoration-color: var(--accent); color: var(--accent); outline: none; }
+  .filter-desc {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    z-index: 30;
+    margin-top: 3px;
+    max-width: min(280px, calc(100vw - 24px));
+    background: var(--panel);
+    border: var(--border);
+    border-radius: 5px;
+    padding: 6px 9px;
+    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.35);
+    color: var(--muted);
+    font-size: 11px;
+    line-height: 1.4;
+  }
   .filter-desc[hidden] { display: none; }
 
   :is(button, input, select, summary):focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
@@ -373,17 +430,16 @@
   .panel {
     position: absolute;
     right: 10px;
-    /* Floats up from the vertical middle instead of hugging the bottom edge; a
-       short list sits mid-screen, a long one scrolls inside #lineup-list once it
-       hits the cap rather than stretching floor-to-ceiling. */
-    top: 42%;
+    /* Anchored top-right. A long result list scrolls inside #lineup-list once it
+       hits the cap rather than stretching to the floor. */
+    top: 10px;
     width: min(var(--panel-w, 340px), calc(100% - 20px));
     background: var(--glass-heavy);
     border: var(--border);
     border-radius: 6px;
     box-shadow: 0 2px 10px rgba(0, 0, 0, 0.25);
     font-size: 12px;
-    max-height: calc(58% - 44px);
+    max-height: calc(100% - 20px);
     overflow: hidden;
     display: flex;
     flex-direction: column;
@@ -590,9 +646,6 @@
     --btn-pad: 2px 6px;
     background: var(--surface);
   }
-  /* Aligned under the dropdown rather than the label: the line explains the
-     control, so it reads as attached to it. */
-  .filter-desc { margin: 1px 0 0 96px; color: var(--muted); font-size: 11px; line-height: 1.35; }
   .intro-choices { display: flex; gap: 8px; flex-wrap: wrap; }
   .intro-choices .btn { --btn-pad: 7px 14px; --btn-font-size: 12.5px; }
   /* Pager header: "<- page N of M ->   results", fixed above the scrolling list

@@ -421,7 +421,7 @@ public static class LineupApi
             : "all";
         // Bump when solver or sim behavior changes: cached answers from older code
         // must never be replayed as current results.
-        const int QueryVersion = 13;
+        const int QueryVersion = 14;
         // meshVersion is the content-hashed mesh identity (not just the game
         // build), so re-extracting a map - e.g. dropping the Retake tape - forces
         // a re-solve instead of replaying results computed against the old mesh.
@@ -505,13 +505,18 @@ public static class LineupApi
         // stand < crouch < jump < crouch-jump < run-jump - which the ThrowType
         // enum is already ordered by. Click strength (left/mid/right) is not an
         // execution-difficulty axis, so it is deliberately not a factor here.
+        // Reproducibility leads: a corner/wall-pinned spot (position self-
+        // corrects) is the ideal even when its throw is a run-jump, so pins
+        // outrank movement complexity. Movement ease (stand < crouch < jump <
+        // crouch-jump < run-jump, the ThrowType enum order) is only the final
+        // tiebreaker among otherwise-equal lineups - making it primary buried
+        // the ideal corner lineup under easier open-ground throws elsewhere.
         var bySky = solve.Lineups
             .OrderBy(l => aimRefs[l].IsSkyShot ? 1 : 0)
-            .ThenBy(l => l.RestScatter > 16f ? 1 : 0)
-            .ThenBy(l => (int)l.Type);
+            .ThenBy(l => l.RestScatter > 16f ? 1 : 0);
         var ranked = (originClick is { } click
-                ? bySky.ThenBy(l => (int)(Vector2.Distance(new Vector2(l.Feet.X, l.Feet.Y), click) / 32f)).ThenByDescending(l => pins[l])
-                : bySky.ThenByDescending(l => pins[l]))
+                ? bySky.ThenBy(l => (int)(Vector2.Distance(new Vector2(l.Feet.X, l.Feet.Y), click) / 32f)).ThenByDescending(l => pins[l]).ThenBy(l => (int)l.Type)
+                : bySky.ThenByDescending(l => pins[l]).ThenBy(l => (int)l.Type))
             .ToList();
 
         return JsonSerializer.Serialize(new
@@ -525,9 +530,10 @@ public static class LineupApi
             // sim gap); the pin class drives the stand-spot heat view.
             coverage = solve.Coverage
                 .Select(c => new[] { c[0], c[1], c[2], verifiedAt.Contains((c[0], c[1])) ? 1 : 0, c.Length > 3 ? c[3] : 0 }),
-            // 12 for a probe (steep lobs and pinned spots widened the field a
-            // single click can deserve), 400 for the map-wide sweep.
-            lineups = ranked.Take(hasOrigin ? 12 : 400).Select(l => new
+            // Ranking orders the list but must never hide a valid lineup's map
+            // dot, so a spot probe returns all it found (a wide reach is a mini
+            // map-search) rather than a hard top-12 that dropped the ideal one.
+            lineups = ranked.Take(400).Select(l => new
             {
                 feet = new[] { l.Feet.X, l.Feet.Y, l.Feet.Z },
                 yaw = l.YawDeg,
