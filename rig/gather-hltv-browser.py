@@ -58,16 +58,23 @@ def cda(*args, timeout=180):
 
 def ev(js):
     """Run a JS expression in the browser and decode chrome-devtools-axi's
-    doubly-JSON-encoded `result: "..."` line."""
+    doubly-JSON-encoded `result: "..."` line. Keep results SMALL - the tool
+    truncates long output (which breaks the JSON), so callers slice their arrays."""
     for line in cda("eval", js).splitlines():
         s = line.strip()
         if s.startswith("result:"):
-            raw = s[len("result:"):].strip()
-            try:
-                v = json.loads(raw)
-                return json.loads(v) if isinstance(v, str) else v
-            except (json.JSONDecodeError, ValueError):
-                return None
+            val = s[len("result:"):].strip()
+            # The value is JSON, nested a couple levels deep; decode until the
+            # next decode fails - that last good value is the real result
+            # (a list for the URL evals, a plain string for the demo-path eval).
+            for _ in range(4):
+                if not isinstance(val, str):
+                    break
+                try:
+                    val = json.loads(val, strict=False)
+                except (json.JSONDecodeError, ValueError):
+                    break
+            return val
     return None
 
 
@@ -80,8 +87,10 @@ def match_urls_for(map_name):
     seen, out = set(), []
     for off in range(0, PAGES * 100, 100):
         nav(f"https://www.hltv.org/results?map={map_name}&offset={off}")
+        # slice(0,25): the tool truncates long results into invalid JSON, and 25
+        # recent matches per page across several pages is already plenty.
         u = ev('() => JSON.stringify([...new Set([...document.querySelectorAll('
-               '\'a[href^="/matches/"]\')].map(a => a.getAttribute("href")))])')
+               '\'a[href^="/matches/"]\')].map(a => a.getAttribute("href")))].slice(0, 25))')
         if isinstance(u, list):
             for x in u:
                 mid = x.split("/")[2] if x.count("/") >= 2 else x
