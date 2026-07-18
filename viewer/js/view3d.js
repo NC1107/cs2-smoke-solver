@@ -3,10 +3,10 @@
 // wraps init/sync. Raycast picks route through callbacks that main.js
 // registers, so this module never imports the orchestrator.
 
-import { state, filtered, clickClass, SMOKE_BLOOM_RADIUS, EYE_HEIGHT_BY_TYPE, DEFAULT_EYE_HEIGHT } from "./state.js?v=11";
-import { fetchMesh } from "./api.js?v=11";
-import { createFlyCamera } from "./flycam.js?v=11";
-import { loadScript, ensureTexturedScene, currentTexturedScene, disposeSceneContents, disposeTexturedScene } from "./textured-scene.js?v=11";
+import { state, filtered, clickClass, SMOKE_BLOOM_RADIUS, EYE_HEIGHT_BY_TYPE, DEFAULT_EYE_HEIGHT } from "./state.js?v=12";
+import { fetchMesh } from "./api.js?v=12";
+import { createFlyCamera } from "./flycam.js?v=12";
+import { loadScript, ensureTexturedScene, currentTexturedScene, disposeSceneContents, disposeTexturedScene } from "./textured-scene.js?v=12";
 
 const stage3d = state.stage3d;
 // Warning tint for phantom blockers (grenade-clips, physics-clips, glass) - a
@@ -66,6 +66,10 @@ export function current3d() {
 export function teardown3d() {
   if (three) {
     three.stop();
+    // The window resize handler closes over this scene's renderer/camera;
+    // leaving it registered leaks the disposed scene (GC can't reclaim it) and
+    // replays setSize() on dead THREE objects on every later resize.
+    window.removeEventListener("resize", three.resize3d);
     disposeSceneContents(three.scene);
     three.renderer.dispose();
     three.renderer.domElement.remove();
@@ -78,8 +82,16 @@ export function teardown3d() {
 
 async function init3d() {
   // three.js is opt-in, so keep its ~740 KB off the 2D-only load path.
+  const gen = state.mapGeneration;
   await loadScript("viewer/lib/three.min.js");
   const buf = await fetchMesh(state.currentMap);
+  // The map may have switched while three.js and the mesh downloaded. Bail
+  // BEFORE creating a renderer or touching module state: building here would
+  // append an orphaned canvas (a leaked WebGL context) and clobber the new
+  // map's `three` with the old map's geometry.
+  if (state.mapGeneration !== gen) {
+    return undefined;
+  }
   const dv = new DataView(buf);
   // Magic + format version lead the payload (see MeshPayloadSolid). If this
   // module is a stale cached copy parsing a newer mesh, the header won't match:
@@ -369,6 +381,10 @@ async function init3d() {
     async setTextured(on) {
       if (on === this.isTextured) { return; }
       const dest = on ? await ensureTexturedScene() : scene;
+      // ensureTexturedScene returns null if the map switched during the GLB
+      // download; there is no textured scene to switch into, so leave the flat
+      // mesh active rather than dereferencing null.
+      if (!dest) { return; }
       const src = on ? scene : currentTexturedScene();
       for (const g of [markerGroup, targetGroup, progressGroup, phantomVisual].filter(Boolean)) {
         src?.remove(g);

@@ -69,6 +69,9 @@ public static class ServeCommand
         // same Docker network, never through a routable host interface directly).
         builder.WebHost.ConfigureKestrel(kestrel =>
         {
+            // Don't advertise the server software; it's noise that only helps a
+            // scanner fingerprint the stack.
+            kestrel.AddServerHeader = false;
             if (bind == "any")
             {
                 kestrel.ListenAnyIP(port);
@@ -79,6 +82,19 @@ public static class ServeCommand
             }
         });
         using var app = builder.Build();
+
+        // Baseline hardening headers on every response: block MIME sniffing,
+        // deny framing (the viewer is never meant to be embedded), and keep
+        // referrers off cross-origin navigations. Cheap, and the origin should
+        // set them rather than relying on a proxy in front.
+        app.Use(async (context, next) =>
+        {
+            var headers = context.Response.Headers;
+            headers["X-Content-Type-Options"] = "nosniff";
+            headers["X-Frame-Options"] = "DENY";
+            headers["Referrer-Policy"] = "same-origin";
+            await next();
+        });
 
         app.MapGet("/api/maps", () => Results.Json(maps
             .OrderBy(kv => kv.Key, StringComparer.Ordinal)
@@ -392,7 +408,22 @@ public static class ServeCommand
 
         app.MapGet("/", (HttpContext context) => ServeStatic(context, root, "viewer/index.html"));
         app.MapGet("/viewer/{**rest}", (HttpContext context, string? rest) => ServeStatic(context, root, "viewer/" + (rest ?? "")));
-        app.MapGet("/data/{**rest}", (HttpContext context, string? rest) => ServeStatic(context, root, "data/" + (rest ?? "")));
+        app.MapGet("/data/{**rest}", (HttpContext context, string? rest) =>
+        {
+            var r = rest ?? "";
+            // The viewer only ever fetches map JSON/PNG/GLB and the validation
+            // reports. Everything else under data/ is a dev artifact - the
+            // calibration tree, the mesh cache, run logs (which can carry local
+            // paths), OBJ dumps - and has no business at a public URL.
+            if (r.EndsWith(".log", StringComparison.OrdinalIgnoreCase) ||
+                r.EndsWith(".obj", StringComparison.OrdinalIgnoreCase) ||
+                r.StartsWith("calib/", StringComparison.OrdinalIgnoreCase) ||
+                r.StartsWith("cache/", StringComparison.OrdinalIgnoreCase))
+            {
+                return Results.NotFound();
+            }
+            return ServeStatic(context, root, "data/" + r);
+        });
 
         try
         {

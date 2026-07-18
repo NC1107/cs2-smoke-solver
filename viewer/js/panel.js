@@ -3,7 +3,7 @@
 // wired via wireCopyButtons on document.body). Setting a target and
 // selecting a lineup route through the callbacks main.js registers.
 
-import { state, filtered, typeLabel, clickShort, clickClass, esc, skyAngle, DEFAULT_EYE_HEIGHT } from "./state.js?v=11";
+import { state, filtered, typeLabel, clickShort, clickClass, esc, skyAngle, DEFAULT_EYE_HEIGHT } from "./state.js?v=12";
 
 const statusEl = state.statusEl;
 const PAGE_SIZE = 50;
@@ -251,9 +251,15 @@ function wireCopyButtons(container) {
       e.stopPropagation();
       const node = document.getElementById(btn.dataset.copy).cloneNode(true);
       node.querySelector("button").remove();
+      // Copy is how a lineup gets from the browser into the game console, so a
+      // silent failure (clipboard denied, document unfocused) has to say so
+      // rather than look like the button did nothing.
       navigator.clipboard.writeText(node.textContent.trim()).then(() => {
         btn.textContent = "copied";
         setTimeout(() => { btn.textContent = "copy"; }, 1200);
+      }, () => {
+        btn.textContent = "copy failed";
+        setTimeout(() => { btn.textContent = "copy"; }, 1600);
       });
     });
   }
@@ -295,6 +301,10 @@ function initPanelResize() {
     handle.classList.remove("dragging");
     window.removeEventListener("pointermove", onMove);
     window.removeEventListener("pointerup", onUp);
+    // pointercancel (touch cancelled by the OS, a system dialog stealing the
+    // gesture) also ends the drag; without it the move listener leaked and the
+    // panel kept resizing on any later pointer motion.
+    window.removeEventListener("pointercancel", onUp);
     localStorage.setItem(KEY, String(panel.getBoundingClientRect().width | 0));
   };
   handle.addEventListener("pointerdown", e => {
@@ -302,8 +312,19 @@ function initPanelResize() {
     startX = e.clientX;
     startW = panel.getBoundingClientRect().width;
     handle.classList.add("dragging");
+    handle.setPointerCapture?.(e.pointerId);
     window.addEventListener("pointermove", onMove);
     window.addEventListener("pointerup", onUp);
+    window.addEventListener("pointercancel", onUp);
+  });
+  // Keyboard resize: the handle advertises role="separator", so honor it. Left
+  // widens the panel (its edge moves left), Right narrows it, by one STEP.
+  handle.addEventListener("keydown", e => {
+    const dir = e.key === "ArrowLeft" ? 1 : e.key === "ArrowRight" ? -1 : 0;
+    if (dir === 0) { return; }
+    e.preventDefault();
+    const w = setW(panel.getBoundingClientRect().width + dir * STEP);
+    localStorage.setItem(KEY, String(w));
   });
   handle.addEventListener("dblclick", () => {
     panel.style.removeProperty("--panel-w");

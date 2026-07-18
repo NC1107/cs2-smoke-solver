@@ -2,18 +2,18 @@
 // import the feature modules; they call back into the orchestrators defined
 // here (setTarget, select, runQuery) via the init*/set*Callbacks hooks.
 
-import { state, filtered, esc } from "./state.js?v=11";
-import { loadMapList, loadMapData, runQuery as postLineupQuery, fetchTrajectory, fetchLineupOne, fetchSlack, fetchSpawns, fetchProSmokes } from "./api.js?v=11";
-import { loadRadar, readColors, recolorRadar, draw, scheduleDraw, resize, resetView, initMap2d } from "./map2d.js?v=11";
-import { ensure3d, resetEnsure3d, teardown3d, current3d, sync3d, syncProgress3d, set3dCallbacks, applyTheme3d } from "./view3d.js?v=11";
-import { resetEnsureTexturedScene } from "./textured-scene.js?v=11";
-import { capturePreview } from "./preview.js?v=11";
+import { state, filtered, esc } from "./state.js?v=12";
+import { loadMapList, loadMapData, runQuery as postLineupQuery, fetchTrajectory, fetchLineupOne, fetchSlack, fetchSpawns, fetchProSmokes } from "./api.js?v=12";
+import { loadRadar, readColors, recolorRadar, draw, scheduleDraw, resize, resetView, initMap2d } from "./map2d.js?v=12";
+import { ensure3d, resetEnsure3d, teardown3d, current3d, sync3d, syncProgress3d, set3dCallbacks, applyTheme3d } from "./view3d.js?v=12";
+import { resetEnsureTexturedScene } from "./textured-scene.js?v=12";
+import { capturePreview } from "./preview.js?v=12";
 // Every local import across viewer/js carries the SAME ?v= token, bumped
 // together on any change. The HTML is served no-cache, so a fresh load pulls
 // main.js?v=N, which pulls every module at ?v=N - the whole graph refreshes as
 // one consistent set past Cloudflare's 4h JS cache, with no duplicate module
 // instances (which a partial versioning would cause). Bump the token everywhere.
-import { renderLineups, initPanel, revealSelected, resultStatusText } from "./panel.js?v=11";
+import { renderLineups, initPanel, revealSelected, resultStatusText } from "./panel.js?v=12";
 
 (async () => {
   // Map switching means a failed load is no longer necessarily terminal (the
@@ -253,6 +253,11 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
   // back into. Returns false (and shows the boot error) if the map's data
   // failed to load, so the caller can bail out the same way initial boot did.
   async function loadMap(name) {
+    // A newer loadMap (or any other map-scoped async load) invalidates this one:
+    // capture the generation now and bail after each await if it moved, so two
+    // overlapping switches can't interleave their commits. The map dropdown fires
+    // rapid change events on wheel/arrow, so this is ordinary UI, not an edge case.
+    const gen = ++state.mapGeneration;
     solveController?.abort();
     teardown3d();
     stage3d.style.display = "none";
@@ -268,31 +273,37 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
     syncUrl();
     syncControls();
 
+    let mapData;
     try {
-      state.mapData = await loadMapData(name);
+      mapData = await loadMapData(name);
     } catch {
+      if (state.mapGeneration !== gen) { return false; }
       bootError(`data/${name}.viewer-map.json`);
       return false;
     }
+    if (state.mapGeneration !== gen) { return false; }
+    state.mapData = mapData;
     // Spawns are a bonus overlay: fetch without blocking the map load, and
     // reveal the toggle once they arrive (syncControls hides it when absent).
     fetchSpawns(name).then(s => {
-      if (state.currentMap !== name) { return; }
+      if (state.mapGeneration !== gen) { return; }
       state.spawns = s;
       // A solve may have finished before spawns arrived; tag and redraw so its
       // spawn lineups get their badge without needing a re-solve.
       if (state.result?.lineups) { tagSpawnLineups(state.result.lineups); renderLineups(); }
       syncControls();
-    }).catch(() => {});
+    }).catch(e => console.warn("spawns unavailable for", name, e));
     fetchProSmokes(name).then(d => {
-      if (state.currentMap === name) { state.prosmokes = d; syncControls(); }
-    }).catch(() => {});
+      if (state.mapGeneration === gen) { state.prosmokes = d; syncControls(); }
+    }).catch(e => console.warn("pro smokes unavailable for", name, e));
     try {
       await loadRadar();
     } catch {
+      if (state.mapGeneration !== gen) { return false; }
       bootError("data/" + state.mapData.image);
       return false;
     }
+    if (state.mapGeneration !== gen) { return false; }
     clearBootError();
     recolorRadar();
     resize();
@@ -652,8 +663,13 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
         // Cancelled share sheets fall through to the clipboard path.
       }
     }
-    await navigator.clipboard.writeText(url);
-    statusEl.textContent = "link copied - it opens this exact lineup";
+    try {
+      await navigator.clipboard.writeText(url);
+      statusEl.textContent = "link copied - it opens this exact lineup";
+    } catch {
+      // Clipboard denied/unfocused: show the URL so the link is still gettable.
+      statusEl.textContent = `copy failed - link: ${url}`;
+    }
   }
 
   // Landing on a shared link: set the target, then render the ONE throw the
@@ -905,7 +921,9 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
     statusEl.textContent = "loading 3D mesh…";
     try {
       const t3 = await ensure3d();
-      if (stage3d.style.display === "none") { // toggled off while loading
+      // Stage hidden = toggled off or map switched mid-load; t3 undefined =
+      // init3d bailed because the map changed. Either way, abandon quietly.
+      if (!t3 || stage3d.style.display === "none") {
         statusEl.textContent = "";
         return null;
       }
@@ -998,6 +1016,9 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
       canvas.style.display = "block";
       syncControls();
       draw();
+      // The 3D "WASD fly…" hint is meaningless in 2D; restore the 2D status
+      // (result summary if a solve is up, otherwise clear it).
+      statusEl.textContent = state.result && !state.heatOn ? resultStatusText(filtered().length) : "";
       return;
     }
     const t3 = await openView3d();
@@ -1040,6 +1061,17 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
     matchMedia(`(resolution: ${window.devicePixelRatio}dppx)`).addEventListener(
       "change", () => { resize(); current3d()?.resize3d(); watchDpr(); }, { once: true });
   })();
+
+  // A plain window resize (desktop drag, phone rotation) changes the canvas CSS
+  // size but not its backing store, so the 2D map drew stale/blank until the
+  // next interaction. Re-fit the backing store to the new size on resize; the
+  // 3D view keeps its own resize handler. Coalesced to one redraw per frame.
+  let resizeQueued = false;
+  window.addEventListener("resize", () => {
+    if (resizeQueued) { return; }
+    resizeQueued = true;
+    requestAnimationFrame(() => { resizeQueued = false; resize(); });
+  });
 
   // Below the breakpoint the actions card collapses to a <details>; CSS cannot
   // force a closed details open again at desktop width, so sync it here. Filters

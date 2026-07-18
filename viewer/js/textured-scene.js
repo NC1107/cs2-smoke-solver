@@ -3,8 +3,8 @@
 // previews. Loading, axis conversion, and material sanitization live here;
 // the interactive view and the preview path only consume the finished scene.
 
-import { state } from "./state.js?v=11";
-import { cacheBust } from "./api.js?v=11";
+import { state } from "./state.js?v=12";
+import { cacheBust } from "./api.js?v=12";
 
 const scriptPromises = {};
 export function loadScript(src) {
@@ -43,6 +43,11 @@ export function resetEnsureTexturedScene() {
 }
 export function ensureTexturedScene(url = `data/${state.currentMap}_textured.glb`) {
   texturedScenePromise ??= (async () => {
+    // The GLB is 18-46MB; the user can easily switch maps mid-download. Capture
+    // the generation and drop this scene if it lands late, so it can't clobber a
+    // newer map's textures. teardown3d() -> disposeTexturedScene() resets the
+    // memoized promise on switch, so the next map starts a fresh load.
+    const gen = state.mapGeneration;
     await loadScript("viewer/lib/GLTFLoader.js");
     await loadScript("viewer/lib/DRACOLoader.js");
     const draco = new THREE.DRACOLoader();
@@ -181,6 +186,10 @@ export function ensureTexturedScene(url = `data/${state.currentMap}_textured.glb
     scene.background = new THREE.Color(state.colors.surface);
     scene.add(root);
 
+    if (state.mapGeneration !== gen) {
+      disposeSceneContents(scene);
+      return null;
+    }
     texturedScene = scene;
     return scene;
   })();

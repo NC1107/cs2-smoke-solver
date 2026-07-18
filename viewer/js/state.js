@@ -4,6 +4,11 @@
 
 export const state = {
   currentMap: null,
+  // Bumped once per map switch. Any async load (map data, radar, 3D mesh,
+  // textured GLB) captures it before its awaits and abandons its result if the
+  // value moved on - so a slow load for a map the user already left can never
+  // clobber the current one's geometry or leak an orphaned WebGL context.
+  mapGeneration: 0,
   mapData: null,
   colors: {},
   picking: false,
@@ -103,7 +108,7 @@ export function filtered() {
     (!filters.precision.value || Math.hypot(l.rest[0] - t[0], l.rest[1] - t[1]) <= Number.parseFloat(filters.precision.value)));
 }
 
-export const typeShort = { Stand: "stand", Crouch: "crouch", JumpThrow: "jump", CrouchJumpThrow: "crouch+jump", RunJumpThrow: "run+jump" };
+const typeShort = { Stand: "stand", Crouch: "crouch", JumpThrow: "jump", CrouchJumpThrow: "crouch+jump", RunJumpThrow: "run+jump" };
 // Movement keys behind a running jump throw's run direction (server runDeg:
 // 0 = W, +90 = A, -90 = D, +-45 = diagonals). Banded, not exact-matched, so
 // a float that went through JSON still labels correctly.

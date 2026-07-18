@@ -3,8 +3,8 @@
 // actions (set target, select, run query) go through callbacks that main.js
 // registers, so this module never imports the orchestrator.
 
-import { cacheBust } from "./api.js?v=11";
-import { isDrag, state, filtered, typeLabel, clickShort, clickClass, esc, SMOKE_BLOOM_RADIUS, PICK_RADIUS_PX, TOUCH_PICK_RADIUS_PX, HEAT_CELL } from "./state.js?v=11";
+import { cacheBust } from "./api.js?v=12";
+import { isDrag, state, filtered, typeLabel, clickShort, clickClass, esc, SMOKE_BLOOM_RADIUS, PICK_RADIUS_PX, TOUCH_PICK_RADIUS_PX, HEAT_CELL } from "./state.js?v=12";
 
 const canvas = state.canvas;
 const ctx = canvas.getContext("2d");
@@ -37,17 +37,27 @@ function lerp(a, b, t) {
 // The base map is a radar slice image: R encodes class (0 floor, 128 cover,
 // 255 wall), G encodes ground height for a subtle floor tint. Recolor it to
 // the active palette once per theme into an offscreen canvas.
-const radar = new Image();
+let radar = new Image();
 const radarCanvas = document.createElement("canvas");
+let radarLoadSeq = 0;
 
 // Loads the radar image and caches the map region; rejects on a missing
-// image so main.js can show the boot error box and abort.
+// image so main.js can show the boot error box and abort. Each call gets a
+// fresh Image - the old code mutated one shared Image's onload, so a second
+// concurrent load (rapid map switch) overwrote the first's resolver and left
+// that promise hanging forever. The sequence guard makes the last-started
+// load own the module radar, whichever finishes first.
 export async function loadRadar() {
+  const img = new Image();
+  const mySeq = ++radarLoadSeq;
+  const image = state.mapData.image;
   await new Promise((resolve, reject) => {
-    radar.onload = resolve;
-    radar.onerror = reject;
-    radar.src = cacheBust("data/" + state.mapData.image);
+    img.onload = resolve;
+    img.onerror = reject;
+    img.src = cacheBust("data/" + image);
   });
+  if (mySeq !== radarLoadSeq) { return; } // a newer load has superseded this one
+  radar = img;
   radarCanvas.width = radar.width;
   radarCanvas.height = radar.height;
   [RX0, RY0, RX1, RY1] = state.mapData.region;
@@ -125,10 +135,23 @@ export function draw() {
   }
   if (scale > 0.12) {
     ctx.fillStyle = colors.muted;
-    ctx.font = `600 ${10.5 / scale}px ui-sans-serif, system-ui, sans-serif`;
+    const fh = 10.5 / scale;
+    ctx.font = `600 ${fh}px ui-sans-serif, system-ui, sans-serif`;
     ctx.textAlign = "center";
+    // Callouts sit at fixed spots and several cluster tight (mirage
+    // underpass/backalley, the CT/T spawn corner), so drawing them all merged
+    // adjacent labels into unreadable runs. Greedily skip any label whose box
+    // overlaps one already placed - zooming in frees the space and reveals it.
+    const placed = [];
     for (const [name, x, y] of state.mapData.callouts) {
-      ctx.fillText(String(name).toUpperCase(), x, -y);
+      const label = String(name).toUpperCase();
+      const hw = ctx.measureText(label).width / 2, hh = fh / 2;
+      const px = x, py = -y;
+      if (placed.some(b => px - hw < b[2] && px + hw > b[0] && py - hh < b[3] && py + hh > b[1])) {
+        continue;
+      }
+      placed.push([px - hw, py - hh, px + hw, py + hh]);
+      ctx.fillText(label, px, py);
     }
   }
   if (state.target) {
