@@ -2,18 +2,18 @@
 // import the feature modules; they call back into the orchestrators defined
 // here (setTarget, select, runQuery) via the init*/set*Callbacks hooks.
 
-import { state, filtered, esc } from "./state.js?v=12";
-import { loadMapList, loadMapData, runQuery as postLineupQuery, fetchTrajectory, fetchLineupOne, fetchSlack, fetchSpawns, fetchProSmokes } from "./api.js?v=12";
-import { loadRadar, readColors, recolorRadar, draw, scheduleDraw, resize, resetView, initMap2d } from "./map2d.js?v=12";
-import { ensure3d, resetEnsure3d, teardown3d, current3d, sync3d, syncProgress3d, set3dCallbacks, applyTheme3d } from "./view3d.js?v=12";
-import { resetEnsureTexturedScene } from "./textured-scene.js?v=12";
-import { capturePreview } from "./preview.js?v=12";
+import { state, filtered, esc } from "./state.js?v=13";
+import { loadMapList, loadMapData, runQuery as postLineupQuery, fetchTrajectory, fetchLineupOne, fetchSlack, fetchSpawns, fetchProSmokes } from "./api.js?v=13";
+import { loadRadar, readColors, recolorRadar, draw, scheduleDraw, resize, resetView, initMap2d } from "./map2d.js?v=13";
+import { ensure3d, resetEnsure3d, teardown3d, current3d, sync3d, syncProgress3d, set3dCallbacks, applyTheme3d } from "./view3d.js?v=13";
+import { resetEnsureTexturedScene } from "./textured-scene.js?v=13";
+import { capturePreview } from "./preview.js?v=13";
 // Every local import across viewer/js carries the SAME ?v= token, bumped
 // together on any change. The HTML is served no-cache, so a fresh load pulls
 // main.js?v=N, which pulls every module at ?v=N - the whole graph refreshes as
 // one consistent set past Cloudflare's 4h JS cache, with no duplicate module
 // instances (which a partial versioning would cause). Bump the token everywhere.
-import { renderLineups, initPanel, revealSelected, resultStatusText } from "./panel.js?v=12";
+import { renderLineups, initPanel, revealSelected, resultStatusText } from "./panel.js?v=13";
 
 (async () => {
   // Map switching means a failed load is no longer necessarily terminal (the
@@ -404,7 +404,7 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
       `<label class="filter-head" for="${f.id}">` +
       `<b class="filter-info" tabindex="0" role="button" aria-label="What does ${esc(f.dataset.label)} do?">${esc(f.dataset.label)}:</b>` +
       `<span class="filter-slot"></span></label>` +
-      `<p class="filter-desc" hidden>${esc(f.dataset.desc)}</p></div>`)
+      `<p class="filter-desc">${esc(f.dataset.desc)}</p></div>`)
     .join("");
   // The label+description rows render in the sidebar too, permanently - they
   // used to exist only inside the intro, so the one explanation of what
@@ -414,8 +414,17 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
   // keyboard focus, and a click pins it open (touch has no hover). One delegated
   // set of handlers serves every context (sidebar, intro, advanced card).
   const descOf = el => el.closest(".filter-row")?.querySelector(".filter-desc");
-  const showDesc = el => { const d = descOf(el); if (d) { d.hidden = false; } };
-  const hideDesc = el => { const d = descOf(el); if (d && !d.classList.contains("pinned")) { d.hidden = true; } };
+  // Only ever one explanation open at a time - stacking them (as happened on
+  // touch, where tapping several labels pinned several popups) was unreadable.
+  // Visibility rides the .open class so it can fade+slide in via CSS rather than
+  // snapping on. A pinned one (tapped open) survives the pointer leaving.
+  const closeAllDescs = except => {
+    for (const d of document.querySelectorAll(".filter-desc.open")) {
+      if (d !== except) { d.classList.remove("open", "pinned"); }
+    }
+  };
+  const showDesc = el => { const d = descOf(el); if (d) { closeAllDescs(d); d.classList.add("open"); } };
+  const hideDesc = el => { const d = descOf(el); if (d && !d.classList.contains("pinned")) { d.classList.remove("open"); } };
   document.addEventListener("pointerover", e => {
     if (e.target instanceof Element && e.target.classList.contains("filter-info")) { showDesc(e.target); }
   });
@@ -430,14 +439,17 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
   });
   document.addEventListener("click", e => {
     if (!(e.target instanceof Element) || !e.target.classList.contains("filter-info")) {
+      // A tap anywhere else dismisses a pinned explanation.
+      closeAllDescs(null);
       return;
     }
     e.preventDefault();
     const desc = descOf(e.target);
     if (desc) {
       const pin = !desc.classList.contains("pinned");
+      closeAllDescs(desc);
       desc.classList.toggle("pinned", pin);
-      desc.hidden = !pin;
+      desc.classList.toggle("open", pin);
     }
   });
   filterBody.innerHTML = filterRowsHtml();
@@ -993,9 +1005,13 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
   // target exists, then it means solve-from-here - a static string was
   // telling users the wrong thing for most of the session. Space/Ctrl leads
   // because that is CS2's own spectator freecam pair; Q/E stay as aliases.
-  const hint3d = () =>
-    "3D: WASD fly (Space/Ctrl up/down, Shift fast) · drag look · right-drag pan · scroll dolly · " +
-    (state.target ? "click terrain = solve from that spot · right-click = move target" : "click terrain = set target");
+  // Touch has no WASD/scroll/right-click, so a phone gets the short gesture
+  // hint (which otherwise wraps to three wasted lines above the map).
+  const coarsePointer = matchMedia("(pointer: coarse)").matches;
+  const hint3d = () => coarsePointer
+    ? "3D: 1 finger look · 2 fingers pan/zoom · " + (state.target ? "tap terrain = solve there · long-press = move target" : "tap terrain = set target")
+    : "3D: WASD fly (Space/Ctrl up/down, Shift fast) · drag look · right-drag pan · scroll dolly · " +
+      (state.target ? "click terrain = solve from that spot · right-click = move target" : "click terrain = set target");
 
   topDownBtn.addEventListener("click", () => {
     const t3 = current3d();

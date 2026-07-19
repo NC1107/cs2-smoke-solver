@@ -303,8 +303,23 @@
     color: var(--muted);
     font-size: 11px;
     line-height: 1.4;
+    /* Closed by default; fades + slides in on .open rather than snapping. */
+    opacity: 0;
+    visibility: hidden;
+    transform: translateY(-4px);
+    transition: opacity 0.14s ease, transform 0.14s ease, visibility 0s linear 0.14s;
+    pointer-events: none;
   }
-  .filter-desc[hidden] { display: none; }
+  .filter-desc.open {
+    opacity: 1;
+    visibility: visible;
+    transform: translateY(0);
+    transition: opacity 0.14s ease, transform 0.14s ease;
+    pointer-events: auto;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .filter-desc, .filter-desc.open { transition: none; }
+  }
 
   :is(button, input, select, summary):focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
   #status { color: var(--muted); }
@@ -519,6 +534,10 @@
     padding: 4px 6px;
   }
   .paste .btn { --btn-font-size: 11px; --btn-pad: 2px 8px; }
+  /* Practice setup is the paste-once server config, not a result - it sits as a
+     quiet footer under the lineup list (flex:none, so the list keeps the room)
+     instead of taking prime space at the top of the panel. */
+  details.setup { flex: none; border-top: var(--border); padding-top: 6px; }
   details.setup summary { cursor: pointer; color: var(--muted); font-size: 11.5px; user-select: none; }
   .cmd {
     position: relative;
@@ -738,19 +757,25 @@
   .ref.spawn { color: #1a1a1a; background: #d9a441; border: 1px solid #d9a441; font-weight: 700; }
   .ref.fav { color: var(--target); border: none; padding: 0; }
   @media (max-width: 640px) {
-    /* Finger-sized controls: the desktop paddings produce ~20px-tall hit
-       targets, well under the ~44px touch minimum. */
-    :is(.btn, select) { --btn-font-size: 13px; }
-    #controls .btn, #controls select { --btn-pad: 11px 10px; }
-    #controls { width: 168px; }
+    /* Phones: keep controls tappable but compact. The old ~44px-tall buttons
+       made the side panels swallow the screen and cover the results sheet. */
+    :is(.btn, select) { --btn-font-size: 12.5px; }
+    #controls .btn, #controls select { --btn-pad: 7px 9px; }
+    #controls { width: 146px; gap: 6px; max-height: 52%; }
+    #controls .card { padding: 7px; }
     #controls summary { display: list-item; }
     #controls details[open] > .card-body { margin-top: 6px; }
-    /* Two-up button rows are too tight once mobile padding grows; stack them. */
-    #controls .btn-row, #controls .action-utility { flex-direction: column; }
-    .pager-arrow { min-width: 44px; min-height: 44px; }
+    /* Tighter top bar - the desktop help row wasted three lines above the map
+       (JS also swaps in a short touch hint). */
+    .toolbar { padding: 5px 10px; gap: 6px; }
+    #status { font-size: 11px; line-height: 1.35; }
+    /* Compact pager (was oversized 44px touch targets). */
+    .list-pager { font-size: 10.5px; padding: 4px 2px 6px; gap: 6px; }
+    .pager-arrow { width: 30px; height: 26px; min-width: 30px; min-height: 26px; --btn-font-size: 13px; }
+    .list-pager .pager-label { font-size: 11px; }
     /* Full-width bottom sheet on phones: no horizontal resize. */
     .panel-resize { display: none; }
-    .key { left: auto; right: 10px; top: 10px; bottom: auto; max-width: calc(100% - 178px); }
+    .key { left: auto; right: 10px; top: 10px; bottom: auto; max-width: calc(100% - 158px); }
     /* Keep the controls chip out from under the marker legend on phones. */
     .key.help3d { top: auto; bottom: 10px; }
     .panel {
@@ -759,7 +784,7 @@
       top: auto;
       bottom: 0;
       width: 100%;
-      max-height: 45%;
+      max-height: 48%;
       border-radius: 8px 8px 0 0;
       border-left: none;
       border-right: none;
