@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Smoke Solver</title>
 <link rel="icon" href="viewer/favicon.svg" type="image/svg+xml">
-<link rel="stylesheet" href="viewer/app.css?v=15">
+<link rel="stylesheet" href="viewer/app.css?v=16">
 </head>
 <body>
 
@@ -23,7 +23,11 @@
     <details class="card" id="card-view" open>
       <summary>actions</summary>
       <div class="card-body">
-        <button id="pick" class="btn primary">Target</button>
+        <div class="target-row">
+          <button id="pick" class="btn primary">Target</button>
+          <button id="copy-target" class="icon-btn" hidden title="Copy the target position (setpos)" aria-label="Copy target position">
+            <svg viewBox="0 0 20 20" aria-hidden="true"><rect x="7" y="7" width="9" height="9" rx="1.5"/><path d="M13 7V5.5A1.5 1.5 0 0 0 11.5 4H5.5A1.5 1.5 0 0 0 4 5.5v6A1.5 1.5 0 0 0 5.5 13H7"/></svg></button>
+        </div>
         <div class="paste">
           <input id="getpos-in" placeholder="paste getpos → target" aria-label="Paste getpos output to set target">
           <button id="getpos-set" class="btn">set</button>
@@ -269,6 +273,6 @@ give weapon_smokegrenade<button data-copy="cmd-setup" class="btn">copy</button><
      4h, so bumping ?v= here is what busts that cache. Bump on any change to a
      directly-referenced asset. (The permanent cure is CF Browser Cache TTL ->
      "Respect Existing Headers", after which this is belt-and-suspenders.) -->
-<script type="module" src="viewer/js/main.js?v=15"></script>
+<script type="module" src="viewer/js/main.js?v=16"></script>
 </body>
 </html>
