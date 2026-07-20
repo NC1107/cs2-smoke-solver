@@ -200,6 +200,12 @@
      down / crosshair / lineup ruler). */
   #controls .icon-row { display: flex; flex-wrap: wrap; gap: 5px; }
   #controls .icon-row[hidden] { display: none; }
+  /* The Target button and its copy-position icon share one row. */
+  #controls .target-row { display: flex; gap: 5px; }
+  #controls .target-row > #pick { flex: 1; }
+  #controls .target-row > #copy-target { flex: 0 0 40px; }
+  /* Brief green flash when the target position lands on the clipboard. */
+  #controls #copy-target.copied { border-color: var(--heat-ok); color: var(--heat-ok); }
   /* The "3D" button and the always-available Spawns icon share one row; Spawns
      is an icon toggle like the 3D-only strip below, but visible in 2D too. */
   #controls .view-head { display: flex; gap: 5px; }

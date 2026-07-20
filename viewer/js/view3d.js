@@ -3,10 +3,10 @@
 // wraps init/sync. Raycast picks route through callbacks that main.js
 // registers, so this module never imports the orchestrator.
 
-import { state, filtered, clickClass, SMOKE_BLOOM_RADIUS, EYE_HEIGHT_BY_TYPE, DEFAULT_EYE_HEIGHT } from "./state.js?v=15";
-import { fetchMesh } from "./api.js?v=15";
-import { createFlyCamera } from "./flycam.js?v=15";
-import { loadScript, ensureTexturedScene, currentTexturedScene, disposeSceneContents, disposeTexturedScene } from "./textured-scene.js?v=15";
+import { state, filtered, clickClass, SMOKE_BLOOM_RADIUS, EYE_HEIGHT_BY_TYPE, DEFAULT_EYE_HEIGHT } from "./state.js?v=16";
+import { fetchMesh } from "./api.js?v=16";
+import { createFlyCamera } from "./flycam.js?v=16";
+import { loadScript, ensureTexturedScene, currentTexturedScene, disposeSceneContents, disposeTexturedScene } from "./textured-scene.js?v=16";
 
 const stage3d = state.stage3d;
 // Warning tint for phantom blockers (grenade-clips, physics-clips, glass) - a

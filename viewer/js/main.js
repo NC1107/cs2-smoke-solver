@@ -2,18 +2,18 @@
 // import the feature modules; they call back into the orchestrators defined
 // here (setTarget, select, runQuery) via the init*/set*Callbacks hooks.
 
-import { state, filtered, esc, lowMemoryDevice } from "./state.js?v=15";
-import { loadMapList, loadMapData, runQuery as postLineupQuery, fetchTrajectory, fetchLineupOne, fetchSlack, fetchSpawns, fetchProSmokes } from "./api.js?v=15";
-import { loadRadar, readColors, recolorRadar, draw, scheduleDraw, resize, resetView, initMap2d } from "./map2d.js?v=15";
-import { ensure3d, resetEnsure3d, teardown3d, current3d, sync3d, syncProgress3d, set3dCallbacks, applyTheme3d } from "./view3d.js?v=15";
-import { resetEnsureTexturedScene } from "./textured-scene.js?v=15";
-import { capturePreview } from "./preview.js?v=15";
+import { state, filtered, esc, lowMemoryDevice } from "./state.js?v=16";
+import { loadMapList, loadMapData, runQuery as postLineupQuery, fetchTrajectory, fetchLineupOne, fetchSlack, fetchSpawns, fetchProSmokes } from "./api.js?v=16";
+import { loadRadar, readColors, recolorRadar, draw, scheduleDraw, resize, resetView, initMap2d } from "./map2d.js?v=16";
+import { ensure3d, resetEnsure3d, teardown3d, current3d, sync3d, syncProgress3d, set3dCallbacks, applyTheme3d } from "./view3d.js?v=16";
+import { resetEnsureTexturedScene } from "./textured-scene.js?v=16";
+import { capturePreview } from "./preview.js?v=16";
 // Every local import across viewer/js carries the SAME ?v= token, bumped
 // together on any change. The HTML is served no-cache, so a fresh load pulls
 // main.js?v=N, which pulls every module at ?v=N - the whole graph refreshes as
 // one consistent set past Cloudflare's 4h JS cache, with no duplicate module
 // instances (which a partial versioning would cause). Bump the token everywhere.
-import { renderLineups, initPanel, revealSelected, resultStatusText } from "./panel.js?v=15";
+import { renderLineups, initPanel, revealSelected, resultStatusText } from "./panel.js?v=16";
 
 (async () => {
   // Map switching means a failed load is no longer necessarily terminal (the
@@ -42,6 +42,7 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
   const heatBtn = document.getElementById("heat");
   const view3dBtn = document.getElementById("view3d");
   const resetViewBtn = document.getElementById("reset-view");
+  const copyTargetBtn = document.getElementById("copy-target");
   const spawnsBtn = document.getElementById("spawns");
   const proSmokesBtn = document.getElementById("prosmokes");
   const proSideSeg = document.getElementById("prosmokes-side");
@@ -160,6 +161,8 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
     pickBtn.textContent = state.picking ? "Click the map…" : hasTarget ? "Re-target" : "Target";
     pickBtn.classList.toggle("armed", state.picking);
     pickBtn.classList.toggle("primary", !state.picking && !hasTarget);
+    // The copy-target button only means anything once there is a target to copy.
+    copyTargetBtn.hidden = !hasTarget;
 
     searchBtn.hidden = !hasTarget;
     searchBtn.disabled = state.busy;
@@ -753,6 +756,26 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
     canvas.classList.toggle("picking", state.picking);
     statusEl.textContent = state.picking ? "click the map to place your smoke target (Esc cancels)" : "";
     syncControls();
+  });
+  // Copy the target as a setpos command: pasteable back into the getpos box or
+  // the game console. A 2D-picked target carries no Z; fall back to the searched
+  // target's Z (the solve resolves it) so the copied command still round-trips.
+  copyTargetBtn.addEventListener("click", () => {
+    if (!state.target) { return; }
+    const [x, y] = state.target;
+    const z = state.target[2] ?? state.result?.target?.[2] ?? 0;
+    const cmd = `setpos ${Math.round(x)} ${Math.round(y)} ${Math.round(z)}`;
+    navigator.clipboard.writeText(cmd).then(() => {
+      copyTargetBtn.classList.add("copied");
+      copyTargetBtn.title = `copied: ${cmd}`;
+      statusEl.textContent = `copied target position: ${cmd}`;
+      setTimeout(() => {
+        copyTargetBtn.classList.remove("copied");
+        copyTargetBtn.title = "Copy the target position (setpos)";
+      }, 1200);
+    }, () => {
+      statusEl.textContent = "copy failed - clipboard blocked (is the tab focused?)";
+    });
   });
   document.addEventListener("keydown", e => {
     if (e.key === "Escape" && state.picking) {
