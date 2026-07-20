@@ -260,7 +260,13 @@ public static partial class LineupSolver
         IEnumerable<Lineup> candidates,
         float minStability = 0.4f,
         ThrowConstants? constants = null,
-        Action<Vector3, bool>? onCandidate = null)
+        Action<Vector3, bool>? onCandidate = null,
+        // When set, every lineup is refined to land as close to this exact point
+        // as it can while staying stable, instead of keeping whatever aim the
+        // coarse sweep nominated (which lands anywhere in the tolerance zone).
+        // This is what makes the precision filter able to surface sub-unit
+        // lineups. Null keeps the original stability-first behaviour (CLI, tests).
+        Vector3? aimTarget = null)
     {
         // One perturbation step; also the re-aim lattice pitch, so the rescue
         // search and the stability probes share simulations.
@@ -307,15 +313,19 @@ public static partial class LineupSolver
                 return (float)hits / offsets.Length;
             }
 
-            var (aimYaw, aimPitch) = (0, 0);
-            var stability = StabilityAround(0, 0);
-            if (stability < minStability)
+            int aimYaw, aimPitch;
+            float stability;
+            if (aimTarget is { } goal)
             {
-                // The voxel sim that nominated this candidate drifts from the exact
-                // sim by tens of units at range, so the exact-sim in-zone window may
-                // sit a degree away. Re-aim to the searched offset whose exact rest
-                // lands in-zone closest to the zone centroid, then re-judge there.
-                var bestScore = float.MaxValue;
+                // Precision path: refine to the exact target the user picked.
+                // Gather every in-zone aim in the window, ordered by how close its
+                // exact rest lands to the target (XY, matching the viewer's
+                // precision filter), then take the closest one that is itself
+                // stable enough. A stable coarse aim is no longer kept just because
+                // it is stable - if a neighbouring aim lands nearer the target and
+                // holds up, that is the one reported, so genuinely tight lineups
+                // surface instead of hiding inside the tolerance zone.
+                var inWindow = new List<(float DistSq, int DYaw, int DPitch)>();
                 for (var dYaw = -AimReach; dYaw <= AimReach; dYaw++)
                 {
                     for (var dPitch = -AimReach; dPitch <= AimReach; dPitch++)
@@ -325,24 +335,67 @@ public static partial class LineupSolver
                         {
                             continue;
                         }
-                        var score = Vector3.DistanceSquared(result.RestPoint, zoneCentroid);
-                        if (score < bestScore)
-                        {
-                            bestScore = score;
-                            (aimYaw, aimPitch) = (dYaw, dPitch);
-                        }
+                        var dx = result.RestPoint.X - goal.X;
+                        var dy = result.RestPoint.Y - goal.Y;
+                        inWindow.Add((dx * dx + dy * dy, dYaw, dPitch));
                     }
                 }
-                if ((aimYaw, aimPitch) == (0, 0))
+                inWindow.Sort((a, b) => a.DistSq.CompareTo(b.DistSq));
+                (aimYaw, aimPitch, stability) = (0, 0, -1f);
+                foreach (var (_, dYaw, dPitch) in inWindow)
+                {
+                    var s = StabilityAround(dYaw, dPitch);
+                    if (s >= minStability)
+                    {
+                        (aimYaw, aimPitch, stability) = (dYaw, dPitch, s);
+                        break;
+                    }
+                }
+                if (stability < 0f)
                 {
                     onCandidate?.Invoke(lineup.Feet, false);
                     return;
                 }
-                stability = StabilityAround(aimYaw, aimPitch);
+            }
+            else
+            {
+                (aimYaw, aimPitch) = (0, 0);
+                stability = StabilityAround(0, 0);
                 if (stability < minStability)
                 {
-                    onCandidate?.Invoke(lineup.Feet, false);
-                    return;
+                    // The voxel sim that nominated this candidate drifts from the exact
+                    // sim by tens of units at range, so the exact-sim in-zone window may
+                    // sit a degree away. Re-aim to the searched offset whose exact rest
+                    // lands in-zone closest to the zone centroid, then re-judge there.
+                    var bestScore = float.MaxValue;
+                    for (var dYaw = -AimReach; dYaw <= AimReach; dYaw++)
+                    {
+                        for (var dPitch = -AimReach; dPitch <= AimReach; dPitch++)
+                        {
+                            var result = SimAt(dYaw, dPitch);
+                            if (!Settled(result) || !InZone(grid, zoneCrossings, result.RestPoint))
+                            {
+                                continue;
+                            }
+                            var score = Vector3.DistanceSquared(result.RestPoint, zoneCentroid);
+                            if (score < bestScore)
+                            {
+                                bestScore = score;
+                                (aimYaw, aimPitch) = (dYaw, dPitch);
+                            }
+                        }
+                    }
+                    if ((aimYaw, aimPitch) == (0, 0))
+                    {
+                        onCandidate?.Invoke(lineup.Feet, false);
+                        return;
+                    }
+                    stability = StabilityAround(aimYaw, aimPitch);
+                    if (stability < minStability)
+                    {
+                        onCandidate?.Invoke(lineup.Feet, false);
+                        return;
+                    }
                 }
             }
             var best = SimAt(aimYaw, aimPitch);

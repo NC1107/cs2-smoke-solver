@@ -164,7 +164,7 @@ public static class TargetSolver
             origins: origins, strengths: strengths, constants: constants, coverage: coverage, onOrigin: onOrigin,
             collider: collider);
         onPhase?.Invoke("verify", candidates.Count);
-        var verified = LineupSolver.VerifyExact(grid, collider, zoneCrossings, candidates, minStability: minStability, constants: constants, onCandidate: onCandidate);
+        var verified = LineupSolver.VerifyExact(grid, collider, zoneCrossings, candidates, minStability: minStability, constants: constants, onCandidate: onCandidate, aimTarget: target);
 
         // Flag lineups whose throw spot has a clear line of sight to the area
         // the smoke lands in: being visible to that area while throwing is
