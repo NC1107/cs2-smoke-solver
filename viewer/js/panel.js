@@ -3,7 +3,7 @@
 // wired via wireCopyButtons on document.body). Setting a target and
 // selecting a lineup route through the callbacks main.js registers.
 
-import { state, filtered, typeLabel, clickShort, clickClass, esc, skyAngle, DEFAULT_EYE_HEIGHT } from "./state.js?v=14";
+import { state, filtered, typeLabel, clickShort, clickClass, esc, skyAngle, DEFAULT_EYE_HEIGHT } from "./state.js?v=15";
 
 const statusEl = state.statusEl;
 const PAGE_SIZE = 50;
@@ -44,8 +44,12 @@ function lineupSummaryHtml(l) {
     : "";
   const fav = l._favorite ? `<span class="ref fav" title="favorited">★</span>` : "";
   const spawn = l._spawn ? `<span class="ref spawn" title="throwable from a player spawn">spawn</span>` : "";
+  // Exposed: a clear sightline from the throw spot to where the smoke lands, so
+  // anyone holding that area sees you throw. Ranked below concealed throws;
+  // badged so that penalty is legible rather than mysterious.
+  const exposed = l.exposed ? `<span class="ref exposed" title="clear line of sight from this spot to where the smoke lands - you are visible to that area while throwing, so this ranks below concealed spots">exposed</span>` : "";
   return `<b class="${clickClass(l.strength)}">${clickShort(l.strength)}</b><span>${typeLabel(l)}</span>` +
-    `<span>${l.Bounces}b</span><span>${l.flightTime.toFixed(1)}s</span>${spawn}${pin}${ref}${fav}` +
+    `<span>${l.Bounces}b</span><span>${l.flightTime.toFixed(1)}s</span>${spawn}${exposed}${pin}${ref}${fav}` +
     `<span class="pct">${(l.stability * 100).toFixed(0)}%</span>`;
 }
 
@@ -125,6 +129,15 @@ export function renderLineups() {
   if (state.result !== pagedResultRef) {
     page = 0;
     pagedResultRef = state.result;
+    // Re-open a collapsed panel: a new search means you want to see its results.
+    const panel = document.getElementById("panel");
+    if (panel.classList.contains("collapsed")) {
+      panel.classList.remove("collapsed");
+      const cb = document.getElementById("panel-collapse");
+      cb.setAttribute("aria-expanded", "true");
+      cb.title = "Hide results";
+      cb.setAttribute("aria-label", "Hide results");
+    }
   }
   const pageCount = Math.ceil(shown.length / PAGE_SIZE);
   const selPos = state.selected >= 0 ? shown.findIndex(l => l._idx === state.selected) : -1;

@@ -511,9 +511,15 @@ public static class LineupApi
         // crouch-jump < run-jump, the ThrowType enum order) is only the final
         // tiebreaker among otherwise-equal lineups - making it primary buried
         // the ideal corner lineup under easier open-ground throws elsewhere.
+        // Exposed lineups (clear line of sight from the throw spot to where the
+        // smoke lands) sink like sky/chaotic ones: being visible to that area
+        // while throwing is the danger the smoke is meant to deny, so a
+        // concealed throw is preferred. Still shown, never dropped - it is a
+        // penalty, not a filter.
         var bySky = solve.Lineups
             .OrderBy(l => aimRefs[l].IsSkyShot ? 1 : 0)
-            .ThenBy(l => l.RestScatter > 16f ? 1 : 0);
+            .ThenBy(l => l.RestScatter > 16f ? 1 : 0)
+            .ThenBy(l => l.DirectLos ? 1 : 0);
         var ranked = (originClick is { } click
                 ? bySky.ThenBy(l => (int)(Vector2.Distance(new Vector2(l.Feet.X, l.Feet.Y), click) / 32f)).ThenByDescending(l => pins[l]).ThenBy(l => (int)l.Type)
                 : bySky.ThenByDescending(l => pins[l]).ThenBy(l => (int)l.Type))
@@ -554,6 +560,10 @@ public static class LineupApi
                 // precisely it is aimed.
                 scatter = l.RestScatter,
                 pin = pins[l] switch { 2 => "corner", 1 => "wall", _ => (string?)null },
+                // Clear sightline from the throw spot to the landing - the
+                // viewer badges it so the player knows the spot is exposed and
+                // why it ranks below concealed throws.
+                exposed = l.DirectLos,
                 aimRef = new
                 {
                     tier = aimRefs[l].Tier,
