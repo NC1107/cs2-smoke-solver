@@ -3,7 +3,7 @@
 // wired via wireCopyButtons on document.body). Setting a target and
 // selecting a lineup route through the callbacks main.js registers.
 
-import { state, filtered, typeLabel, clickShort, clickClass, esc, skyAngle, DEFAULT_EYE_HEIGHT } from "./state.js?v=13";
+import { state, filtered, typeLabel, clickShort, clickClass, esc, skyAngle, DEFAULT_EYE_HEIGHT } from "./state.js?v=14";
 
 const statusEl = state.statusEl;
 const PAGE_SIZE = 50;

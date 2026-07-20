@@ -2,18 +2,18 @@
 // import the feature modules; they call back into the orchestrators defined
 // here (setTarget, select, runQuery) via the init*/set*Callbacks hooks.
 
-import { state, filtered, esc } from "./state.js?v=13";
-import { loadMapList, loadMapData, runQuery as postLineupQuery, fetchTrajectory, fetchLineupOne, fetchSlack, fetchSpawns, fetchProSmokes } from "./api.js?v=13";
-import { loadRadar, readColors, recolorRadar, draw, scheduleDraw, resize, resetView, initMap2d } from "./map2d.js?v=13";
-import { ensure3d, resetEnsure3d, teardown3d, current3d, sync3d, syncProgress3d, set3dCallbacks, applyTheme3d } from "./view3d.js?v=13";
-import { resetEnsureTexturedScene } from "./textured-scene.js?v=13";
-import { capturePreview } from "./preview.js?v=13";
+import { state, filtered, esc, lowMemoryDevice } from "./state.js?v=14";
+import { loadMapList, loadMapData, runQuery as postLineupQuery, fetchTrajectory, fetchLineupOne, fetchSlack, fetchSpawns, fetchProSmokes } from "./api.js?v=14";
+import { loadRadar, readColors, recolorRadar, draw, scheduleDraw, resize, resetView, initMap2d } from "./map2d.js?v=14";
+import { ensure3d, resetEnsure3d, teardown3d, current3d, sync3d, syncProgress3d, set3dCallbacks, applyTheme3d } from "./view3d.js?v=14";
+import { resetEnsureTexturedScene } from "./textured-scene.js?v=14";
+import { capturePreview } from "./preview.js?v=14";
 // Every local import across viewer/js carries the SAME ?v= token, bumped
 // together on any change. The HTML is served no-cache, so a fresh load pulls
 // main.js?v=N, which pulls every module at ?v=N - the whole graph refreshes as
 // one consistent set past Cloudflare's 4h JS cache, with no duplicate module
 // instances (which a partial versioning would cause). Bump the token everywhere.
-import { renderLineups, initPanel, revealSelected, resultStatusText } from "./panel.js?v=13";
+import { renderLineups, initPanel, revealSelected, resultStatusText } from "./panel.js?v=14";
 
 (async () => {
   // Map switching means a failed load is no longer necessarily terminal (the
@@ -848,14 +848,14 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
     return p;
   }
 
-  // Rendering a preview pulls in the 26-92MB textured GLB. A phone can't hold
-  // that: the tab OOMs and the browser reloads it - and because a shared-lineup
-  // link auto-selects its one lineup on load, that reload re-selects and reloads
-  // again, an endless refresh loop. So on touch / low-memory devices the preview
-  // is an explicit tap, never automatic, and the heavy load can only follow a
-  // deliberate action (never a page load).
-  const heavyPreviewRisk = window.matchMedia?.("(pointer: coarse)").matches ||
-    (navigator.deviceMemory && navigator.deviceMemory < 4);
+  // Rendering a preview pulls in the textured GLB. Even the smaller mobile tier
+  // (~120-200MB decoded) is worth loading only on a deliberate tap on a phone,
+  // never automatically - a shared-lineup link auto-selects its one lineup on
+  // load, so an automatic heavy load there could still stutter or, on the
+  // weakest devices, reload. So on touch / low-memory devices the preview is an
+  // explicit tap, never automatic, and the heavy load only follows a deliberate
+  // action (never a page load). Same device test that picks the mobile GLB tier.
+  const heavyPreviewRisk = lowMemoryDevice;
 
   function previewTapButton(l, thumbEl, label) {
     thumbEl.classList.remove("loading");

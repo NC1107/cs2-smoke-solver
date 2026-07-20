@@ -9,7 +9,7 @@
 // THREE is the lazily loaded window global, so nothing here may touch it at
 // import time; createFlyCamera is only called after three.min.js has loaded.
 
-import { isDrag } from "./state.js?v=13";
+import { isDrag } from "./state.js?v=14";
 
 const LOOK_SENSITIVITY = 0.0035;
 const PAN_SENSITIVITY = 1.35;

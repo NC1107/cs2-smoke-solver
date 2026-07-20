@@ -20,11 +20,21 @@
 // can move a smoke by a single unit.
 //
 // Usage: node rig/optimize-textured-glb.mjs [input.glb] [output.glb]
-import { prune, textureCompress, quantize, dedup, draco, flatten, join } from "@gltf-transform/functions";
+import { prune, textureCompress, quantize, dedup, draco, flatten, join, simplify, weld } from "@gltf-transform/functions";
+import { MeshoptSimplifier } from "meshoptimizer";
 import { readGlb, writeGlb } from "./glb-lib.mjs";
 
-const inPath = process.argv[2] ?? "data/de_dust2_textured.glb";
-const outPath = process.argv[3] ?? "data/de_dust2_textured.optimized.glb";
+// --mobile derives a low-memory tier from an already-optimized desktop GLB:
+// same geometry, but textures re-capped far smaller. The desktop GLB decodes
+// to 0.5-1.4 GB of GPU texture memory (1024-cap color maps x a few hundred
+// materials), which blows a phone tab's budget the instant it uploads - the OS
+// kills the tab and the browser "reloads after finishing". A 256-cap tier
+// drops that ~16x per oversized texture, into a range a phone can hold. Desktop
+// keeps the full-resolution GLB untouched; the viewer picks the tier per device.
+const MOBILE = process.argv.includes("--mobile");
+const positional = process.argv.slice(2).filter(a => !a.startsWith("--"));
+const inPath = positional[0] ?? "data/de_dust2_textured.glb";
+const outPath = positional[1] ?? "data/de_dust2_textured.optimized.glb";
 
 const doc = await readGlb(inPath);
 
@@ -85,12 +95,22 @@ console.log("stripped unread vertex attributes:", stripped);
 const textures = doc.getRoot().listTextures();
 const alreadyCompressed = textures.length > 0 && textures.every(t => t.getMimeType() === "image/webp");
 
+if (MOBILE) {
+  await MeshoptSimplifier.ready;
+}
+
 await doc.transform(
   prune(),
-  ...(alreadyCompressed ? [] : [
-    textureCompress({ targetFormat: "webp", resize: [1024, 1024], quality: 82 }),
-    quantize(),
-  ]),
+  // Mobile: always re-cap textures to 256 even though the input is already WebP
+  // (the whole point is to shrink them further), and skip quantize() - the
+  // desktop input this derives from is already quantized. Desktop: the usual
+  // 1024-cap first pass, skipped when re-running on already-WebP input.
+  ...(MOBILE
+    ? [textureCompress({ targetFormat: "webp", resize: [256, 256], quality: 75 })]
+    : alreadyCompressed ? [] : [
+      textureCompress({ targetFormat: "webp", resize: [1024, 1024], quality: 82 }),
+      quantize(),
+    ]),
   // The exporter emits one primitive per source mesh instance, so a map arrives
   // as thousands of individually-drawn props that mostly share a few hundred
   // materials - de_mirage was 3,480 draw calls a frame. Baking the node
@@ -98,6 +118,17 @@ await doc.transform(
   // that to a few hundred. This merges meshes; it does not touch triangles.
   flatten(),
   join({ keepNamed: false }),
+  // Mobile also decimates geometry. After the texture re-cap, the heaviest maps
+  // are dominated by raw vertex count (inferno is 7.4M verts ~= 180MB of GPU
+  // buffers on its own), enough to keep a phone tab near its ceiling. CS maps
+  // are mostly large coplanar walls and floors, which collapse almost losslessly
+  // - weld() merges the split vertices join() leaves behind so simplify() can
+  // actually reach across a merged surface; error is kept tight so silhouettes
+  // and the sightlines a reference view exists to show stay put.
+  ...(MOBILE ? [
+    weld(),
+    simplify({ simplifier: MeshoptSimplifier, ratio: 0.5, error: 0.008 }),
+  ] : []),
   dedup(),
   draco(),
 );

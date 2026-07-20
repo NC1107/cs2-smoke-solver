@@ -120,6 +120,18 @@ export const typeLabel = l =>
 export const clickShort = s => s >= 0.99 ? "left click" : s >= 0.49 ? "mid (L+R)" : "right click";
 export const clickClass = s => s >= 0.99 ? "left" : s >= 0.49 ? "mid" : "right";
 
+// Phones and other low-memory devices, where the full-resolution textured GLB
+// (0.5-1.4 GB of decoded GPU texture + geometry memory) exceeds a browser tab's
+// budget: the OS kills the tab and it "reloads after finishing the download".
+// One flag for both consumers of that fact - the heavy-preview auto-load gate
+// (main.js) and the textured-GLB tier selection (textured-scene.js picks the
+// smaller data/{map}_textured.mobile.glb). Coarse pointer catches phones/
+// tablets; deviceMemory (Chromium-only, absent elsewhere) catches low-RAM
+// desktops.
+export const lowMemoryDevice =
+  (typeof matchMedia !== "undefined" && matchMedia("(pointer: coarse)").matches) ||
+  (typeof navigator !== "undefined" && navigator.deviceMemory > 0 && navigator.deviceMemory < 4);
+
 // Shared physical/UI constants (M44); world units unless noted.
 export const SMOKE_BLOOM_RADIUS = 144;
 export const PICK_RADIUS_PX = 12;
