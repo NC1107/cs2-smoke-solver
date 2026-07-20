@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Smoke Solver</title>
 <link rel="icon" href="viewer/favicon.svg" type="image/svg+xml">
-<link rel="stylesheet" href="viewer/app.css?v=14">
+<link rel="stylesheet" href="viewer/app.css?v=15">
 </head>
 <body>
 
@@ -43,8 +43,11 @@
 
         <div class="action-group">
           <span class="action-label key-subhead">view</span>
-          <button id="view3d" class="btn">3D</button>
-          <button id="spawns" class="btn" hidden title="Show T/CT spawn positions (2D and 3D) - with a target set, click a spawn to solve a smoke from it">Spawns</button>
+          <div class="view-head">
+            <button id="view3d" class="btn">3D</button>
+            <button id="spawns" class="icon-btn" hidden title="Show T/CT spawn positions (2D and 3D) - with a target set, click a spawn to solve a smoke from it" aria-label="Spawns">
+              <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M6 3v14"/><path d="M6 3h9l-2.4 3L15 9H6z"/></svg></button>
+          </div>
           <div class="icon-row" id="view-icons" hidden>
             <button id="textured3d" class="icon-btn" title="Real map textures (one-time load, size varies by map)" aria-label="Textured">
               <svg viewBox="0 0 20 20" aria-hidden="true"><rect x="3" y="4.5" width="14" height="11" rx="1.5"/><circle cx="7.5" cy="8.5" r="1.3"/><path d="M4 14l4-4 3 3 2.5-2.5L16 13"/></svg></button>
@@ -210,13 +213,17 @@
   </details>
   <div class="panel" id="panel" hidden>
     <div class="panel-resize" id="panel-resize" title="Drag to resize (or focus and use arrow keys)" role="separator" aria-orientation="vertical" aria-label="Resize panel" tabindex="0"></div>
+    <button id="panel-collapse" class="panel-collapse" title="Hide results" aria-label="Hide results" aria-expanded="true">
+      <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M8 5l5 5-5 5"/></svg></button>
     <div id="preview-pane" hidden>
       <div class="preview-thumb" id="preview-thumb"></div>
     </div>
     <div class="list-pager" id="list-pager" hidden>
-      <button class="btn pager-arrow" id="pager-prev" aria-label="Previous page">←</button>
+      <button class="pager-arrow" id="pager-prev" aria-label="Previous page">
+        <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M12 5l-5 5 5 5"/></svg></button>
       <span class="pager-label" id="pager-label">page <b>1</b> of <b>1</b></span>
-      <button class="btn pager-arrow" id="pager-next" aria-label="Next page">→</button>
+      <button class="pager-arrow" id="pager-next" aria-label="Next page">
+        <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M8 5l5 5-5 5"/></svg></button>
       <span class="pager-count" id="pager-count">0 results</span>
     </div>
     <div id="lineup-list"></div>
@@ -262,6 +269,6 @@ give weapon_smokegrenade<button data-copy="cmd-setup" class="btn">copy</button><
      4h, so bumping ?v= here is what busts that cache. Bump on any change to a
      directly-referenced asset. (The permanent cure is CF Browser Cache TTL ->
      "Respect Existing Headers", after which this is belt-and-suspenders.) -->
-<script type="module" src="viewer/js/main.js?v=14"></script>
+<script type="module" src="viewer/js/main.js?v=15"></script>
 </body>
 </html>

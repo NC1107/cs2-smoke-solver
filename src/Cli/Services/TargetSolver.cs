@@ -29,6 +29,12 @@ namespace SmokeSolver.Cli;
 
 public static class TargetSolver
 {
+    // Height above the smoke's resting point used as the far end of the
+    // line-of-sight test - roughly a player's eye at the landing, between crouch
+    // (46) and stand (64). Lifting off the floor is what stops a landing point
+    // from being occluded by its own ground.
+    const float DefenderEyeHeight = 55f;
+
     public static TargetSolve SolveForTarget(
         CollisionMesh mesh,
         Func<byte, bool>? attributeFilter,
@@ -158,7 +164,32 @@ public static class TargetSolver
             origins: origins, strengths: strengths, constants: constants, coverage: coverage, onOrigin: onOrigin,
             collider: collider);
         onPhase?.Invoke("verify", candidates.Count);
-        var lineups = LineupSolver.VerifyExact(grid, collider, zoneCrossings, candidates, minStability: minStability, constants: constants, onCandidate: onCandidate);
+        var verified = LineupSolver.VerifyExact(grid, collider, zoneCrossings, candidates, minStability: minStability, constants: constants, onCandidate: onCandidate);
+
+        // Flag lineups whose throw spot has a clear line of sight to the area
+        // the smoke lands in: being visible to that area while throwing is
+        // exactly the exposure the smoke is meant to deny, so the ranking
+        // (LineupApi) sinks them below concealed throws. The sightline uses the
+        // same world-solid mesh/filter as the rest of the solver (grenade-clips
+        // are invisible and don't block vision, so they are already excluded), a
+        // zero-width ray that must not be voxel-quantized - the exact triangle
+        // raycaster, not the grid. Region-bounded to the solved area so the
+        // per-lineup scan stays cheap; trivial next to the sweep that just ran.
+        //
+        // The ray runs eye -> landing lifted to a defender's eye height, NOT to
+        // the resting grenade on the floor: a ground point is grazed by its own
+        // floor from almost any angle, which flagged even a spot 80u away as
+        // concealed. The lifted endpoint is both the mutual-visibility line
+        // ("can someone holding this see me") and free of that self-occlusion.
+        var sightline = new TriangleRaycaster(mesh, min, max, attributeFilter);
+        var lineups = verified.ToArray();
+        Parallel.For(0, lineups.Length, Cpu.Bound, i =>
+        {
+            var l = lineups[i];
+            var eye = l.Feet + new Vector3(0, 0, GrenadeTrajectory.EyeHeight(l.Type));
+            var landingEye = l.RestPoint + new Vector3(0, 0, DefenderEyeHeight);
+            lineups[i] = l with { DirectLos = !sightline.Blocked(eye, landingEye) };
+        });
 
         // Pin class for every evaluated origin, so the viewer's stand-spot heat
         // view can rank corner wedges and wall presses above open ground. Eight
@@ -171,7 +202,7 @@ public static class TargetSolver
             target,
             origins.Count,
             [.. coverage.Select(kv => new[] { kv.Key.X, kv.Key.Y, kv.Value, originPins.GetValueOrDefault((kv.Key.X, kv.Key.Y)) })],
-            lineups,
+            [.. lineups],
             collider,
             playerCollider);
     }

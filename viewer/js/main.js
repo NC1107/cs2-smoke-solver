@@ -2,18 +2,18 @@
 // import the feature modules; they call back into the orchestrators defined
 // here (setTarget, select, runQuery) via the init*/set*Callbacks hooks.
 
-import { state, filtered, esc, lowMemoryDevice } from "./state.js?v=14";
-import { loadMapList, loadMapData, runQuery as postLineupQuery, fetchTrajectory, fetchLineupOne, fetchSlack, fetchSpawns, fetchProSmokes } from "./api.js?v=14";
-import { loadRadar, readColors, recolorRadar, draw, scheduleDraw, resize, resetView, initMap2d } from "./map2d.js?v=14";
-import { ensure3d, resetEnsure3d, teardown3d, current3d, sync3d, syncProgress3d, set3dCallbacks, applyTheme3d } from "./view3d.js?v=14";
-import { resetEnsureTexturedScene } from "./textured-scene.js?v=14";
-import { capturePreview } from "./preview.js?v=14";
+import { state, filtered, esc, lowMemoryDevice } from "./state.js?v=15";
+import { loadMapList, loadMapData, runQuery as postLineupQuery, fetchTrajectory, fetchLineupOne, fetchSlack, fetchSpawns, fetchProSmokes } from "./api.js?v=15";
+import { loadRadar, readColors, recolorRadar, draw, scheduleDraw, resize, resetView, initMap2d } from "./map2d.js?v=15";
+import { ensure3d, resetEnsure3d, teardown3d, current3d, sync3d, syncProgress3d, set3dCallbacks, applyTheme3d } from "./view3d.js?v=15";
+import { resetEnsureTexturedScene } from "./textured-scene.js?v=15";
+import { capturePreview } from "./preview.js?v=15";
 // Every local import across viewer/js carries the SAME ?v= token, bumped
 // together on any change. The HTML is served no-cache, so a fresh load pulls
 // main.js?v=N, which pulls every module at ?v=N - the whole graph refreshes as
 // one consistent set past Cloudflare's 4h JS cache, with no duplicate module
 // instances (which a partial versioning would cause). Bump the token everywhere.
-import { renderLineups, initPanel, revealSelected, resultStatusText } from "./panel.js?v=14";
+import { renderLineups, initPanel, revealSelected, resultStatusText } from "./panel.js?v=15";
 
 (async () => {
   // Map switching means a failed load is no longer necessarily terminal (the
@@ -53,6 +53,8 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
   const viewIcons = document.getElementById("view-icons");
   const rulerEl = document.getElementById("lineup-ruler");
   const clearBtn = document.getElementById("clear");
+  const panelEl = document.getElementById("panel");
+  const panelCollapseBtn = document.getElementById("panel-collapse");
   const keyEl = document.getElementById("key-dots");
   const mapSelect = document.getElementById("map-select");
   const cancelBtn = document.getElementById("solve-cancel");
@@ -766,6 +768,14 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
     spawnsBtn.classList.toggle("active", state.spawnsOn);
     draw();
     sync3d();
+  });
+  // Collapse the results panel out of the way to see the map beneath it. A fresh
+  // solve re-expands it (panel.js) since the point of searching is to see them.
+  panelCollapseBtn.addEventListener("click", () => {
+    const collapsed = panelEl.classList.toggle("collapsed");
+    panelCollapseBtn.setAttribute("aria-expanded", collapsed ? "false" : "true");
+    panelCollapseBtn.title = collapsed ? "Show results" : "Hide results";
+    panelCollapseBtn.setAttribute("aria-label", collapsed ? "Show results" : "Hide results");
   });
   proSmokesBtn.addEventListener("click", () => {
     state.prosmokesOn = !state.prosmokesOn;

@@ -200,6 +200,13 @@
      down / crosshair / lineup ruler). */
   #controls .icon-row { display: flex; flex-wrap: wrap; gap: 5px; }
   #controls .icon-row[hidden] { display: none; }
+  /* The "3D" button and the always-available Spawns icon share one row; Spawns
+     is an icon toggle like the 3D-only strip below, but visible in 2D too. */
+  #controls .view-head { display: flex; gap: 5px; }
+  #controls .view-head > #view3d { flex: 1; }
+  #controls .view-head > #spawns { flex: 0 0 40px; }
+  /* An id+class selector would otherwise beat [hidden]'s display:none. */
+  #controls .icon-btn[hidden] { display: none; }
   #controls .icon-btn {
     flex: 1 1 0;
     min-width: 32px;
@@ -254,7 +261,10 @@
   .lineup-ruler {
     position: absolute;
     inset: 0;
-    z-index: 41;
+    /* Above the map/3D stage (both z-auto) but below the chrome: #controls (10)
+       and .panel (11). At 41 the reticle painted over the sidebars and results
+       list, which is what read as "the crosshair displays above the UI". */
+    z-index: 4;
     pointer-events: none;
     color: #00ff00;
   }
@@ -469,6 +479,9 @@
   .panel {
     position: absolute;
     right: 10px;
+    /* Above the lineup ruler (z 4) like #controls (z 10), so the reticle never
+       paints over the results. */
+    z-index: 11;
     /* Anchored top-right. A long result list scrolls inside #lineup-list once it
        hits the cap rather than stretching to the floor. */
     top: 10px;
@@ -508,6 +521,34 @@
     transition: opacity 0.12s;
   }
   .panel-resize:hover::after, .panel-resize.dragging::after { opacity: 1; background: var(--accent); }
+  /* Collapse the results out of the way to see the map under them. Pinned to the
+     panel's top-right; the results below reserve a little right room for it. */
+  .panel-collapse {
+    position: absolute;
+    top: 7px; right: 7px;
+    z-index: 4;
+    width: 22px; height: 22px;
+    display: inline-flex; align-items: center; justify-content: center;
+    padding: 0;
+    border: var(--border);
+    border-radius: 5px;
+    background: var(--surface);
+    color: var(--muted);
+    cursor: pointer;
+  }
+  .panel-collapse:hover { color: var(--accent); border-color: var(--accent); }
+  .panel-collapse svg {
+    width: 15px; height: 15px;
+    fill: none; stroke: currentColor; stroke-width: 1.9;
+    stroke-linecap: round; stroke-linejoin: round;
+    transition: transform 0.15s;
+  }
+  /* Collapsed: the panel shrinks to just the toggle; everything else hides and
+     the chevron flips to point back at the results it restores. */
+  .panel.collapsed { width: auto; min-width: 0; padding: 5px; gap: 0; }
+  .panel.collapsed > *:not(#panel-collapse):not(.panel-resize) { display: none; }
+  .panel.collapsed .panel-collapse { position: static; }
+  .panel.collapsed .panel-collapse svg { transform: rotate(180deg); }
   #preview-pane[hidden] { display: none; }
   #preview-pane {
     /* Drag the corner if the render is too small to read. */
@@ -697,30 +738,39 @@
   .list-pager {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 7px;
     flex: none;
-    padding: 6px 2px 8px;
-    margin-bottom: 4px;
+    /* Right room clears the panel's collapse button when the pager is topmost. */
+    padding: 2px 26px 8px 0;
+    margin-bottom: 2px;
     border-bottom: var(--border);
     font-size: 11px;
     color: var(--muted);
   }
   .list-pager[hidden] { display: none; }
   .pager-arrow {
-    --btn-pad: 0;
-    width: 26px;
-    height: 24px;
+    width: 24px;
+    height: 22px;
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    font-size: 14px;
-    line-height: 1;
-    font-weight: 600;
+    padding: 0;
+    border: var(--border);
+    border-radius: 5px;
+    background: var(--surface);
+    color: var(--ink);
+    cursor: pointer;
   }
-  .pager-arrow:disabled { opacity: 0.35; cursor: default; border-color: var(--line); }
+  .pager-arrow svg {
+    width: 14px; height: 14px;
+    fill: none; stroke: currentColor; stroke-width: 2;
+    stroke-linecap: round; stroke-linejoin: round;
+  }
+  .pager-arrow:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+  .pager-arrow:disabled { opacity: 0.3; cursor: default; }
   .list-pager .pager-label { color: var(--ink); white-space: nowrap; font-size: 11.5px; }
   .list-pager .pager-label b { font-variant-numeric: tabular-nums; font-weight: 650; }
-  .list-pager .pager-count { margin-left: auto; white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .list-pager .pager-count { margin-left: auto; white-space: nowrap; font-variant-numeric: tabular-nums; color: var(--muted); }
   /* One page: hide the arrows and "page N of M", leave just the count. */
   .list-pager.single-page .pager-arrow,
   .list-pager.single-page .pager-label { display: none; }
@@ -753,6 +803,9 @@
   .ref.flat { color: var(--muted); border: var(--border); }
   .ref.edge { color: var(--accent); border: 1px solid var(--accent); }
   .ref.pin { color: var(--click-left); border: 1px solid var(--click-left); font-weight: 600; }
+  /* Warning red: the throw spot is exposed to the area it smokes. Distinct from
+     the aim-ref badges (blue/orange/gold) so it reads as a caution, not a tier. */
+  .ref.exposed { color: #e5484d; border: 1px solid #e5484d; font-weight: 700; }
   /* Filled gold pill so a spawn-throwable lineup stands out at a glance. */
   .ref.spawn { color: #1a1a1a; background: #d9a441; border: 1px solid #d9a441; font-weight: 700; }
   .ref.fav { color: var(--target); border: none; padding: 0; }
@@ -770,8 +823,9 @@
     .toolbar { padding: 5px 10px; gap: 6px; }
     #status { font-size: 11px; line-height: 1.35; }
     /* Compact pager (was oversized 44px touch targets). */
-    .list-pager { font-size: 10.5px; padding: 4px 2px 6px; gap: 6px; }
-    .pager-arrow { width: 30px; height: 26px; min-width: 30px; min-height: 26px; --btn-font-size: 13px; }
+    .list-pager { font-size: 10.5px; padding: 3px 30px 6px 0; gap: 6px; }
+    .pager-arrow { width: 30px; height: 26px; min-width: 30px; }
+    .pager-arrow svg { width: 16px; height: 16px; }
     .list-pager .pager-label { font-size: 11px; }
     /* Full-width bottom sheet on phones: no horizontal resize. */
     .panel-resize { display: none; }

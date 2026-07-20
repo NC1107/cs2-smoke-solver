@@ -23,7 +23,13 @@ public sealed record Lineup(
     // throws; hundreds of units when a bounce boundary sits inside the
     // shift, which real-world validation showed the aim-only Stability
     // score completely misses.
-    float RestScatter = 0f);
+    float RestScatter = 0f,
+    // The thrower has a clear line of sight to where the smoke lands, so anyone
+    // holding that area can see them throw it. Filled in by the target solver
+    // (a sightline raycast eye->landing), used to penalize the ranking: an
+    // exposed throw spot is where the danger is, so a concealed lineup is
+    // preferred even at some cost to reliability.
+    bool DirectLos = false);
 
 /// <summary>
 /// Stage 2 of the inverse solver: sweep standable origins and view angles, keep
