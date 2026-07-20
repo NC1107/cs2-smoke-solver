@@ -3,16 +3,19 @@
 // wraps init/sync. Raycast picks route through callbacks that main.js
 // registers, so this module never imports the orchestrator.
 
-import { state, filtered, clickClass, SMOKE_BLOOM_RADIUS, EYE_HEIGHT_BY_TYPE, DEFAULT_EYE_HEIGHT } from "./state.js?v=10";
-import { fetchMesh } from "./api.js?v=10";
-import { createFlyCamera } from "./flycam.js?v=10";
-import { loadScript, ensureTexturedScene, currentTexturedScene, disposeSceneContents, disposeTexturedScene } from "./textured-scene.js?v=10";
+import { state, filtered, clickClass, SMOKE_BLOOM_RADIUS, EYE_HEIGHT_BY_TYPE, DEFAULT_EYE_HEIGHT } from "./state.js?v=14";
+import { fetchMesh } from "./api.js?v=14";
+import { createFlyCamera } from "./flycam.js?v=14";
+import { loadScript, ensureTexturedScene, currentTexturedScene, disposeSceneContents, disposeTexturedScene } from "./textured-scene.js?v=14";
 
 const stage3d = state.stage3d;
 // Warning tint for phantom blockers (grenade-clips, physics-clips, glass) - a
 // magenta that appears nowhere else in the palette, so a smoke-stopping surface
 // the textured world hides cannot be mistaken for a real wall or a marker.
 const PHANTOM_COLOR = 0xff2fd0;
+// On-screen radius (px) held constant for spawn diamonds regardless of camera
+// distance, so they stay visible from the opening overview like the 2D overlay.
+const SPAWN_MARKER_PX = 7;
 
 // A soft round sprite for the progress point clouds. GL points render as hard
 // squares by default, which read as blocky next to the 2D view's round dots;
@@ -66,6 +69,10 @@ export function current3d() {
 export function teardown3d() {
   if (three) {
     three.stop();
+    // The window resize handler closes over this scene's renderer/camera;
+    // leaving it registered leaks the disposed scene (GC can't reclaim it) and
+    // replays setSize() on dead THREE objects on every later resize.
+    window.removeEventListener("resize", three.resize3d);
     disposeSceneContents(three.scene);
     three.renderer.dispose();
     three.renderer.domElement.remove();
@@ -78,8 +85,16 @@ export function teardown3d() {
 
 async function init3d() {
   // three.js is opt-in, so keep its ~740 KB off the 2D-only load path.
+  const gen = state.mapGeneration;
   await loadScript("viewer/lib/three.min.js");
   const buf = await fetchMesh(state.currentMap);
+  // The map may have switched while three.js and the mesh downloaded. Bail
+  // BEFORE creating a renderer or touching module state: building here would
+  // append an orphaned canvas (a leaked WebGL context) and clobber the new
+  // map's `three` with the old map's geometry.
+  if (state.mapGeneration !== gen) {
+    return undefined;
+  }
   const dv = new DataView(buf);
   // Magic + format version lead the payload (see MeshPayloadSolid). If this
   // module is a stale cached copy parsing a newer mesh, the header won't match:
@@ -189,9 +204,13 @@ async function init3d() {
 
   // Spawn markers: diamonds in team colors (T gold, CT blue), matching the 2D
   // overlay. Raycast-picked so clicking one solves a smoke from that exact spot.
+  // Drawn on top (depthTest off, high renderOrder) like the 2D overlay so the
+  // whole cluster stays visible from the overview even when spawns sit behind a
+  // wall or under a roof - without this, half a team's spawns hide behind map
+  // geometry at the opening camera angle and read as missing.
   const spawnGeo = new THREE.OctahedronGeometry(11);
-  const spawnMatT = new THREE.MeshBasicMaterial({ color: 0xd9a441 });
-  const spawnMatCt = new THREE.MeshBasicMaterial({ color: 0x4a90d9 });
+  const spawnMatT = new THREE.MeshBasicMaterial({ color: 0xd9a441, depthTest: false, depthWrite: false });
+  const spawnMatCt = new THREE.MeshBasicMaterial({ color: 0x4a90d9, depthTest: false, depthWrite: false });
 
   // Shared marker assets: sync3d re-parents these instead of allocating new
   // GPU buffers per rebuild (three.js never frees them on plain .remove()).
@@ -330,10 +349,29 @@ async function init3d() {
   // without re-registering keys/controls; loop() always reads the current
   // value rather than closing over the flat scene permanently.
   let activeScene = scene;
+  // Spawn diamonds mark the whole team's spawn cluster, meant to be seen from
+  // the opening bird's-eye camera (thousands of units up) as much as up close.
+  // As world-scale meshes they shrank to sub-pixel specks from there - the 2D
+  // overlay stays legible because its diamonds are screen-space. Rescale each
+  // to a fixed on-screen size before every render so they read the same at any
+  // distance, matching the 2D markers (only when shown, so it costs nothing
+  // otherwise). SPAWN_MARKER_PX is the target on-screen radius; spawnGeo's
+  // radius is 11, so scale = desiredWorldRadius / 11.
+  function keepSpawnsScreenSized() {
+    const kids = spawnGroup.children;
+    if (!kids.length) { return; }
+    const h = renderer.domElement.clientHeight || 1;
+    const worldPerPxPerDist = 2 * Math.tan((camera.fov * Math.PI) / 360) / h;
+    for (const m of kids) {
+      const dist = camera.position.distanceTo(m.position);
+      m.scale.setScalar((SPAWN_MARKER_PX * worldPerPxPerDist * dist) / 11);
+    }
+  }
   function loop(now = performance.now()) {
     if (!live) { return; }
     cam.tick(now);
     if (dirty) {
+      keepSpawnsScreenSized();
       renderer.render(activeScene, camera);
       dirty = false;
     }
@@ -369,6 +407,10 @@ async function init3d() {
     async setTextured(on) {
       if (on === this.isTextured) { return; }
       const dest = on ? await ensureTexturedScene() : scene;
+      // ensureTexturedScene returns null if the map switched during the GLB
+      // download; there is no textured scene to switch into, so leave the flat
+      // mesh active rather than dereferencing null.
+      if (!dest) { return; }
       const src = on ? scene : currentTexturedScene();
       for (const g of [markerGroup, targetGroup, progressGroup, phantomVisual].filter(Boolean)) {
         src?.remove(g);
@@ -544,6 +586,7 @@ function addSpawns3d(pts, material) {
     const m = new THREE.Mesh(three.spawnGeo, material);
     m.position.set(x, y, z + 14);
     m.userData.spawn = [x, y];
+    m.renderOrder = 10; // draw last, over the mesh (paired with depthTest:false)
     three.spawnGroup.add(m);
   }
 }

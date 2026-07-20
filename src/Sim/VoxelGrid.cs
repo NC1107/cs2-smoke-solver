@@ -17,9 +17,12 @@ public sealed class VoxelGrid
 
     readonly ulong[] _solid;
 
+    readonly float _invVoxelSize;
+
     VoxelGrid(float voxelSize, Vector3 origin, int nx, int ny, int nz)
     {
         VoxelSize = voxelSize;
+        _invVoxelSize = 1f / voxelSize;
         Origin = origin;
         Nx = nx;
         Ny = ny;
@@ -61,10 +64,13 @@ public sealed class VoxelGrid
     // 64-bit word would lose bits without the interlocked OR.
     void SetSolidAtomic(int index) => Interlocked.Or(ref _solid[index >> 6], 1UL << (index & 63));
 
+    // Multiply by the reciprocal instead of dividing: this runs per tick across
+    // billions of sweep ticks, and for the power-of-two voxel sizes used (16u)
+    // 1/size is exact, so x*inv is bit-identical to x/size - not an approximation.
     public (int X, int Y, int Z) CellOf(Vector3 p) => (
-        (int)MathF.Floor((p.X - Origin.X) / VoxelSize),
-        (int)MathF.Floor((p.Y - Origin.Y) / VoxelSize),
-        (int)MathF.Floor((p.Z - Origin.Z) / VoxelSize));
+        (int)MathF.Floor((p.X - Origin.X) * _invVoxelSize),
+        (int)MathF.Floor((p.Y - Origin.Y) * _invVoxelSize),
+        (int)MathF.Floor((p.Z - Origin.Z) * _invVoxelSize));
 
     public Vector3 CellCenter(int x, int y, int z) =>
         Origin + new Vector3((x + 0.5f) * VoxelSize, (y + 0.5f) * VoxelSize, (z + 0.5f) * VoxelSize);

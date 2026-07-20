@@ -4,6 +4,11 @@
 
 export const state = {
   currentMap: null,
+  // Bumped once per map switch. Any async load (map data, radar, 3D mesh,
+  // textured GLB) captures it before its awaits and abandons its result if the
+  // value moved on - so a slow load for a map the user already left can never
+  // clobber the current one's geometry or leak an orphaned WebGL context.
+  mapGeneration: 0,
   mapData: null,
   colors: {},
   picking: false,
@@ -38,6 +43,8 @@ export const state = {
   // whether the density heatmap of them is shown.
   prosmokes: null,
   prosmokesOn: false,
+  // Which team's smokes the pro heatmap shows: "all", "t" (attacker), "ct" (defender).
+  proSide: "all",
   hovered: -1,
   canvas: document.getElementById("map"),
   stage3d: document.getElementById("stage3d"),
@@ -101,7 +108,7 @@ export function filtered() {
     (!filters.precision.value || Math.hypot(l.rest[0] - t[0], l.rest[1] - t[1]) <= Number.parseFloat(filters.precision.value)));
 }
 
-export const typeShort = { Stand: "stand", Crouch: "crouch", JumpThrow: "jump", CrouchJumpThrow: "crouch+jump", RunJumpThrow: "run+jump" };
+const typeShort = { Stand: "stand", Crouch: "crouch", JumpThrow: "jump", CrouchJumpThrow: "crouch+jump", RunJumpThrow: "run+jump" };
 // Movement keys behind a running jump throw's run direction (server runDeg:
 // 0 = W, +90 = A, -90 = D, +-45 = diagonals). Banded, not exact-matched, so
 // a float that went through JSON still labels correctly.
@@ -112,6 +119,18 @@ export const typeLabel = l =>
   l.type === "RunJumpThrow" ? `run+jump (${runKeys(l.runDeg ?? 0)})` : typeShort[l.type];
 export const clickShort = s => s >= 0.99 ? "left click" : s >= 0.49 ? "mid (L+R)" : "right click";
 export const clickClass = s => s >= 0.99 ? "left" : s >= 0.49 ? "mid" : "right";
+
+// Phones and other low-memory devices, where the full-resolution textured GLB
+// (0.5-1.4 GB of decoded GPU texture + geometry memory) exceeds a browser tab's
+// budget: the OS kills the tab and it "reloads after finishing the download".
+// One flag for both consumers of that fact - the heavy-preview auto-load gate
+// (main.js) and the textured-GLB tier selection (textured-scene.js picks the
+// smaller data/{map}_textured.mobile.glb). Coarse pointer catches phones/
+// tablets; deviceMemory (Chromium-only, absent elsewhere) catches low-RAM
+// desktops.
+export const lowMemoryDevice =
+  (typeof matchMedia !== "undefined" && matchMedia("(pointer: coarse)").matches) ||
+  (typeof navigator !== "undefined" && navigator.deviceMemory > 0 && navigator.deviceMemory < 4);
 
 // Shared physical/UI constants (M44); world units unless noted.
 export const SMOKE_BLOOM_RADIUS = 144;

@@ -3,8 +3,8 @@
 // previews. Loading, axis conversion, and material sanitization live here;
 // the interactive view and the preview path only consume the finished scene.
 
-import { state } from "./state.js?v=10";
-import { cacheBust } from "./api.js?v=10";
+import { state, lowMemoryDevice } from "./state.js?v=14";
+import { cacheBust } from "./api.js?v=14";
 
 const scriptPromises = {};
 export function loadScript(src) {
@@ -41,24 +41,47 @@ let texturedScenePromise = null;
 export function resetEnsureTexturedScene() {
   texturedScenePromise = null;
 }
-export function ensureTexturedScene(url = `data/${state.currentMap}_textured.glb`) {
+const desktopUrl = map => `data/${map}_textured.glb`;
+const mobileUrl = map => `data/${map}_textured.mobile.glb`;
+
+export function ensureTexturedScene(url) {
   texturedScenePromise ??= (async () => {
+    // The user can easily switch maps mid-download. Capture the generation and
+    // drop this scene if it lands late, so it can't clobber a newer map's
+    // textures. teardown3d() -> disposeTexturedScene() resets the memoized
+    // promise on switch, so the next map starts a fresh load.
+    const gen = state.mapGeneration;
+    const map = state.currentMap;
     await loadScript("viewer/lib/GLTFLoader.js");
     await loadScript("viewer/lib/DRACOLoader.js");
     const draco = new THREE.DRACOLoader();
     draco.setDecoderPath("viewer/lib/draco/");
     const loader = new THREE.GLTFLoader();
     loader.setDRACOLoader(draco);
-    const gltf = await new Promise((resolve, reject) => {
-      loader.load(cacheBust(url), resolve, progress => {
-        // The first preview or Textured click starts an 18-46MB one-time
-        // download; without numbers it reads as a hang on a slow connection.
+    const load = src => new Promise((resolve, reject) => {
+      loader.load(cacheBust(src), resolve, progress => {
+        // The first preview or Textured click starts a one-time per-map
+        // download (tens of MB); without numbers it reads as a hang on a slow
+        // connection.
         if (progress.lengthComputable) {
           state.statusEl.textContent =
             `loading map textures: ${(progress.loaded / 1e6).toFixed(0)} / ${(progress.total / 1e6).toFixed(0)} MB (one-time per map)`;
         }
       }, reject);
     });
+    // Low-memory devices load the smaller mobile tier (256-cap textures +
+    // decimated geometry, ~120-200MB decoded vs 0.5-1.4GB) so the tab does not
+    // OOM. An explicitly requested url overrides the tier choice. If the mobile
+    // GLB is missing (a server that predates the tier), fall back to the full
+    // one - no worse than before this tier existed.
+    const primary = url ?? (lowMemoryDevice ? mobileUrl(map) : desktopUrl(map));
+    let gltf;
+    try {
+      gltf = await load(primary);
+    } catch (e) {
+      if (url || primary === desktopUrl(map)) { throw e; }
+      gltf = await load(desktopUrl(map));
+    }
     const root = gltf.scene;
     // VRF exports in meters with a cyclic axis permutation, not a plain
     // Y-up/Z-up swap: raw (x,y,z) maps to Hammer (z,y,x) - Hammer_X=raw_z,
@@ -181,6 +204,10 @@ export function ensureTexturedScene(url = `data/${state.currentMap}_textured.glb
     scene.background = new THREE.Color(state.colors.surface);
     scene.add(root);
 
+    if (state.mapGeneration !== gen) {
+      disposeSceneContents(scene);
+      return null;
+    }
     texturedScene = scene;
     return scene;
   })();

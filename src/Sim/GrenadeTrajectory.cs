@@ -155,7 +155,7 @@ public static class GrenadeTrajectory
         // second inline copy silently desynchronized the two paths once.
         var (position, velocity) = DeriveInitial(spec, constants);
 
-        var gravity = BaseGravity * k.GravityScale;
+        var gravityStep = BaseGravity * k.GravityScale * TimeStep;
         var bounces = 0;
         var time = 0f;
         Vector3? firstTouch = null;
@@ -163,7 +163,7 @@ public static class GrenadeTrajectory
         while (time < MaxFlightSeconds)
         {
             var vzOld = velocity.Z;
-            velocity.Z -= gravity * TimeStep;
+            velocity.Z -= gravityStep;
             var next = position + new Vector3(velocity.X, velocity.Y, (vzOld + velocity.Z) * 0.5f) * TimeStep;
 
             var (cx, cy, cz) = grid.CellOf(next);
