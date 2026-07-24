@@ -62,18 +62,15 @@ public static class TargetSolver
 
         var (meshMin, meshMax) = mesh.ComputeBounds();
         var voxelSize = 16f;
-        var min = new Vector3(
-            MathF.Max(MathF.Min(target.X, originClick.X - originReach) - 500, meshMin.X),
-            MathF.Max(MathF.Min(target.Y, originClick.Y - originReach) - 500, meshMin.Y),
-            meshMin.Z);
-        var max = new Vector3(
-            MathF.Min(MathF.Max(target.X, originClick.X + originReach) + 500, meshMax.X),
-            MathF.Min(MathF.Max(target.Y, originClick.Y + originReach) + 500, meshMax.Y),
-            // Cap relative to the target: an absolute world-Z cap silently
-            // excluded all playable space on high maps like de_vertigo.
-            MathF.Min(meshMax.Z + 64, target.Z + 900));
-        var grid = VoxelGrid.Build(mesh, voxelSize, min, max, attributeFilter);
 
+        // Resolve the target's height BEFORE sizing the main voxel grid: a 2D
+        // click's target.Z defaults to 0, and capping the grid to "near Z=0"
+        // (the relative cap below) would silently miss every playable cell on
+        // a map whose baseline sits far from zero (de_vertigo's floors are
+        // ~11,500-11,800 world Z) - the grid would top out at 900 before any
+        // real floor was ever in view. NavGroundZ needs no grid at all; only
+        // the raw-geometry fallback does, and only then (a click that misses
+        // every nav area) does it pay for a second, full-height probe grid.
         var navZ = hasTargetZ ? null : LineupSolver.NavGroundZ(corners, target.X, target.Y);
         if (navZ is { } z0)
         {
@@ -81,9 +78,25 @@ public static class TargetSolver
         }
         else if (!hasTargetZ)
         {
-            var (tx, ty, _) = grid.CellOf(target with { Z = 200 });
-            target = SnapTargetToGround(grid, tx, ty) ?? target with { Z = 0 };
+            var probeMin = new Vector3(target.X - 200, target.Y - 200, meshMin.Z);
+            var probeMax = new Vector3(target.X + 200, target.Y + 200, meshMax.Z);
+            var probeGrid = VoxelGrid.Build(mesh, voxelSize, probeMin, probeMax, attributeFilter);
+            var (tx, ty, _) = probeGrid.CellOf(target with { Z = meshMin.Z + 100 });
+            target = SnapTargetToGround(probeGrid, tx, ty) ?? target with { Z = 0 };
         }
+
+        var min = new Vector3(
+            MathF.Max(MathF.Min(target.X, originClick.X - originReach) - 500, meshMin.X),
+            MathF.Max(MathF.Min(target.Y, originClick.Y - originReach) - 500, meshMin.Y),
+            meshMin.Z);
+        var max = new Vector3(
+            MathF.Min(MathF.Max(target.X, originClick.X + originReach) + 500, meshMax.X),
+            MathF.Min(MathF.Max(target.Y, originClick.Y + originReach) + 500, meshMax.Y),
+            // Cap relative to the (now-resolved) target height: an absolute
+            // world-Z cap silently excluded all playable space on high maps
+            // like de_vertigo.
+            MathF.Min(meshMax.Z + 64, target.Z + 900));
+        var grid = VoxelGrid.Build(mesh, voxelSize, min, max, attributeFilter);
 
         // The "zone" for a two-click query is simply resting close enough to the target.
         var zoneCrossings = new Dictionary<int, int>();

@@ -35,6 +35,7 @@
 //    out of it.
 //
 // Usage: node rig/fix-prop-scale.mjs <input.glb> <output.glb>
+import { draco } from "@gltf-transform/functions";
 import { readGlb, writeGlb, requireArgs, median, vmatName, meshExtent, groupNodesByMesh } from "./glb-lib.mjs";
 
 const inPath = process.argv[2];
@@ -126,4 +127,11 @@ for (const [mesh, nodes] of byMesh) {
 }
 
 console.log(`${inPath}: corrected ${fixedCount} node(s) out of ${doc.getRoot().listNodes().length} total nodes`);
+// The raw export is almost entirely uncompressed mesh data; writing it back
+// out as-is after only touching node.scale can round-trip PAST Node's 2GiB
+// single-file-read ceiling on a foliage/prop-heavy map (de_cache's fixed.glb
+// hit 2.2GB), which then fails the next stage before it can even open the
+// file. Draco-compressing here costs nothing downstream: optimize-textured-glb.mjs
+// decodes on read and re-encodes its own draco() pass regardless.
+await doc.transform(draco());
 await writeGlb(outPath, doc);
