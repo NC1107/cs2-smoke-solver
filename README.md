@@ -1,7 +1,7 @@
 # CS2 Smoke Solver
 
 You pick a spot you want smoked and it finds every throw that lands a smoke there, checked against the map's real collision geometry instead of a guess.
-It covers the seven active duty maps: mirage, inferno, nuke, ancient, anubis, dust2, overpass.
+It covers every current Competitive and Premier map: the seven active duty maps (cache, dust2, mirage, inferno, nuke, ancient, anubis) plus the reserve pool (train, vertigo, overpass, office, italy, fachwerk, shelter). de_boulder is not yet supported - the map's own geometry crashes the upstream Source 2 export tool.
 
 The main way to use it is the web viewer.
 You click a target on the map, it sweeps every stand spot in throw range, and lists the lineups it found with the exact `setpos`/`setang` and how to throw each one (stand, jump, run-jump, and all that).
@@ -10,7 +10,7 @@ See `DESIGN.md` for the architecture and `physics-sim.md` for the simulation.
 
 ## Status
 
-- Works end to end on all seven maps through the viewer: pick a target, get lineups, open one in 3D.
+- Works end to end through the viewer on every supported map: pick a target, get lineups, open one in 3D.
 - The physics is calibrated from real in-game throws, not placeholders. Bounce elasticity is 0.45, matching the cs2 `grenade` surfaceprop, and the launch model was measured off per-tick server telemetry.
 - Every lineup the solver produces gets thrown on a real cs2 server and the landing compared to where it predicted. Across the automated runs the median error is around half a unit and pretty much everything lands within a couple units. The Accuracy page in the viewer shows the runs.
 - Lineups are solved against a voxel model first, then re-checked against the exact collision triangles under small aim wiggles, and the agreement fraction ships as a per-lineup stability score. The exact check traces a point, so it can still snag on thin trim a real round rolls over, and for now it annotates a lineup rather than throwing it out.
