@@ -64,6 +64,15 @@ public static class MapExtractor
         AppendPhys(phys, vertices, indices, triangleAttributes, i => (byte)i, v => v);
         AppendSolidEntityModels(package, vertices, indices, triangleAttributes, names, interactAs);
 
+        // Static prop models themselves are almost never inside the map's own
+        // small VPK - only the compiled level/entity/nav data is. The actual
+        // .vmdl_c/.vphys_c payloads live in the shared game content archive
+        // alongside it (pak01_dir.vpk), same directory as the maps/ folder.
+        var sharedVpkPath = Path.Combine(Path.GetDirectoryName(Path.GetDirectoryName(mapVpkPath))!, "pak01_dir.vpk");
+        using var sharedPackage = File.Exists(sharedVpkPath) ? new Package() : null;
+        sharedPackage?.Read(sharedVpkPath);
+        AppendStaticProps(package, sharedPackage, vertices, indices, triangleAttributes, names, interactAs);
+
         return new CollisionMesh
         {
             MapName = mapName,
@@ -216,6 +225,167 @@ public static class MapExtractor
                     _ => mapped,
                     v => Vector3.Transform(v, rotation) + origin);
             }
+        }
+    }
+
+    // Static props carry their own collision hull inside their compiled model,
+    // referenced from the map's world nodes (m_renderableModel + m_vTransform
+    // per placement) rather than from the entity lump - so brush-entity
+    // extraction above never sees them. On brush-built maps like de_dust2 that
+    // costs nothing (walls are world geometry); on prop-dressed maps like
+    // de_cache, most of the actual architecture IS a static prop, so skipping
+    // this left big gaps: silently-unwalkable ledges (no collision to stand
+    // on) and a radar that only shows the coarse level-blocking volume instead
+    // of the real walls. m_vTransform is the prop's FULL placement matrix
+    // (position, rotation, and scale together), unlike a brush entity's
+    // origin/angles-only transform.
+    static void AppendStaticProps(
+        Package package,
+        Package? sharedPackage,
+        List<float> vertices,
+        List<int> indices,
+        List<byte> triangleAttributes,
+        List<string> names,
+        List<string[]> interactAs)
+    {
+        var worldEntry = FindEntries(package, "vwrld_c")
+            .FirstOrDefault(e => e.GetFullPath().EndsWith("world.vwrld_c", StringComparison.OrdinalIgnoreCase));
+        if (worldEntry == null)
+        {
+            return;
+        }
+        package.ReadEntry(worldEntry, out var worldRaw);
+        using var worldResource = new Resource();
+        worldResource.Read(new MemoryStream(worldRaw));
+        var world = (World)worldResource.DataBlock!;
+
+        var worldNodesByPath = FindEntries(package, "vwnod_c")
+            .ToDictionary(e => e.GetFullPath().ToLowerInvariant(), e => e);
+
+        // Model and physics payloads are looked up in the map's own VPK first,
+        // falling back to the shared content archive - most static prop models
+        // live only in the latter (see the pak01_dir.vpk comment above).
+        Dictionary<string, PackageEntry>? modelsByPath = null;
+        Dictionary<string, PackageEntry>? sharedModelsByPath = null;
+        (Package Package, PackageEntry Entry)? FindModel(string path)
+        {
+            modelsByPath ??= FindEntries(package, "vmdl_c").ToDictionary(e => e.GetFullPath().ToLowerInvariant(), e => e);
+            if (modelsByPath.TryGetValue(path, out var localEntry))
+            {
+                return (package, localEntry);
+            }
+            if (sharedPackage == null)
+            {
+                return null;
+            }
+            sharedModelsByPath ??= FindEntries(sharedPackage, "vmdl_c").ToDictionary(e => e.GetFullPath().ToLowerInvariant(), e => e);
+            return sharedModelsByPath.TryGetValue(path, out var sharedEntry) ? (sharedPackage, sharedEntry) : null;
+        }
+
+        Dictionary<string, PackageEntry>? physByPath = null;
+        Dictionary<string, PackageEntry>? sharedPhysByPath = null;
+        (Package Package, PackageEntry Entry)? FindPhys(string path)
+        {
+            physByPath ??= FindEntries(package, "vphys_c").ToDictionary(e => e.GetFullPath().ToLowerInvariant(), e => e);
+            if (physByPath.TryGetValue(path, out var localEntry))
+            {
+                return (package, localEntry);
+            }
+            if (sharedPackage == null)
+            {
+                return null;
+            }
+            sharedPhysByPath ??= FindEntries(sharedPackage, "vphys_c").ToDictionary(e => e.GetFullPath().ToLowerInvariant(), e => e);
+            return sharedPhysByPath.TryGetValue(path, out var sharedEntry) ? (sharedPackage, sharedEntry) : null;
+        }
+
+        // Same model gets placed many times (crates, trim, foliage); reading
+        // and re-parsing its compiled resource per instance would be wasted
+        // work the same geometry pays for every single placement.
+        var physByModel = new Dictionary<string, PhysAggregateData?>();
+
+        var attrIndex = names.IndexOf("EntitySolid");
+        if (attrIndex < 0)
+        {
+            names.Add("EntitySolid");
+            interactAs.Add([]);
+            attrIndex = names.Count - 1;
+            if (attrIndex > byte.MaxValue)
+            {
+                throw new InvalidDataException("merged collision attribute table exceeds byte index range");
+            }
+        }
+        var mapped = (byte)attrIndex;
+
+        foreach (var worldNodeName in world.GetWorldNodeNames())
+        {
+            // World.GetWorldNodeNames() returns backslash-separated paths;
+            // every VPK entry (and everywhere else this codebase reads one) is
+            // forward-slash.
+            if (worldNodeName == null ||
+                !worldNodesByPath.TryGetValue((worldNodeName.Replace('\\', '/') + ".vwnod_c").ToLowerInvariant(), out var nodeEntry))
+            {
+                continue;
+            }
+            package.ReadEntry(nodeEntry, out var nodeRaw);
+            using var nodeResource = new Resource();
+            nodeResource.Read(new MemoryStream(nodeRaw));
+            var worldNode = (WorldNode)nodeResource.DataBlock!;
+
+            foreach (var sceneObject in worldNode.SceneObjects)
+            {
+                var model = sceneObject.GetStringProperty("m_renderableModel");
+                if (string.IsNullOrEmpty(model))
+                {
+                    continue;
+                }
+                if (!physByModel.TryGetValue(model, out var phys))
+                {
+                    phys = null;
+                    if (FindModel((model + "_c").ToLowerInvariant()) is { } modelHit)
+                    {
+                        modelHit.Package.ReadEntry(modelHit.Entry, out var modelRaw);
+                        using var modelResource = new Resource();
+                        modelResource.Read(new MemoryStream(modelRaw));
+                        var modelData = (Model)modelResource.DataBlock!;
+                        phys = modelData.GetEmbeddedPhys();
+                        // Most static props reference their collision hull as a
+                        // separate compiled .vphys_c instead of embedding it -
+                        // embedded phys is the exception (world_physics.vmdl_c),
+                        // not the rule, for ordinary placed models.
+                        var refPhysName = phys == null ? modelData.GetReferencedPhysNames().FirstOrDefault() : null;
+                        if (refPhysName != null && FindPhys((refPhysName + "_c").ToLowerInvariant()) is { } physHit)
+                        {
+                            physHit.Package.ReadEntry(physHit.Entry, out var physRaw);
+                            using var physResource = new Resource();
+                            physResource.Read(new MemoryStream(physRaw));
+                            phys = physResource.DataBlock as PhysAggregateData;
+                        }
+                    }
+                    physByModel[model] = phys;
+                }
+                if (phys == null)
+                {
+                    continue;
+                }
+
+                var matrix = sceneObject.GetArray("m_vTransform").ToMatrix4x4();
+                AppendPhys(phys, vertices, indices, triangleAttributes,
+                    _ => mapped,
+                    v => Vector3.Transform(v, matrix));
+            }
+
+            // AggregateSceneObjects (props auto-combined into one shared draw
+            // call for GPU efficiency - a very common treatment for repeated
+            // architectural trim/wall-kit pieces) are deliberately NOT handled
+            // here. Their m_renderableModel points to a per-worldnode combined
+            // VISUAL mesh; each fragment carries only a draw-call index and a
+            // transform, with no reference back to the original individual
+            // prop's model or physics data - that identity is discarded by
+            // the aggregation step. There is no collision to recover from
+            // this data at all; if an aggregated prop needs collision, CS2's
+            // compiler must be relying on it already being present in
+            // world_physics.vmdl_c.
         }
     }
 
