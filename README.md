@@ -62,6 +62,15 @@ dotnet run --project src/Cli -- throw --geo data/de_dust2.s2geo \
   --pos "-452.11,-660.06,175.36" --ang "-9.74,88.67" --type jump \
   --attrs "Default,default" --solve data/viewer-solve.json
 
+# One-time per map: every position a player can actually reach and stand on,
+# found by walking the real 32x32x72 collision hull over the geometry and
+# flood-filling out from the nav mesh (walk 18u steps, jump 57u, crouch-jump
+# 66u, drop up to 210u). Valve's nav mesh is authored for bots, which never
+# jump, so on its own it misses the crates, platforms and ledges players throw
+# from - this recovers 5-19% more stand spots per map. The solver reads the
+# result; without it, it falls back to sampling nav areas directly.
+dotnet run --project src/Cli -c Release -- standspots --geo data/de_dust2.s2geo
+
 # Local web viewer: one-time map dump, then serve viewer/ + data/ at localhost:8137.
 # With --geo/--nav/--attrs the server also answers the viewer's interactive
 # two-click queries (pick a landing target, pick a throw area, get lineups).

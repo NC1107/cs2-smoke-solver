@@ -369,7 +369,8 @@ public static class ServeCommand
                         mesh, attributeFilter, navAreas, body.RootElement, serveConstants,
                         onPhase: (phase, count) => events.Enqueue((phase, [count])),
                         onOrigin: (feet, hits) => events.Enqueue(("origin", [(int)MathF.Round(feet.X), (int)MathF.Round(feet.Y), (int)MathF.Round(feet.Z), hits])),
-                        onCandidate: (feet, ok) => events.Enqueue(("cand", [(int)MathF.Round(feet.X), (int)MathF.Round(feet.Y), (int)MathF.Round(feet.Z), ok ? 1 : 0]))));
+                        onCandidate: (feet, ok) => events.Enqueue(("cand", [(int)MathF.Round(feet.X), (int)MathF.Round(feet.Y), (int)MathF.Round(feet.Z), ok ? 1 : 0])),
+                        standSpots: entry.StandSpots));
                     while (!solveTask.IsCompleted)
                     {
                         await Task.WhenAny(solveTask, Task.Delay(100));

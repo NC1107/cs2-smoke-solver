@@ -295,6 +295,13 @@ public static partial class LineupSolver
     /// are the easiest real-world lineups to reproduce - the wall removes the
     /// player's position error entirely, leaving only aim.
     /// </summary>
+    /// <summary>
+    /// Adds wall- and corner-pinned variants of the given origins in place, for
+    /// callers that built their origin list some other way.
+    /// </summary>
+    public static void AddPinnedOriginsTo(VoxelGrid grid, TriangleCollider collider, List<Vector3> origins) =>
+        AddPinnedOrigins(grid, collider, origins);
+
     static void AddPinnedOrigins(VoxelGrid grid, TriangleCollider collider, List<Vector3> origins)
     {
         var seen = new HashSet<(int, int)>(origins.Select(o => ((int)MathF.Round(o.X / 4f), (int)MathF.Round(o.Y / 4f))));
@@ -326,6 +333,16 @@ public static partial class LineupSolver
                 return;
             }
             snapped = snapped with { Z = float.Lerp(probeTop.Z, probeBottom.Z, floor.T) };
+            // A pin is placed 16u off ONE wall plane, which says nothing about
+            // the rest of the geometry around it - a second wall, a railing or
+            // clutter can leave the player hull with nowhere to be. Measured on
+            // the live solver: every unstandable origin left in the output came
+            // from here, none from the hull-derived set. Hold pins to the same
+            // bar as everything else.
+            if (StandSpots.StanceAt(collider, snapped) == StandSpots.Stance.None)
+            {
+                return;
+            }
             // Sanity-check torso height, not ankle height: a floor plane lying
             // exactly on a voxel boundary marks BOTH neighboring cells solid,
             // so a probe half a voxel up would reject valid floor positions.
@@ -378,11 +395,26 @@ public static partial class LineupSolver
     /// </summary>
     public static List<Vector3> ExactOriginWithPins(VoxelGrid grid, TriangleCollider? collider, Vector3 seed)
     {
-        var list = new List<Vector3> { SnapToGround(grid, collider, seed) };
-        if (collider != null)
+        var snapped = SnapToGround(grid, collider, seed);
+        if (collider == null)
         {
-            AddPinnedOrigins(grid, collider, list);
+            return [snapped];
         }
+        var list = new List<Vector3>();
+        // Taking the click literally is the point of this path, but a click a
+        // few units from a wall names a spot the player hull cannot occupy - in
+        // game they are simply pushed out of it. Handing back a setpos for a
+        // position nobody can stand in is worse than saying nothing.
+        if (StandSpots.StanceAt(collider, snapped) != StandSpots.Stance.None)
+        {
+            list.Add(snapped);
+        }
+        // The pinned variants are still derived from where they clicked even
+        // when that exact spot is unusable - walking into the nearby wall is
+        // very often what they were reaching for.
+        var pinned = new List<Vector3> { snapped };
+        AddPinnedOrigins(grid, collider, pinned);
+        list.AddRange(pinned.Skip(1));
         return list;
     }
 

@@ -51,7 +51,8 @@ public static class TargetSolver
         float minStability = 0.4f,
         bool fineScan = false,
         IReadOnlyList<ThrowType>? types = null,
-        IReadOnlyList<float>? strengths = null)
+        IReadOnlyList<float>? strengths = null,
+        IReadOnlyList<StandSpotOrigin>? standSpots = null)
     {
         var hasOrigin = originClickOpt.HasValue;
         var originClick = originClickOpt ?? new Vector2(target.X, target.Y);
@@ -135,15 +136,32 @@ public static class TargetSolver
         // invisible to the grenade collider by design.
         var playerCollider = BuildPlayerCollider(mesh, min, max);
 
-        var origins = LineupSolver.OriginsFromNavAreas(
-                grid,
-                corners,
-                new Vector3(originClick.X - originReach, originClick.Y - originReach, meshMin.Z),
-                new Vector3(originClick.X + originReach, originClick.Y + originReach, max.Z),
-                sampleStep: 24f,
-                collider: playerCollider)
-            .Where(o => Vector2.Distance(new Vector2(o.X, o.Y), originClick) <= originReach)
-            .ToList();
+        // Prefer the precomputed hull-derived set when the map has one: it is
+        // the only source that knows about crates and ledges (the nav mesh is
+        // bot-pathing data and omits them) AND guarantees a real 32x32x72 hull
+        // fits, which the voxel grid cannot - a 16u cell straddling a ledge
+        // edge reads solid while the point inside it hangs over the drop.
+        var origins = standSpots is { Count: > 0 }
+            ? standSpots
+                .Where(s => Vector2.Distance(new Vector2(s.Feet.X, s.Feet.Y), originClick) <= originReach
+                            && s.Feet.Z >= min.Z && s.Feet.Z <= max.Z)
+                .Select(s => s.Feet)
+                .ToList()
+            : LineupSolver.OriginsFromNavAreas(
+                    grid,
+                    corners,
+                    new Vector3(originClick.X - originReach, originClick.Y - originReach, meshMin.Z),
+                    new Vector3(originClick.X + originReach, originClick.Y + originReach, max.Z),
+                    sampleStep: 24f,
+                    collider: playerCollider)
+                .Where(o => Vector2.Distance(new Vector2(o.X, o.Y), originClick) <= originReach)
+                .ToList();
+        if (standSpots is { Count: > 0 })
+        {
+            // Walking into a wall is still the most reproducible way to place
+            // feet exactly, and the lattice never lands on those spots.
+            LineupSolver.AddPinnedOriginsTo(grid, playerCollider, origins);
+        }
         if (hasOrigin)
         {
             // The click names the player's exact intended stand spot. Test it

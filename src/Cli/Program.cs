@@ -18,6 +18,7 @@ var commands = new Dictionary<string, Func<Dictionary<string, string>, int>>
     ["ground"] = GroundCommand.Run,
     ["lineups"] = LineupsCommand.Run,
     ["viewerdata"] = ViewerDataCommand.Run,
+    ["standspots"] = StandSpotsCommand.Run,
     ["serve"] = ServeCommand.Run,
     ["throw"] = ThrowCommand.Run,
     ["calibrate"] = CalibrateCommand.Run,

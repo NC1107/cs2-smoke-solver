@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Full per-map onboarding pipeline: extract -> derive the viewerdata region
-# from the nav mesh -> viewerdata -> textured GLB (desktop + mobile).
+# from the nav mesh -> viewerdata -> stand spots -> textured GLB (desktop +
+# mobile).
 # Idempotent per stage (skips work whose output file already exists), so a
 # re-run after a mid-pipeline failure resumes instead of redoing finished maps.
 #
@@ -37,6 +38,11 @@ PY
   dotnet run --project src/Cli -- viewerdata --geo "data/$map.s2geo" \
     --entities "data/$map.entities.json" --attrs "Default,default" \
     --region "$region" --out "data/$map.viewer-map.json"
+fi
+
+if [[ ! -f "data/$map.standspots.json" ]]; then
+  echo "==> [$map] stand spots (player-hull reachability)"
+  dotnet run --project src/Cli -c Release -- standspots --geo "data/$map.s2geo"
 fi
 
 if [[ ! -f "data/${map}_textured.glb" ]]; then
