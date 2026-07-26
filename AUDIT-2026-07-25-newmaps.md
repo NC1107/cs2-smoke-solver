@@ -70,9 +70,17 @@ Cost is +3.7% to +9.5% origins map-wide.
 
 ## Not investigated further (flagging, not chasing)
 
-- **`de_dust2` map-wide solves return zero lineups** for several targets tried (`[1098,2554]` BombsiteA, `[-1757,2593]` BombsiteB), while `de_cache` returns 300+ for the same shape of query.
-  Reproduced identically on master, so it is NOT caused by any change in this audit - but it looks wrong and is worth its own investigation.
-  Origin-clicked dust2 queries do return lineups normally, so this appears specific to the map-wide path or to those targets' resolved ground Z.
+- ~~**`de_dust2` map-wide solves return zero lineups** for several targets~~ **SOLVED 2026-07-26** (PR #12).
+  The targets' ground Z was the cause, as suspected: `NavGroundZ` requires point-in-polygon containment, nav polygons leave slivers between neighbours, and BombsiteA/BombsiteB both land in one.
+  With no containing area the code fell through to a top-down geometry scan, which returns the ROOF - putting the target ~900u in the air where nothing can land.
+  Fixed by `NavGroundZNearby` (nearest area within 96u). BombsiteA 0 -> 400 lineups, BombsiteB 0 -> 116.
+
+- **Still not reproduced: the reported de_cache sunroom -> heaven throw through the hole in the B-site wall.**
+  Heaven itself was broken by the roof bug above and now returns 179 lineups map-wide, which likely explains the original "solver is not finding that" report.
+  But the nearest throw spot to the SunRoom callout `[772,-1388]` is 565u away, and from that callout every long-range direction in our collision mesh points at the sky - that exact point is enclosed.
+  Either the callout sits in a corner away from where the throw is actually made, or our collision genuinely lacks the opening.
+  Ruled out: it is not the static-prop hulls added in PR #6 (removing any single attribute group does not open the sightline), so it is world geometry.
+  Needs a `getpos` from the real throwing position to settle.
 
 - `cs_office`'s 5.7% nav-vs-collision gap rate (vs. 0.1-1.7% on every other map) remains an unexplained outlier from the earlier audit; no time spent on it this pass.
 - The aggregate-prop collision problem itself (root cause of #2) is unchanged from what was already documented as an open research question with no known extraction path.
