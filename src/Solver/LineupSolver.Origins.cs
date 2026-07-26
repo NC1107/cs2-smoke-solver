@@ -61,11 +61,159 @@ public static partial class LineupSolver
                 }
             }
         }
+        AddElevatedOrigins(grid, areaCorners, min, max, sampleStep, collider, origins);
         if (collider != null)
         {
             AddPinnedOrigins(grid, collider, origins);
         }
         return origins;
+    }
+
+    // Valve authors the nav mesh for BOT pathing, and bots do not jump onto
+    // things - so the crates, platforms and ledges players routinely stand on
+    // carry no nav area at all. Sampling nav areas alone therefore cannot put a
+    // thrower on any of them: measured across all 14 maps, 19-27 such spots per
+    // map are genuinely standable (player-solid floor, hull-sized footprint,
+    // full headroom) and reachable by a standing jump, yet no origin is ever
+    // generated there. Confirmed by hand on de_dust2 [-1413,2852] (standable at
+    // z=47, nearest origin 45u away down at floor z=8) and de_mirage
+    // [-2192,-672] (standable at z=-8, nearest origin 128u below it).
+    //
+    // Scanning is anchored to each nav area - its own footprint plus a band
+    // one step outside it - and admits only surfaces within jump height of
+    // that area's floor. That reachability gate is what preserves the "nav
+    // areas, not raw geometry" property the doc comment above describes: a
+    // rooftop or an out-of-bounds shelf has no nav ground one jump below it,
+    // so it is still never stood on.
+    //
+    // The area's own footprint has to be scanned too, not just the ring: nav
+    // quads frequently span straight under a raised platform, so its top is
+    // inside the polygon rather than outside it. Skipping interior samples as
+    // "already covered by the flat-ground pass" silently missed exactly that
+    // case - de_mirage's [-2192,-672] platform, whose XY does carry a nav
+    // origin, but only down on the z=-134 floor 128u below the surface.
+    const float ElevatedMinRise = 20f;
+    // A standing jump clears ~55u (Valve's mapper reference: a player jump
+    // reaches a 54-55u block); tucking the legs on the way up - the ordinary
+    // crouch-jump every player uses to mount a crate - buys roughly another
+    // 10u. 65u is that ceiling, and it is the line between "one player can
+    // reproduce this alone" and "this needs a teammate boost", which is not a
+    // lineup at all. de_mirage's [-2192,-672] platform sits at +59u: a normal
+    // crouch-jump, and excluded outright by a standing-jump-only limit.
+    const float ElevatedMaxRise = 65f;
+    // How far outside a nav area the elevated surface may sit and still be
+    // steppable/jumpable onto from it.
+    const float ElevatedReach = 48f;
+
+    // Enough of the 32x32 player hull is supported at this height to stand on.
+    // A single free-over-solid column only means SOMETHING is underfoot: the
+    // top of a railing post, a lamp bracket or a 16u sliver of trim all pass it
+    // while being impossible to stand on, and each one would cost the sweep a
+    // full set of throw simulations. Requiring half the 3x3 neighbourhood to
+    // share the same floor keeps genuine crate and platform tops (including
+    // standing near an edge, which is normal) and drops the slivers.
+    static bool FitsPlayerHull(VoxelGrid grid, int cx, int cy, int k)
+    {
+        var supported = 0;
+        for (var dx = -1; dx <= 1; dx++)
+        {
+            for (var dy = -1; dy <= 1; dy++)
+            {
+                int nx = cx + dx, ny = cy + dy;
+                if (grid.InBounds(nx, ny, k) &&
+                    grid.IsSolid(grid.Index(nx, ny, k - 1)) &&
+                    !grid.IsSolid(grid.Index(nx, ny, k)))
+                {
+                    supported++;
+                }
+            }
+        }
+        return supported >= 5;
+    }
+
+    static void AddElevatedOrigins(
+        VoxelGrid grid,
+        IReadOnlyList<float[][]> areaCorners,
+        Vector3 min,
+        Vector3 max,
+        float sampleStep,
+        TriangleCollider? collider,
+        List<Vector3> origins)
+    {
+        var seen = new HashSet<(int, int, int)>();
+        var elevated = new List<Vector3>();
+        foreach (var corners in areaCorners)
+        {
+            var avgZ = corners.Average(c => c[2]);
+            if (avgZ < min.Z || avgZ > max.Z)
+            {
+                continue;
+            }
+            var minX = MathF.Max(corners.Min(c => c[0]) - ElevatedReach, min.X);
+            var maxX = MathF.Min(corners.Max(c => c[0]) + ElevatedReach, max.X);
+            var minY = MathF.Max(corners.Min(c => c[1]) - ElevatedReach, min.Y);
+            var maxY = MathF.Min(corners.Max(c => c[1]) + ElevatedReach, max.Y);
+
+            for (var x = MathF.Ceiling(minX / sampleStep) * sampleStep; x <= maxX; x += sampleStep)
+            {
+                for (var y = MathF.Ceiling(minY / sampleStep) * sampleStep; y <= maxY; y += sampleStep)
+                {
+                    var (cx, cy, _) = grid.CellOf(new Vector3(x, y, avgZ));
+                    // Widened by a voxel at each end because the grid can only
+                    // place a floor on a cell boundary - up to a full voxel
+                    // above the real surface. The precise rise test below runs
+                    // on the OnSurface-snapped height instead, so this only has
+                    // to be loose enough not to miss the candidate: de_mirage's
+                    // +59u platform quantizes to a +67u voxel floor and was
+                    // dropped outright by an unwidened scan.
+                    var (_, _, kLo) = grid.CellOf(new Vector3(x, y, avgZ + ElevatedMinRise - grid.VoxelSize));
+                    var (_, _, kHi) = grid.CellOf(new Vector3(x, y, avgZ + ElevatedMaxRise + grid.VoxelSize));
+                    kLo = Math.Max(kLo, 1);
+                    kHi = Math.Min(kHi, grid.Nz - 6);
+                    if (!grid.InBounds(cx, cy, kLo))
+                    {
+                        continue;
+                    }
+                    for (var k = kLo; k <= kHi; k++)
+                    {
+                        // Standing room: floor below, free here, and a player's
+                        // height of clearance above.
+                        if (!grid.IsSolid(grid.Index(cx, cy, k - 1)) || grid.IsSolid(grid.Index(cx, cy, k)))
+                        {
+                            continue;
+                        }
+                        var headroom = true;
+                        for (var h = 1; h <= 5 && headroom; h++)
+                        {
+                            headroom = !grid.IsSolid(grid.Index(cx, cy, k + h));
+                        }
+                        if (!headroom)
+                        {
+                            continue;
+                        }
+                        if (!FitsPlayerHull(grid, cx, cy, k))
+                        {
+                            continue;
+                        }
+                        var floorZ = grid.CellCenter(cx, cy, k).Z - grid.VoxelSize / 2;
+                        // Judge the reach against the real collision surface,
+                        // not the voxel boundary standing in for it.
+                        var feet = OnSurface(grid, collider, new Vector3(x, y, floorZ));
+                        var rise = feet.Z - avgZ;
+                        if (rise < ElevatedMinRise || rise > ElevatedMaxRise)
+                        {
+                            continue;
+                        }
+                        if (seen.Add(((int)MathF.Round(x / 8f), (int)MathF.Round(y / 8f), k)))
+                        {
+                            elevated.Add(feet);
+                        }
+                        break; // the lowest reachable surface in this column is the one stood on
+                    }
+                }
+            }
+        }
+        origins.AddRange(elevated);
     }
 
     // The CS2 player hull is 32x32; feet pressed against a wall sit exactly
