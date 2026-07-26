@@ -196,9 +196,28 @@ public static partial class LineupSolver
                             continue;
                         }
                         var floorZ = grid.CellCenter(cx, cy, k).Z - grid.VoxelSize / 2;
-                        // Judge the reach against the real collision surface,
-                        // not the voxel boundary standing in for it.
-                        var feet = OnSurface(grid, collider, new Vector3(x, y, floorZ));
+                        // The voxel says a floor is under this cell, but a cell
+                        // is 16u wide and this sample is a point: on a ledge
+                        // EDGE the cell is solid because part of it covers the
+                        // ledge while the sample itself hangs out over the drop.
+                        // OnSurface cannot catch that - its raycast finds
+                        // nothing and it hands back the unsnapped position, so
+                        // the origin ends up floating in mid air (measured on
+                        // de_dust2 [-2044,504]: feet at z=80 with the nearest
+                        // real floor at z=22). Demand an actual player-standable
+                        // surface at the snapped height instead of assuming one.
+                        if (collider is null)
+                        {
+                            continue;
+                        }
+                        var probeTop = new Vector3(x, y, floorZ + grid.VoxelSize);
+                        var probeBottom = new Vector3(x, y, floorZ - grid.VoxelSize);
+                        if (collider.FirstHit(probeTop, probeBottom) is not { } floorHit ||
+                            floorHit.Normal.Z < StandableNormalZ)
+                        {
+                            continue;
+                        }
+                        var feet = new Vector3(x, y, float.Lerp(probeTop.Z, probeBottom.Z, floorHit.T));
                         var rise = feet.Z - avgZ;
                         if (rise < ElevatedMinRise || rise > ElevatedMaxRise)
                         {
@@ -289,6 +308,24 @@ public static partial class LineupSolver
                 return;
             }
             var snapped = SnapToGround(grid, collider, new Vector3(xy.X, xy.Y, baseFeet.Z));
+            // The snap is voxel-driven and SnapToGround hands back the position
+            // unchanged when its ray finds nothing, so a pin taken from a spot
+            // near a ledge edge can end up hanging in mid air - the same 16u
+            // cell-vs-point mismatch that put elevated origins in space
+            // (measured on de_dust2 [-1402,2742], a floating pin master ships
+            // today). Re-seat the pin on the real floor rather than only
+            // rejecting it: the probe reaches further down than up because the
+            // failure mode is feet left ABOVE the surface, and simply dropping
+            // everything that misses a tight window discarded four perfectly
+            // good origins whose floor sat just outside it.
+            var probeTop = snapped + new Vector3(0, 0, grid.VoxelSize);
+            var probeBottom = snapped - new Vector3(0, 0, grid.VoxelSize * 2);
+            if (collider.FirstHit(probeTop, probeBottom) is not { } floor ||
+                floor.Normal.Z < StandableNormalZ)
+            {
+                return;
+            }
+            snapped = snapped with { Z = float.Lerp(probeTop.Z, probeBottom.Z, floor.T) };
             // Sanity-check torso height, not ankle height: a floor plane lying
             // exactly on a voxel boundary marks BOTH neighboring cells solid,
             // so a probe half a voxel up would reject valid floor positions.
