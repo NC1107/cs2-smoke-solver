@@ -440,6 +440,66 @@ public static partial class LineupSolver
     }
 
     /// <summary>
+    /// Ground z for a CLICKED point, tolerating the slivers between nav areas.
+    /// </summary>
+    // Exact containment is right for deciding whether a position is walkable,
+    // but wrong for interpreting a click. Nav polygons do not tile the floor
+    // perfectly, and a click that lands in a sliver between two of them has no
+    // containing area - so the caller falls through to a top-down geometry
+    // scan, which finds the ROOF. That put de_dust2's BombsiteA and BombsiteB
+    // ~900u in the air and returned zero lineups for the two most-thrown-at
+    // spots on the map, and did the same to de_cache's Heaven and BombsiteB.
+    //
+    // Distance is measured to the polygon's edges, not to its centre: a click
+    // just off the side of a big area belongs to that area, not to a small one
+    // whose middle happens to be nearer.
+    public static float? NavGroundZNearby(IReadOnlyList<float[][]> areaCorners, float x, float y)
+    {
+        var inside = NavGroundZ(areaCorners, x, y);
+        if (inside is not null)
+        {
+            return inside;
+        }
+        float? best = null;
+        var bestDistance = NavGapReach;
+        foreach (var corners in areaCorners)
+        {
+            var d = DistanceToPolygon(corners, x, y);
+            if (d < bestDistance)
+            {
+                bestDistance = d;
+                best = corners.Average(c => c[2]);
+            }
+        }
+        return best;
+    }
+
+    static float DistanceToPolygon(float[][] corners, float x, float y)
+    {
+        var best = float.MaxValue;
+        for (int i = 0, j = corners.Length - 1; i < corners.Length; j = i++)
+        {
+            var (ax, ay) = (corners[j][0], corners[j][1]);
+            var (bx, by) = (corners[i][0], corners[i][1]);
+            var (ex, ey) = (bx - ax, by - ay);
+            var lenSq = ex * ex + ey * ey;
+            var t = lenSq > 0 ? Math.Clamp(((x - ax) * ex + (y - ay) * ey) / lenSq, 0f, 1f) : 0f;
+            var (px, py) = (ax + ex * t, ay + ey * t);
+            best = MathF.Min(best, MathF.Sqrt((x - px) * (x - px) + (y - py) * (y - py)));
+        }
+        return best;
+    }
+
+    // How far outside a nav area a point may sit and still take that area's
+    // height. Nav polygons do not tile the floor perfectly - they leave slivers
+    // between neighbours, and a click can land in one. Falling through to a
+    // top-down geometry scan there picks the ROOF instead of the floor, which
+    // put de_dust2's BombsiteA and BombsiteB targets ~900u in the air and
+    // returned zero lineups for the two most-thrown-at spots on the map.
+    // Comfortably wider than the slivers, far narrower than a room.
+    public const float NavGapReach = 96f;
+
+    /// <summary>
     /// Ground z for a 2D point from the nav mesh: the walkable surface a player
     /// (and therefore a smoke target) would be on. A top-down geometry scan would
     /// pick roofs and arches instead. With stacked walkable areas the lowest wins.

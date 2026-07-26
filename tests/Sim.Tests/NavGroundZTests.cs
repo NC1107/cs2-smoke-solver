@@ -73,4 +73,35 @@ public class NavGroundZTests
 
         Assert.Equal(0f, z);
     }
+
+    [Fact]
+    public void AClickInTheSliverBetweenTwoAreasTakesTheirHeightNotTheRoof()
+    {
+        // Nav polygons do not tile the floor perfectly. A click landing in the
+        // gap between two of them has no containing area, and falling through
+        // to a top-down geometry scan finds the ROOF - which put de_dust2's
+        // BombsiteA and BombsiteB ~900u in the air and returned zero lineups
+        // for the two most-thrown-at spots on the map.
+        var areas = new List<float[][]>
+        {
+            new float[][] { [0, 0, 10], [100, 0, 10], [100, 100, 10], [0, 100, 10] },
+            new float[][] { [140, 0, 10], [240, 0, 10], [240, 100, 10], [140, 100, 10] },
+        };
+
+        Assert.Null(LineupSolver.NavGroundZ(areas, 120, 50));
+        Assert.Equal(10f, LineupSolver.NavGroundZNearby(areas, 120, 50));
+    }
+
+    [Fact]
+    public void AClickFarFromAnyNavAreaStillHasNoGroundHeight()
+    {
+        // The forgiving lookup must stay local: somewhere genuinely off the
+        // mesh has no answer, rather than snapping to a distant area.
+        var areas = new List<float[][]>
+        {
+            new float[][] { [0, 0, 10], [100, 0, 10], [100, 100, 10], [0, 100, 10] },
+        };
+
+        Assert.Null(LineupSolver.NavGroundZNearby(areas, 900, 900));
+    }
 }
