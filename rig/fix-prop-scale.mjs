@@ -69,12 +69,26 @@ function renderedMetres(node, extent) {
   return Math.max(...extent.map((e, axis) => e * Math.abs(scale[axis])));
 }
 
-// World geometry, not props: the map's baked terrain chunks and Hammer-authored
-// brush meshes. Both legitimately span the whole map and carry scales in the
-// hundreds, and neither is a prop instance VRF could have mis-scaled.
+// World geometry, not props: the map's baked terrain chunks, Hammer-authored
+// brush meshes, and WorldNode-sourced AggregateSceneObjects fragments (CS2
+// batches many different props sharing a material into one combined draw
+// call per world node, named "nodeNNN_world_lrN_aggN_<material>"). All three
+// legitimately span large distances and carry no per-instance unit
+// conversion, unlike a genuinely placed prop VRF could have mis-scaled.
+//
+// The "_world_...agg" check is deliberately narrower than "contains agg":
+// a single vehicle prop's own internal LOD/submesh split is named
+// "nodeNNN_model_lrN_aggN_<material>" (confirmed on cs_italy's bicycles/vespa)
+// and can still carry the real bug, so only the "_world_" variant - which is
+// never used for an individually-placed prop, only for a worldnode's shared
+// aggregate batch - is excluded here. Missing this distinction is what let
+// cs_italy's wide plaster walls, roof trims, and window kits (each a unique,
+// >8m aggregate fragment) get misjudged as oversized single-instance props
+// and shrunk by 39x: a real, visually confirmed corruption (disconnected
+// floating fragments in the textured 3D view) - see AUDIT-2026-07-25-newmaps.md.
 function isWorldGeometry(node) {
   const name = node.getName();
-  return /^n\d+_lr\d+/.test(name) || name.includes("hammer_mesh");
+  return /^n\d+_lr\d+/.test(name) || name.includes("hammer_mesh") || /_world_lr\d+_agg\d+/.test(name);
 }
 
 const byMesh = groupNodesByMesh(doc);
