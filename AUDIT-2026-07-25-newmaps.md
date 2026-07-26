@@ -56,7 +56,23 @@ de_nuke's real Z range alone is -1216 to 808 (a ~2000-unit span), and a map-wide
 Fixing this properly would mean trimming the two junk clusters at the extraction source (or detecting genuinely disconnected micro-islands) rather than papering over it with a magic number in the solver, and that's a separate, higher-risk change for a problem that is currently provably harmless (zero effect on any real query since the triangles are non-solid by attribute already).
 Left as-is; not worth the risk for no measured benefit.
 
+## 5. Crates and ledges the nav mesh omits were never usable as throw positions - FIXED
+
+Raised separately by Nick ("some ledges and boxes aren't considered player-standable by the solver").
+Confirmed and root-caused: Valve authors the nav mesh for bot pathing, bots never jump onto anything, so crates/platforms/ledges carry no nav area - and origin generation reads nav areas exclusively (`TargetSolver` is nav-only; the raw-geometry `FindStandableOrigins` is a CLI-only fallback), so no lineup could ever be thrown from one.
+
+Measured across all 14 maps: 19-27 surfaces per map are genuinely standable (player-solid floor, hull-sized footprint, full headroom) and reachable by a jump from walkable ground, yet produce no origin.
+Two hand-verified cases: `de_dust2 [-1413,2852]` is standable at z=47 while the nearest origin master produces is z=8 (the floor, 45u away), and `de_mirage [-2192,-672]` is standable at z=-8 with the nearest origin 128u below it.
+
+Fixed by adding those surfaces, anchored to each nav area and gated on being within jump height of it - the gate preserving the anti-rooftop property the nav-only design existed for.
+A/B over 24 real callout queries: three gained lineups (dust2 OutsideTunnel 43->48, dust2 TRamp 11->12, inferno Middle 23->28), two lost one each to ranking churn in the capped list, and 11 of the 12 newly-reachable stand spots sit at an XY the nav mesh does not cover at all.
+Cost is +3.7% to +9.5% origins map-wide.
+
 ## Not investigated further (flagging, not chasing)
+
+- **`de_dust2` map-wide solves return zero lineups** for several targets tried (`[1098,2554]` BombsiteA, `[-1757,2593]` BombsiteB), while `de_cache` returns 300+ for the same shape of query.
+  Reproduced identically on master, so it is NOT caused by any change in this audit - but it looks wrong and is worth its own investigation.
+  Origin-clicked dust2 queries do return lineups normally, so this appears specific to the map-wide path or to those targets' resolved ground Z.
 
 - `cs_office`'s 5.7% nav-vs-collision gap rate (vs. 0.1-1.7% on every other map) remains an unexplained outlier from the earlier audit; no time spent on it this pass.
 - The aggregate-prop collision problem itself (root cause of #2) is unchanged from what was already documented as an open research question with no known extraction path.
