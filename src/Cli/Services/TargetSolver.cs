@@ -197,6 +197,25 @@ public static class TargetSolver
         onPhase?.Invoke("verify", candidates.Count);
         var verified = LineupSolver.VerifyExact(grid, collider, zoneCrossings, candidates, minStability: minStability, constants: constants, onCandidate: onCandidate, aimTarget: target);
 
+        // Some stand spots only fit the player crouched - under a vent, a stair
+        // soffit, a low balcony. A standing or run-jump throw from one of those
+        // is not a throw anybody can make, and the sim released it from the
+        // standing eye height, 18u above where the grenade would really leave
+        // the hand. Keep only the crouched variants there. 0.5% of spots
+        // overall, but 4% on cs_office, which is full of them.
+        if (standSpots is { Count: > 0 })
+        {
+            static (int, int, int) Key(Vector3 v) =>
+                ((int)MathF.Round(v.X), (int)MathF.Round(v.Y), (int)MathF.Round(v.Z));
+            var crouchOnly = standSpots.Where(s => s.Crouched).Select(s => Key(s.Feet)).ToHashSet();
+            if (crouchOnly.Count > 0)
+            {
+                verified = [.. verified.Where(l =>
+                    !crouchOnly.Contains(Key(l.Feet)) ||
+                    l.Type is ThrowType.Crouch or ThrowType.CrouchJumpThrow)];
+            }
+        }
+
         // Flag lineups whose throw spot has a clear line of sight to the area
         // the smoke lands in: being visible to that area while throwing is
         // exactly the exposure the smoke is meant to deny, so the ranking
