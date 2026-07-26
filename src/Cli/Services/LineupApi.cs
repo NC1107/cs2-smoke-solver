@@ -421,7 +421,7 @@ public static class LineupApi
             : "all";
         // Bump when solver or sim behavior changes: cached answers from older code
         // must never be replayed as current results.
-        const int QueryVersion = 14;
+        const int QueryVersion = 15;
         // meshVersion is the content-hashed mesh identity (not just the game
         // build), so re-extracting a map - e.g. dropping the Retake tape - forces
         // a re-solve instead of replaying results computed against the old mesh.
@@ -442,7 +442,8 @@ public static class LineupApi
         ThrowConstants constants,
         Action<string, int>? onPhase = null,
         Action<Vector3, int>? onOrigin = null,
-        Action<Vector3, bool>? onCandidate = null)
+        Action<Vector3, bool>? onCandidate = null,
+        IReadOnlyList<StandSpotOrigin>? standSpots = null)
     {
         var targetEl = query.GetProperty("target");
         var target = new Vector3(targetEl[0].GetSingle(), targetEl[1].GetSingle(), 0);
@@ -472,7 +473,7 @@ public static class LineupApi
             ? strengthsEl.EnumerateArray().Select(e => e.GetSingle()).Distinct().ToList()
             : null;
 
-        var solve = SolveForTarget(mesh, attributeFilter, navAreas, target, hasTargetZ, originClick, originReach, tolerance, constants, onPhase, onOrigin, onCandidate, minStability, fineScan, types, strengths);
+        var solve = SolveForTarget(mesh, attributeFilter, navAreas, target, hasTargetZ, originClick, originReach, tolerance, constants, onPhase, onOrigin, onCandidate, minStability, fineScan, types, strengths, standSpots);
 
         // Raw voxel-stage counts overstate throwability (many candidates die in
         // exact-sim verification), so each cell also says whether a verified

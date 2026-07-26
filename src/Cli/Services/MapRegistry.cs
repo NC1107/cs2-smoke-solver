@@ -12,7 +12,13 @@ namespace SmokeSolver.Cli;
 // name so the viewer can switch maps without restarting the server.
 public sealed record MapEntry(
     CollisionMesh Mesh, Func<byte, bool>? AttributeFilter, List<NavAreaJson>? NavAreas,
-    ThrowConstants Constants, byte[] MeshPayload, byte[] MeshPayloadGzip, string BuildETag)
+    ThrowConstants Constants, byte[] MeshPayload, byte[] MeshPayloadGzip, string BuildETag,
+    // Precomputed by the standspots command: every position the player hull can
+    // actually reach and stand on, including the crates and ledges the nav mesh
+    // (authored for bots, which never jump) leaves out. Null when the map has
+    // not been through that step, in which case the solver falls back to
+    // sampling nav areas directly.
+    IReadOnlyList<StandSpotOrigin>? StandSpots = null)
 {
     // Brotli is ~26% smaller than gzip on this payload, but at the quality
     // level that buys is far too slow to sit on the startup path (de_inferno's
@@ -95,16 +101,33 @@ public static class MapRegistry
             // the bytes do, so both the client ETag and the precompressed
             // brotli cache below invalidate exactly when the mesh does.
             var meshVersion = $"{mesh.GameBuildId}-{Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(payload))[..12].ToLowerInvariant()}";
-            var entry = new MapEntry(mesh, attributeFilter, navAreas, constants, payload, payloadGzip, $"\"{meshVersion}\"");
+            var standSpots = LoadStandSpots(dataDir, mesh.MapName);
+            var entry = new MapEntry(mesh, attributeFilter, navAreas, constants, payload, payloadGzip, $"\"{meshVersion}\"", standSpots);
             var brotliPath = BrotliCachePath(dataDir, mesh.MapName, meshVersion);
             if (File.Exists(brotliPath))
             {
                 entry.MeshPayloadBrotli = File.ReadAllBytes(brotliPath);
             }
             maps[mesh.MapName] = entry;
-            Console.WriteLine($"map loaded: {mesh.MapName} ({navAreas?.Count ?? 0} nav areas)");
+            var standNote = standSpots is null ? "no stand spots" : $"{standSpots.Count} stand spots";
+            Console.WriteLine($"map loaded: {mesh.MapName} ({navAreas?.Count ?? 0} nav areas, {standNote})");
         }
         return maps;
+    }
+
+    static IReadOnlyList<StandSpotOrigin>? LoadStandSpots(string dataDir, string mapName)
+    {
+        var path = Path.Combine(dataDir, $"{mapName}.standspots.json");
+        if (!File.Exists(path))
+        {
+            return null;
+        }
+        var file = JsonSerializer.Deserialize<StandSpotsCommand.StandSpotFile>(File.ReadAllText(path));
+        return file?.Spots
+            .Select(s => new StandSpotOrigin(
+                new System.Numerics.Vector3(s.Feet[0], s.Feet[1], s.Feet[2]),
+                string.Equals(s.Stance, "Crouching", StringComparison.OrdinalIgnoreCase)))
+            .ToList();
     }
 
     static string BrotliCachePath(string dataDir, string mapName, string version) =>
@@ -202,3 +225,6 @@ public static class MapRegistry
         thread.Start();
     }
 }
+
+/// <summary>A precomputed reachable stand position and whether it needs a crouch.</summary>
+public readonly record struct StandSpotOrigin(System.Numerics.Vector3 Feet, bool Crouched);
