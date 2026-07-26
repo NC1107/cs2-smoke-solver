@@ -48,30 +48,65 @@ public static class ViewerDataCommand
             DefaultNavAreasPath(options, mesh));
         var navAreas = LoadJson<List<NavAreaJson>>(navAreasPath, "nav areas");
 
-        const float NavCell = 64f;
+        // Ground height per cell, used to slice the walls out of the geometry.
+        //
+        // This was a 64u grid filled from each nav area's BOUNDING BOX, which
+        // caused both of the radar's visible faults. At 2u pixels a 64u cell is
+        // a 32-pixel block, so the floor tint and the wall/floor cut both
+        // stepped in visible squares - the "blocky" look on de_cache and
+        // de_vertigo. And filling by bounding box, keeping the lowest z, meant
+        // a cell straddling two levels of a stacked map took the LOWER floor's
+        // height and then sliced the upper floor's structure as if it were
+        // wall, which is why those two maps came out wrong rather than merely
+        // coarse.
+        //
+        // Now it is a 16u grid filled by actual containment, with the same
+        // lowest-wins rule for genuinely stacked areas, and a short-range
+        // fallback for the slivers between adjacent polygons (the same gaps
+        // that were sending clicked targets onto rooftops).
+        const float NavCell = 16f;
         var gw = (int)MathF.Ceiling((x1 - x0) / NavCell);
         var gh = (int)MathF.Ceiling((y1 - y0) / NavCell);
         var navZ = new float?[gw * gh];
+        // Bucket the areas so each cell only tests the handful overlapping it.
+        const float BucketSize = 256f;
+        var bw = (int)MathF.Ceiling((x1 - x0) / BucketSize) + 1;
+        var bh = (int)MathF.Ceiling((y1 - y0) / BucketSize) + 1;
+        var buckets = new List<float[][]>[bw * bh];
         foreach (var area in navAreas)
         {
-            var corners = area.Corners;
-            var z = corners.Average(c => c[2]);
-            var gx0 = Math.Max(0, (int)((corners.Min(c => c[0]) - x0) / NavCell));
-            var gx1 = Math.Min(gw - 1, (int)((corners.Max(c => c[0]) - x0) / NavCell));
-            var gy0 = Math.Max(0, (int)((corners.Min(c => c[1]) - y0) / NavCell));
-            var gy1 = Math.Min(gh - 1, (int)((corners.Max(c => c[1]) - y0) / NavCell));
-            for (var gy = gy0; gy <= gy1; gy++)
+            var c = area.Corners;
+            var bx0 = Math.Clamp((int)((c.Min(p => p[0]) - x0 - SmokeSolver.Solver.LineupSolver.NavGapReach) / BucketSize), 0, bw - 1);
+            var bx1 = Math.Clamp((int)((c.Max(p => p[0]) - x0 + SmokeSolver.Solver.LineupSolver.NavGapReach) / BucketSize), 0, bw - 1);
+            var by0 = Math.Clamp((int)((c.Min(p => p[1]) - y0 - SmokeSolver.Solver.LineupSolver.NavGapReach) / BucketSize), 0, bh - 1);
+            var by1 = Math.Clamp((int)((c.Max(p => p[1]) - y0 + SmokeSolver.Solver.LineupSolver.NavGapReach) / BucketSize), 0, bh - 1);
+            for (var by = by0; by <= by1; by++)
             {
-                for (var gx = gx0; gx <= gx1; gx++)
+                for (var bx = bx0; bx <= bx1; bx++)
                 {
-                    var i = gy * gw + gx;
-                    if (navZ[i] == null || z < navZ[i])
-                    {
-                        navZ[i] = z;
-                    }
+                    (buckets[by * bw + bx] ??= []).Add(c);
                 }
             }
         }
+        Parallel.For(0, gh, gy =>
+        {
+            for (var gx = 0; gx < gw; gx++)
+            {
+                var wx = x0 + (gx + 0.5f) * NavCell;
+                var wy = y0 + (gy + 0.5f) * NavCell;
+                var bucket = buckets[
+                    Math.Clamp((int)((wy - y0) / BucketSize), 0, bh - 1) * bw +
+                    Math.Clamp((int)((wx - x0) / BucketSize), 0, bw - 1)];
+                if (bucket != null)
+                {
+                    navZ[gy * gw + gx] = SmokeSolver.Solver.LineupSolver.NavGroundZNearby(bucket, wx, wy);
+                }
+            }
+        });
+
+        var navValues = navZ.Where(v => v != null).Select(v => v!.Value).ToList();
+        var navLo = navValues.Min();
+        var navHi = navValues.Max();
 
         // Exact-triangle radar: per-pixel vertical raycasts against the real
         // collision mesh at 2u pixels. The earlier 8u voxel slice rounded every
@@ -79,16 +114,19 @@ public static class ViewerDataCommand
         // arches, and props at their true footprint.
         var pixelSize = 2f;
         var (meshMin, meshMax) = mesh.ComputeBounds();
+        // Bounded around the walkable floor, NOT around an absolute height.
+        // This used to clamp the top of the region to z=800, which silently
+        // assumed every map sits near z=0. de_cache's floor is at z~1600 and
+        // de_vertigo's at z~11500, so on both of them the collider region came
+        // out empty or inverted, the radar found no walls at all, and the map
+        // rendered as the featureless blocks reported from production. The nav
+        // mesh already says where the playable band is.
         var radarCollider = new TriangleCollider(
             mesh,
-            new Vector3(x0, y0, meshMin.Z),
-            new Vector3(x1, y1, MathF.Min(meshMax.Z, 800)),
+            new Vector3(x0, y0, MathF.Max(meshMin.Z, navLo - 256)),
+            new Vector3(x1, y1, MathF.Min(meshMax.Z, navHi + 512)),
             attributeFilter);
-        Console.WriteLine("exact-triangle radar collider built");
-
-        var navValues = navZ.Where(v => v != null).Select(v => v!.Value).ToList();
-        var navLo = navValues.Min();
-        var navHi = navValues.Max();
+        Console.WriteLine($"exact-triangle radar collider built over z {MathF.Max(meshMin.Z, navLo - 256):F0}..{MathF.Min(meshMax.Z, navHi + 512):F0}");
 
         var w = (int)((x1 - x0) / pixelSize);
         var h = (int)((y1 - y0) / pixelSize);

@@ -72,7 +72,7 @@ public static class TargetSolver
         // real floor was ever in view. NavGroundZ needs no grid at all; only
         // the raw-geometry fallback does, and only then (a click that misses
         // every nav area) does it pay for a second, full-height probe grid.
-        var navZ = hasTargetZ ? null : LineupSolver.NavGroundZ(corners, target.X, target.Y);
+        var navZ = hasTargetZ ? null : LineupSolver.NavGroundZNearby(corners, target.X, target.Y);
         if (navZ is { } z0)
         {
             target = target with { Z = z0 };
