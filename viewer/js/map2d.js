@@ -3,8 +3,8 @@
 // actions (set target, select, run query) go through callbacks that main.js
 // registers, so this module never imports the orchestrator.
 
-import { cacheBust } from "./api.js?v=16";
-import { isDrag, state, filtered, typeLabel, clickShort, clickClass, esc, SMOKE_BLOOM_RADIUS, PICK_RADIUS_PX, TOUCH_PICK_RADIUS_PX, HEAT_CELL } from "./state.js?v=16";
+import { cacheBust } from "./api.js?v=80";
+import { isDrag, state, filtered, clickWords, movementWords, clickClass, esc, SMOKE_BLOOM_RADIUS, PICK_RADIUS_PX, TOUCH_PICK_RADIUS_PX, HEAT_CELL } from "./state.js?v=80";
 
 const canvas = state.canvas;
 const ctx = canvas.getContext("2d");
@@ -23,7 +23,7 @@ export function readColors() {
   const s = getComputedStyle(document.documentElement);
   state.colors = Object.fromEntries(
     ["terrain-lo", "terrain-hi", "accent", "target", "ink", "muted", "surface", "panel",
-     "click-left", "click-mid", "click-right", "heat-ok", "heat-none"]
+     "click-left", "click-mid", "click-right", "heat-ok", "heat-none", "danger"]
       .map(k => [k, s.getPropertyValue(`--${k}`).trim()]));
 }
 function hex2rgb(h) {
@@ -103,6 +103,9 @@ export function resetView() {
   draw();
 }
 const worldOf = (px, py) => [(px - ox) / scale, -((py - oy) / scale)];
+// Inverse of worldOf, in canvas pixels. Only the automated checks use it (a
+// test has to know where on screen a marker ended up in order to click it).
+export const screenOf = (wx, wy) => [wx * scale + ox, -wy * scale + oy];
 
 // Coalesces bursts of pointer/wheel events into one redraw per frame.
 let drawQueued = false;
@@ -173,11 +176,22 @@ export function draw() {
     ctx.fill();
   }
   if (state.progress && (state.progress.checked.length || state.progress.verified.length)) {
+    // Only draw what is on screen. A map-wide sweep reports tens of thousands
+    // of evaluated spots and this runs on every animation frame while the
+    // solve streams, so filling rectangles for cells the user has scrolled
+    // away from is the difference between a smooth progress view and a
+    // stuttering one on a laptop.
+    const [vx0, vy0] = worldOf(0, canvas.clientHeight);
+    const [vx1, vy1] = worldOf(canvas.clientWidth, 0);
+    const pad = HEAT_CELL;
+    const onScreen = (px, py) =>
+      px >= vx0 - pad && px <= vx1 + pad && py >= vy0 - pad && py <= vy1 + pad;
     // Live sweep: one dot per origin the solver has evaluated so far, blue
     // when at least one throw reached the target, orange when none did. This
     // is the progress indicator - watching it fill shows sweep speed and any
     // standable spots the solver never visited.
     for (const [px, py, , hits] of state.progress.checked) {
+      if (!onScreen(px, py)) { continue; }
       ctx.fillStyle = hits > 0 ? colors["heat-ok"] : colors["heat-none"];
       ctx.globalAlpha = hits > 0 ? 0.55 : 0.3;
       ctx.fillRect(px - HEAT_CELL / 2 + 6, -py - HEAT_CELL / 2 + 6, HEAT_CELL - 12, HEAT_CELL - 12);
@@ -186,6 +200,7 @@ export function draw() {
     // confirmed grow to a solid block, rejected ones dim to the raw tone the
     // final heatmap will show them in.
     for (const [px, py, , ok] of state.progress.verified) {
+      if (!onScreen(px, py)) { continue; }
       if (ok) {
         ctx.fillStyle = colors["heat-ok"];
         ctx.globalAlpha = 0.9;
@@ -288,8 +303,9 @@ export function draw() {
     drawSpawnSet(state.spawns.t, SPAWN_T_COLOR);
     drawSpawnSet(state.spawns.ct, SPAWN_CT_COLOR);
   }
-  document.getElementById("key-count").textContent =
-    state.result ? (state.heatOn ? `${state.result.coverage?.length ?? 0} origins` : `${shown.length}/${state.result.lineups.length}`) : "";
+  if (state.meshdiffOn && state.meshdiff) {
+    drawMeshDiff();
+  }
 }
 
 // Additive-alpha density heat: overlapping points brighten into hotspots. The
@@ -319,35 +335,100 @@ function drawProHeat(pts, rgb, side = "all") {
 const SPAWN_T_COLOR = "#d9a441";
 const SPAWN_CT_COLOR = "#4a90d9";
 
+// Meshdiff severity colors: a fixed red/orange signal (like the spawn team
+// colors above), not a themed accent - red is the dangerous kind (render has
+// a surface physics lacks, so a grenade flies straight through what looks
+// like a wall), orange is the phantom-bounce kind (physics has a surface
+// render lacks).
+const MESHDIFF_RENDER_ONLY_COLOR = "#ff3b30";
+const MESHDIFF_PHYSICS_ONLY_COLOR = "#ff9f1c";
+
+// One filled square per mismatched column, sized to the scan step so
+// adjacent mismatches read as a contiguous patch rather than a scatter of dots.
+function drawMeshDiff() {
+  const { step, cells } = state.meshdiff;
+  ctx.globalAlpha = 0.55;
+  for (const [x, y, , kind] of cells) {
+    ctx.fillStyle = kind === 0 ? MESHDIFF_RENDER_ONLY_COLOR : MESHDIFF_PHYSICS_ONLY_COLOR;
+    ctx.fillRect(x - step / 2, -y - step / 2, step, step);
+  }
+  ctx.globalAlpha = 1;
+}
+
 // Spawn points as small diamonds so they never read as lineup dots.
 function drawSpawnSet(pts, color) {
-  const r = 6 / scale;
+  const r = 7 / scale;
   ctx.lineWidth = 1.4 / scale;
-  ctx.strokeStyle = state.colors.panel;
-  ctx.fillStyle = color;
+  const held = state.pendingOrigin;
   for (const [x, y] of pts) {
     const px = x, py = -y;
+    // The spawn being thrown from is drawn as its own colour with a ring
+    // around it: clicking a spawn with no target yet only wrote a line of
+    // status text, so on the map the click looked like it had done nothing.
+    const isHeld = held && Math.hypot(held[0] - x, held[1] - y) < 1;
+    ctx.strokeStyle = isHeld ? state.colors["heat-ok"] : state.colors.panel;
+    ctx.fillStyle = isHeld ? state.colors["heat-ok"] : color;
+    if (isHeld) {
+      ctx.beginPath();
+      ctx.arc(px, py, r * 1.9, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    // A circle in the team's colour - the same object the 3D view stands a
+    // dome on, seen from above.
     ctx.beginPath();
-    ctx.moveTo(px, py - r);
-    ctx.lineTo(px + r, py);
-    ctx.lineTo(px, py + r);
-    ctx.lineTo(px - r, py);
-    ctx.closePath();
+    ctx.arc(px, py, r, 0, Math.PI * 2);
     ctx.fill();
     ctx.stroke();
   }
 }
 
-// The shown spawn nearest a click within grab range, or null - so clicking a
-// spawn marker solves from that exact spot rather than the approximate pixel.
+// Extra grab room around a spawn marker, in screen pixels, on top of the
+// marker's own radius: it is drawn at a fixed on-screen size, so its grab zone
+// is sized the same way rather than in world units.
+const SPAWN_GRAB_PX = 14;
+
+// Keeps a tooltip beside the cursor and inside the stage.
+function placeTip(tip, e) {
+  const stageRect = canvas.parentElement.getBoundingClientRect();
+  let tx = e.clientX - stageRect.left + 14;
+  let ty = e.clientY - stageRect.top + 14;
+  if (tx + tip.offsetWidth > stageRect.width - 8) { tx = e.clientX - stageRect.left - tip.offsetWidth - 10; }
+  if (ty + tip.offsetHeight > stageRect.height - 8) { ty = e.clientY - stageRect.top - tip.offsetHeight - 10; }
+  tip.style.left = Math.max(8, tx) + "px";
+  tip.style.top = Math.max(8, ty) + "px";
+}
+
+// The shown pro landing nearest a click within grab range, or null - so a
+// click on a landing dot smokes exactly where that pro's smoke landed,
+// including the height a 2D click cannot express.
+function nearestProLanding(wx, wy, radius) {
+  if (!state.prosmokesOn || !state.prosmokes) {
+    return null;
+  }
+  let best = null, bestD = radius;
+  for (const l of state.prosmokes.lands) {
+    if (state.proSide !== "all" && l[3] !== (state.proSide === "t" ? 0 : 1)) {
+      continue;
+    }
+    const d = Math.hypot(l[0] - wx, l[1] - wy);
+    if (d < bestD) { bestD = d; best = l; }
+  }
+  return best;
+}
+
+// The shown spawn nearest a click within grab range, tagged with its team, or
+// null - so clicking a spawn marker uses that exact spot rather than the
+// approximate pixel, and the hover can name which spawn it is.
 function nearestSpawn(wx, wy, radius) {
   if (!state.spawnsOn || !state.spawns) {
     return null;
   }
   let best = null, bestD = radius;
-  for (const p of [...state.spawns.t, ...state.spawns.ct]) {
-    const d = Math.hypot(p[0] - wx, p[1] - wy);
-    if (d < bestD) { bestD = d; best = p; }
+  for (const [team, points] of [["T", state.spawns.t], ["CT", state.spawns.ct]]) {
+    for (const p of points) {
+      const d = Math.hypot(p[0] - wx, p[1] - wy);
+      if (d < bestD) { bestD = d; best = [p[0], p[1], p[2], team]; }
+    }
   }
   return best;
 }
@@ -474,25 +555,57 @@ export function initMap2d(cb) {
       setTargetAt(e.clientX, e.clientY);
       return;
     }
+    const rect = canvas.getBoundingClientRect();
+    const [wx, wy] = worldOf(e.clientX - rect.left, e.clientY - rect.top);
+    // Fingers are not mouse pointers: give touch a fatter marker grab zone.
+    const pickPx = e.pointerType === "touch" ? TOUCH_PICK_RADIUS_PX : PICK_RADIUS_PX;
+    // A spawn diamond is drawn at a fixed on-screen size, so its grab zone is
+    // sized the same way - matching the marker plus a margin, rather than the
+    // tighter radius used for the dense lineup markers.
+    //
+    // Tested before the target rules on purpose. A spawn marker only exists to
+    // be clicked, but every click without a target used to be swallowed as
+    // "set the target here", so clicking a spawn first - the obvious way to
+    // ask "what can I throw from spawn?" - put the target on the spawn instead
+    // and the marker appeared to do nothing at all.
+    const spawn = state.picking ? null : nearestSpawn(wx, wy, (pickPx + SPAWN_GRAB_PX) / scale);
+    if (spawn) {
+      if (state.target) {
+        callbacks.onRunQuery({ target: state.target, origin: [spawn[0], spawn[1]] });
+      } else {
+        callbacks.onPickOrigin([spawn[0], spawn[1]], spawn[3]);
+      }
+      return;
+    }
+    // The map takes the two positions in order: the first left click answers
+    // "where does the smoke go", the second answers "where do you throw it
+    // from". Either button in the sidebar can re-arm one of them out of turn.
+    if (state.pickingOrigin) {
+      callbacks.onPickThrowSpot([wx, wy]);
+      return;
+    }
     if (state.picking || !state.target) {
+      // With the pro overlay up, a click on a landing dot means "smoke where
+      // they smoke" - including the floor they smoke, which a 2D click alone
+      // cannot express on a stacked map.
+      const proLand = state.picking ? null : nearestProLanding(wx, wy, (pickPx + SPAWN_GRAB_PX) / scale);
+      if (proLand) {
+        callbacks.onSetTarget([proLand[0], proLand[1], proLand[2]],
+          `target ${proLand[0].toFixed(0)}, ${proLand[1].toFixed(0)}, ${proLand[2].toFixed(0)} (pro landing)`);
+        return;
+      }
       setTargetAt(e.clientX, e.clientY);
       return;
     }
     if (state.heatOn) {
       return;
     }
-    const rect = canvas.getBoundingClientRect();
-    const [wx, wy] = worldOf(e.clientX - rect.left, e.clientY - rect.top);
-    // Fingers are not mouse pointers: give touch a fatter marker grab zone.
-    const pickPx = e.pointerType === "touch" ? TOUCH_PICK_RADIUS_PX : PICK_RADIUS_PX;
     const bestIdx = nearestLineup(wx, wy, pickPx / scale);
     if (bestIdx >= 0) {
       callbacks.onSelect(bestIdx);
       return;
     }
-    const spawn = nearestSpawn(wx, wy, pickPx / scale);
-    const origin = spawn ? [spawn[0], spawn[1]] : [wx, wy];
-    callbacks.onRunQuery({ target: state.target, origin });
+    callbacks.onPickThrowSpot([wx, wy]);
   });
   canvas.addEventListener("pointercancel", e => {
     touches.delete(e.pointerId);
@@ -547,23 +660,34 @@ export function initMap2d(cb) {
       state.hovered = best;
       scheduleDraw();
     }
+    // A spawn under the cursor says what clicking it will do. Spawn markers are
+    // the one thing on the map whose click means something different from the
+    // ground around them, and nothing said so until it had happened.
+    //
+    // While a position is being picked the spawn wins over a lineup marker
+    // sitting on it: the question on screen is "which spot", and the markers
+    // are answers to a different one.
+    const choosing = state.picking || state.pickingOrigin || !state.target;
+    const hoverSpawn = panning || (best >= 0 && !choosing) ? null
+      : nearestSpawn(wx, wy, (PICK_RADIUS_PX + SPAWN_GRAB_PX) / scale);
+    if (hoverSpawn) {
+      const what = state.picking ? "your smoke target" : "your throw position";
+      tip.innerHTML = `<b>${hoverSpawn[3]} spawn</b><br>Select this spawn as ${what}`;
+      tip.style.display = "block";
+      placeTip(tip, e);
+      canvas.style.cursor = "pointer";
+      if (state.hovered !== -1) { state.hovered = -1; scheduleDraw(); }
+      return;
+    }
     if (best >= 0) {
       const l = state.result.lineups[best];
       tip.innerHTML =
-        `<b class="${clickClass(l.strength)}">${clickShort(l.strength)}</b> · ${typeLabel(l)}` +
+        `<b class="${clickClass(l.strength)}">${clickWords(l.strength)}</b> · ${movementWords(l)}` +
         ` · ${l.Bounces} bounce${l.Bounces === 1 ? "" : "s"} · ${l.flightTime.toFixed(1)}s · ${(l.stability * 100).toFixed(0)}%<br>` +
         `${esc(l.how)}<br><span class="cmd2">${esc(l.console)}</span><br>` +
         `<span class="cmd2">rest ${l.rest[0].toFixed(0)}, ${l.rest[1].toFixed(0)} · click marker to pin</span>`;
       tip.style.display = "block";
-      const stageRect = canvas.parentElement.getBoundingClientRect();
-      let tx = e.clientX - stageRect.left + 14;
-      let ty = e.clientY - stageRect.top + 14;
-      if (tx + tip.offsetWidth > stageRect.width - 8) { tx = e.clientX - stageRect.left - tip.offsetWidth - 10; }
-      if (ty + tip.offsetHeight > stageRect.height - 8) { ty = e.clientY - stageRect.top - tip.offsetHeight - 10; }
-      tx = Math.max(8, tx);
-      ty = Math.max(8, ty);
-      tip.style.left = tx + "px";
-      tip.style.top = ty + "px";
+      placeTip(tip, e);
       canvas.style.cursor = "pointer";
     } else {
       tip.style.display = "none";

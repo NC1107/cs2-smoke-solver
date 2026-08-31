@@ -1,8 +1,8 @@
 using System.Globalization;
 using System.Text.Json;
+
 using static SmokeSolver.Cli.CliParsing;
 using static SmokeSolver.Cli.ValidateCommand;
-
 namespace SmokeSolver.Cli;
 
 /// <summary>

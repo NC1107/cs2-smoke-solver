@@ -14,6 +14,13 @@ services:
     volumes:
       - ./data:/app/data
     restart: unless-stopped
+    # The default json-file driver has no size cap; a long-lived server would
+    # grow one unbounded log file on the host.
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     networks:
       - traefik_proxy
     deploy:

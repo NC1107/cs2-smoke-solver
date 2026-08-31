@@ -7,10 +7,10 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using SmokeSolver.Sim;
+
 using static SmokeSolver.Cli.LineupApi;
 using static SmokeSolver.Cli.MapRegistry;
 using static SmokeSolver.Cli.StaticAssetServer;
-
 namespace SmokeSolver.Cli;
 
 public static class ServeCommand
@@ -22,6 +22,134 @@ public static class ServeCommand
 
     // Lineup query bodies are a handful of numbers; anything bigger is abuse.
     const int MaxLineupBodyBytes = 4096;
+
+    // Spawn lists parsed from data/<map>.entities.json, once per map for the
+    // process lifetime. Null marks a file that exists but would not parse, so
+    // a corrupt file answers with one clean 500 instead of a stack trace per
+    // request.
+    // How far above a floor to start looking for a ceiling, and how far up to
+    // look. Starting a little clear of the surface keeps the ray from striking
+    // the floor it starts on; a smoke is 64u across, so a gap smaller than this
+    // cannot hold one anyway.
+    const float LevelFloorClearance = 8f;
+    const float LevelHeadroom = 64f;
+    // How far above and below a nav level to look for the real floor. A step is
+    // 18u in Source and a nav polygon can average out to about that much off;
+    // 32 either way finds the surface without reaching the floor above or below.
+    const float LevelSnapUp = 32f;
+    const float LevelSnapDown = 32f;
+
+    static readonly System.Collections.Concurrent.ConcurrentDictionary<string, (List<float[]> T, List<float[]> Ct)?> SpawnCache = new(StringComparer.Ordinal);
+
+    // Named place volumes (env_cs_place) with their positions: the callout a
+    // player would use for a spot. Parsed once per map like the spawns above.
+    static readonly System.Collections.Concurrent.ConcurrentDictionary<string, List<(string Name, float[] Origin)>> PlaceCache = new(StringComparer.Ordinal);
+
+    static List<(string Name, float[] Origin)> LoadPlaces(string root, string mapName)
+    {
+        var places = new List<(string, float[])>();
+        var path = Path.Combine(root, "data", $"{mapName}.entities.json");
+        if (!File.Exists(path))
+        {
+            return places;
+        }
+        try
+        {
+            using var doc = JsonDocument.Parse(File.ReadAllText(path));
+            foreach (var e in doc.RootElement.EnumerateArray())
+            {
+                if (e.GetProperty("ClassName").GetString() != "env_cs_place" ||
+                    !e.TryGetProperty("Place", out var placeEl) ||
+                    placeEl.GetString() is not { Length: > 0 } name)
+                {
+                    continue;
+                }
+                var o = e.GetProperty("Origin");
+                places.Add((name, [o[0].GetSingle(), o[1].GetSingle(), o[2].GetSingle()]));
+            }
+        }
+        catch (Exception e) when (e is JsonException or InvalidOperationException or KeyNotFoundException or IndexOutOfRangeException or IOException)
+        {
+            Console.Error.WriteLine($"places unreadable for {mapName}: {e.Message}");
+        }
+        return places;
+    }
+
+    // Every spawn on the map, for a search scoped to them.
+    static IReadOnlyList<Vector3> SpawnPoints(string root, string mapName)
+    {
+        var spawns = SpawnCache.GetOrAdd(mapName, name => LoadSpawns(root, name));
+        return spawns is { } s
+            ? s.T.Concat(s.Ct).Select(p => new Vector3(p[0], p[1], p[2])).ToList()
+            : [];
+    }
+
+    // One representative point per side, for the sweep's extra flood fronts.
+    // The whole spawn cluster would be a dozen seeds a few feet apart flooding
+    // the same corridor; one is all the ordering needs.
+    static IReadOnlyList<Vector3> SpawnFronts(string root, string mapName)
+    {
+        var spawns = SpawnCache.GetOrAdd(mapName, name => LoadSpawns(root, name));
+        if (spawns is not { } s)
+        {
+            return [];
+        }
+        var fronts = new List<Vector3>();
+        foreach (var side in new[] { s.T, s.Ct })
+        {
+            if (side.Count == 0)
+            {
+                continue;
+            }
+            var mid = side[side.Count / 2];
+            fronts.Add(new Vector3(mid[0], mid[1], mid[2]));
+        }
+        return fronts;
+    }
+
+    static (List<float[]> T, List<float[]> Ct)? LoadSpawns(string root, string mapName)
+    {
+        var path = Path.Combine(root, "data", $"{mapName}.entities.json");
+        var t = new List<float[]>();
+        var ct = new List<float[]>();
+        if (!File.Exists(path))
+        {
+            return (t, ct);
+        }
+        try
+        {
+            using var doc = JsonDocument.Parse(File.ReadAllText(path));
+            foreach (var e in doc.RootElement.EnumerateArray())
+            {
+                var bucket = e.GetProperty("ClassName").GetString() switch
+                {
+                    "info_player_terrorist" => t,
+                    "info_player_counterterrorist" => ct,
+                    _ => null,
+                };
+                if (bucket == null)
+                {
+                    continue;
+                }
+                // Skip Wingman (2v2) spawns - they belong to the smaller 2v2
+                // layout (enabled=0 in Defusal) and sit in walled-off areas.
+                // Valve tags them targetname "[PR#]spawnpoints.2v2".
+                var name = e.TryGetProperty("Name", out var n) ? n.GetString() ?? "" : "";
+                if (name.Contains("2v2", StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+                var o = e.GetProperty("Origin");
+                bucket.Add([o[0].GetSingle(), o[1].GetSingle(), o[2].GetSingle()]);
+            }
+        }
+        catch (Exception e) when (e is JsonException or InvalidOperationException or KeyNotFoundException or IndexOutOfRangeException or IOException)
+        {
+            Console.Error.WriteLine($"spawns unreadable for {mapName}: {e.Message}");
+            return null;
+        }
+        return (t, ct);
+    }
 
     const string JsonContentType = "application/json";
     const string UnknownMapError = "unknown map (see /api/maps)";
@@ -107,41 +235,121 @@ public static class ServeCommand
         // entities.json ViewerDataCommand already leaves in data/.
         app.MapGet("/api/spawns", (string? map) =>
         {
-            if (map == null || !maps.ContainsKey(map))
+            if (map == null || !maps.TryGetValue(map, out var entry))
             {
                 return ApiError(StatusCodes.Status404NotFound, UnknownMapError);
             }
-            var path = Path.Combine(root, "data", $"{map}.entities.json");
-            var t = new List<float[]>();
-            var ct = new List<float[]>();
-            if (File.Exists(path))
+            // Keyed and pathed by the map's own name, not the (case-insensitive)
+            // query spelling, and parsed once: the file never changes while the
+            // server runs, and this handler shares its ThreadPool with the solver.
+            var spawns = SpawnCache.GetOrAdd(entry.Mesh.MapName, name => LoadSpawns(root, name));
+            return spawns is { } s
+                ? Results.Json(new { t = s.T, ct = s.Ct })
+                : ApiError(StatusCodes.Status500InternalServerError, "spawn data unreadable - re-extract the map's entities");
+        });
+
+        // The map's own callout names with the position of each place volume.
+        // Players think in callouts ("B site", "heaven"), not coordinates, so
+        // this is what a name-first search resolves a target against.
+        app.MapGet("/api/callouts", (string? map) =>
+        {
+            if (map == null || !maps.TryGetValue(map, out var entry))
             {
-                using var doc = JsonDocument.Parse(File.ReadAllText(path));
-                foreach (var e in doc.RootElement.EnumerateArray())
+                return ApiError(StatusCodes.Status404NotFound, UnknownMapError);
+            }
+            var places = PlaceCache.GetOrAdd(entry.Mesh.MapName, name => LoadPlaces(root, name));
+            // One entry per name: a callout can be several volumes (nuke has
+            // multiple "Hut" markers), and a search result list wants the place,
+            // not each brush that spells it.
+            var merged = places
+                .GroupBy(p => p.Name, StringComparer.OrdinalIgnoreCase)
+                .Select(g => new
                 {
-                    var bucket = e.GetProperty("ClassName").GetString() switch
+                    name = g.Key,
+                    pos = new[]
                     {
-                        "info_player_terrorist" => t,
-                        "info_player_counterterrorist" => ct,
-                        _ => null,
-                    };
-                    if (bucket == null)
-                    {
-                        continue;
-                    }
-                    // Skip Wingman (2v2) spawns - they belong to the smaller 2v2
-                    // layout (enabled=0 in Defusal) and sit in walled-off areas.
-                    // Valve tags them targetname "[PR#]spawnpoints.2v2".
-                    var name = e.TryGetProperty("Name", out var n) ? n.GetString() ?? "" : "";
-                    if (name.Contains("2v2", StringComparison.OrdinalIgnoreCase))
-                    {
-                        continue;
-                    }
-                    var o = e.GetProperty("Origin");
-                    bucket.Add([o[0].GetSingle(), o[1].GetSingle(), o[2].GetSingle()]);
+                        g.Average(p => p.Origin[0]),
+                        g.Average(p => p.Origin[1]),
+                        g.Average(p => p.Origin[2]),
+                    },
+                    parts = g.Count(),
+                })
+                .OrderBy(c => c.name, StringComparer.OrdinalIgnoreCase);
+            return Results.Json(new { callouts = merged });
+        });
+
+        // Which walkable levels are stacked over one 2D point. A top-down click
+        // on a map like de_nuke can mean the roof, the bombsite under it, or the
+        // site below that; the solver has to pick one (the lowest) and the
+        // viewer uses this to let the user say which they meant instead.
+        app.MapGet("/api/levels", (string? map, float x, float y) =>
+        {
+            if (map == null || !maps.TryGetValue(map, out var entry))
+            {
+                return ApiError(StatusCodes.Status404NotFound, UnknownMapError);
+            }
+            if (entry.NavAreas == null)
+            {
+                return ApiError(StatusCodes.Status400BadRequest, "map has no nav data (see /api/maps)");
+            }
+            if (!float.IsFinite(x) || !float.IsFinite(y))
+            {
+                return ApiError(StatusCodes.Status400BadRequest, "non-finite coordinate");
+            }
+            float[][][] corners = [.. entry.NavAreas.Select(a => a.Corners)];
+            // Strict: only floors the click actually lands on, not the ones
+            // beside it. A second floor offered for a spot that has none is a
+            // question with no right answer.
+            var levels = SmokeSolver.Solver.LineupSolver.NavGroundLevels(corners, x, y, strict: true);
+            // And only floors with room above them. The nav mesh draws mid on
+            // de_dust2 as one polygon that runs under the Xbox, so a click on
+            // top of the crate is inside two areas: the crate top and the floor
+            // sealed beneath it. Nothing can be thrown into that second one -
+            // a smoke needs somewhere to be - so asking about it is asking a
+            // question with no answer. Kept when it is the only level, since
+            // then the alternative is offering nothing at all.
+            var collider = entry.Collider.Value;
+            if (levels.Count > 1)
+            {
+                var open = levels
+                    .Where(z => collider.FirstHit(
+                        new Vector3(x, y, z + LevelFloorClearance),
+                        new Vector3(x, y, z + LevelHeadroom)) == null)
+                    .ToList();
+                if (open.Count > 0)
+                {
+                    levels = open;
                 }
             }
-            return Results.Json(new { t, ct });
+            // Snapped onto the surface a player would actually stand on. A nav
+            // level is the average height of a polygon's corners, so on a slope
+            // or a stepped area it sits several units off the real floor - and
+            // this height goes out as a setpos, which teleports the player to
+            // exactly it. Below the floor is inside the world.
+            levels = levels
+                .Select(z => SmokeSolver.Solver.LineupSolver.FloorUnderHull(
+                    entry.PlayerCollider.Value, new Vector3(x, y, z), LevelSnapUp, LevelSnapDown) ?? z)
+                .ToList();
+            // Name each level by the callout a player standing on it would be
+            // in, so the choice reads "Bombsite A" and not "z -168". Matching
+            // at eye height rather than the floor because a place volume's
+            // origin sits inside the room, not on its floor.
+            var places = PlaceCache.GetOrAdd(entry.Mesh.MapName, name => LoadPlaces(root, name));
+            return Results.Json(new
+            {
+                levels = levels.Select(z =>
+                {
+                    var best = places
+                        .Select(p => (p.Name, D: MathF.Sqrt(
+                            (p.Origin[0] - x) * (p.Origin[0] - x) +
+                            (p.Origin[1] - y) * (p.Origin[1] - y) +
+                            (p.Origin[2] - (z + 64f)) * (p.Origin[2] - (z + 64f)))))
+                        .Where(p => p.D < 900f)
+                        .OrderBy(p => p.D)
+                        .FirstOrDefault();
+                    return new { z, name = best.Name };
+                }),
+            });
         });
 
         app.MapGet("/api/mesh", (HttpContext context, string? map) =>
@@ -184,7 +392,7 @@ public static class ServeCommand
         // shipped with every result: a map-wide solve returns hundreds of lineups
         // and only ever one is drawn.
         app.MapGet("/api/trajectory", (HttpContext context, string? map,
-            float x, float y, float z, string? type, float pitch, float yaw, float strength, float runDeg = 0f) =>
+            float x, float y, float z, string? type, float pitch, float yaw, float strength, float runDeg = 0f, string? broken = null) =>
         {
             if (map == null || !maps.TryGetValue(map, out var entry))
             {
@@ -199,9 +407,13 @@ public static class ServeCommand
             {
                 return ApiError(StatusCodes.Status400BadRequest, "non-finite throw parameter");
             }
+            if (ParseBroken(broken) is not { Error: null } brokenState)
+            {
+                return ApiError(StatusCodes.Status400BadRequest, ParseBroken(broken).Error!);
+            }
             var eye = new Vector3(x, y, z + GrenadeTrajectory.EyeHeight(throwType));
             var spec = new ThrowSpec(eye, yaw, pitch, throwType, strength, runDeg);
-            var payload = TrajectoryPayload(entry.Collider.Value, spec, entry.Constants);
+            var payload = TrajectoryPayload(entry.ColliderExcluding(brokenState.Groups), spec, entry.Constants);
             // Deterministic for a given throw on a given build, so it never needs
             // recomputing for a lineup the viewer has already drawn.
             context.Response.Headers.ETag = entry.BuildETag;
@@ -215,7 +427,7 @@ public static class ServeCommand
         // single throw the user clicked without solving the rest of the map.
         app.MapGet("/api/lineup-one", (HttpContext context, string? map,
             float x, float y, float z, string? type, float pitch, float yaw, float strength,
-            float tx, float ty, float tz, float runDeg = 0f) =>
+            float tx, float ty, float tz, float runDeg = 0f, string? broken = null) =>
         {
             if (map == null || !maps.TryGetValue(map, out var entry))
             {
@@ -230,8 +442,12 @@ public static class ServeCommand
             {
                 return ApiError(StatusCodes.Status400BadRequest, "non-finite lineup parameter");
             }
+            if (ParseBroken(broken) is not { Error: null } brokenState)
+            {
+                return ApiError(StatusCodes.Status400BadRequest, ParseBroken(broken).Error!);
+            }
             var payload = LineupOnePayload(
-                entry.Collider.Value, entry.PlayerCollider.Value, new Vector3(x, y, z), new Vector3(tx, ty, tz),
+                entry.ColliderExcluding(brokenState.Groups), entry.PlayerCollider.Value, new Vector3(x, y, z), new Vector3(tx, ty, tz),
                 throwType, strength, pitch, yaw, runDeg, entry.Constants);
             context.Response.Headers.ETag = entry.BuildETag;
             context.Response.Headers.CacheControl = "public, max-age=604800";
@@ -243,7 +459,7 @@ public static class ServeCommand
         // on "Go to", so it shares the trajectory endpoint's shape and caching.
         app.MapGet("/api/slack", (HttpContext context, string? map,
             float x, float y, float z, string? type, float pitch, float yaw, float strength,
-            float tx, float ty, float tz, float within, float runDeg = 0f) =>
+            float tx, float ty, float tz, float within, float runDeg = 0f, string? broken = null) =>
         {
             if (map == null || !maps.TryGetValue(map, out var entry))
             {
@@ -262,8 +478,14 @@ public static class ServeCommand
             {
                 return ApiError(StatusCodes.Status400BadRequest, "within must be between 1 and 512");
             }
+            if (ParseBroken(broken) is not { Error: null } brokenState)
+            {
+                return ApiError(StatusCodes.Status400BadRequest, ParseBroken(broken).Error!);
+            }
+            // Grenade paths honor the broken state; the player-side probes keep
+            // the intact world (feet cannot stand where a door swings anyway).
             var payload = PositionSlackPayload(
-                entry.Collider.Value, entry.PlayerCollider.Value, new Vector3(x, y, z), throwType, strength,
+                entry.ColliderExcluding(brokenState.Groups), entry.PlayerCollider.Value, new Vector3(x, y, z), throwType, strength,
                 pitch, yaw, runDeg, new Vector3(tx, ty, tz), within, entry.Constants);
             context.Response.Headers.ETag = entry.BuildETag;
             context.Response.Headers.CacheControl = "public, max-age=604800";
@@ -325,7 +547,10 @@ public static class ServeCommand
                 // constants, and the quantized query. A new game build or recalibration
                 // changes the key, so stale answers cannot leak through.
                 var cacheKey = QueryCacheKey(mesh, entry.BuildETag.Trim('"'), serveConstants, body.RootElement, attrs);
-                var cachePath = Path.Combine("data", "cache", cacheKey + ".json");
+                // Rooted like every other data path: a relative "data" here would
+                // split the cache from the directory PruneCache sweeps whenever
+                // --root is not the working directory.
+                var cachePath = Path.Combine(root, "data", "cache", cacheKey + ".json");
 
                 // Progress streams as NDJSON so the viewer can paint each evaluated
                 // origin live: phase lines, then batches of checked [x, y, z, hits]
@@ -364,13 +589,24 @@ public static class ServeCommand
                 await SolveGate.WaitAsync(context.RequestAborted);
                 try
                 {
+                    // A double-submit of the same query (two tabs, a re-click)
+                    // may have solved and cached while this request waited at
+                    // the gate; answering from that file skips a redundant solve.
+                    if (File.Exists(cachePath))
+                    {
+                        var cached = await File.ReadAllTextAsync(cachePath, context.RequestAborted);
+                        await WriteLine("{\"result\":" + cached + "}");
+                        return;
+                    }
                     var events = new System.Collections.Concurrent.ConcurrentQueue<(string Kind, int[] Data)>();
                     var solveTask = Task.Run(() => RunTargetQuery(
                         mesh, attributeFilter, navAreas, body.RootElement, serveConstants,
                         onPhase: (phase, count) => events.Enqueue((phase, [count])),
                         onOrigin: (feet, hits) => events.Enqueue(("origin", [(int)MathF.Round(feet.X), (int)MathF.Round(feet.Y), (int)MathF.Round(feet.Z), hits])),
                         onCandidate: (feet, ok) => events.Enqueue(("cand", [(int)MathF.Round(feet.X), (int)MathF.Round(feet.Y), (int)MathF.Round(feet.Z), ok ? 1 : 0])),
-                        standSpots: entry.StandSpots));
+                        standSpots: entry.StandSpots,
+                        spawnFronts: SpawnFronts(root, entry.Mesh.MapName),
+                        spawnPoints: SpawnPoints(root, entry.Mesh.MapName)));
                     while (!solveTask.IsCompleted)
                     {
                         await Task.WhenAny(solveTask, Task.Delay(100));
@@ -393,7 +629,13 @@ public static class ServeCommand
                         return;
                     }
                     Directory.CreateDirectory(Path.GetDirectoryName(cachePath)!);
-                    await File.WriteAllTextAsync(cachePath, response);
+                    // Via a per-writer temp file and rename, like the brotli mesh
+                    // cache: a kill mid-write, or two solves racing the same key,
+                    // must never leave a truncated file that a later cache hit
+                    // would splice into its NDJSON stream as garbage.
+                    var temp = cachePath + "." + Environment.CurrentManagedThreadId + ".tmp";
+                    await File.WriteAllTextAsync(temp, response);
+                    File.Move(temp, cachePath, overwrite: true);
                     foreach (var line in DrainProgress(events))
                     {
                         await WriteLine(line);
@@ -409,7 +651,10 @@ public static class ServeCommand
 
         app.MapGet("/", (HttpContext context) => ServeStatic(context, root, "viewer/index.html"));
         app.MapGet("/viewer/{**rest}", (HttpContext context, string? rest) => ServeStatic(context, root, "viewer/" + (rest ?? "")));
-        app.MapGet("/data/{**rest}", (HttpContext context, string? rest) =>
+        // GET and HEAD: a client that only needs to know whether a large data
+        // file exists (the multi-megabyte mesh diff) should not have to
+        // download it to find out.
+        app.MapMethods("/data/{**rest}", ["GET", "HEAD"], (HttpContext context, string? rest) =>
         {
             var r = rest ?? "";
             // The viewer only ever fetches map JSON/PNG/GLB and the validation
@@ -476,6 +721,33 @@ public static class ServeCommand
         }
         FlushBatch();
         return lines;
+    }
+
+    // The world-state toggle on the GET endpoints, mirroring the lineup body's
+    // "broken" array: csv tokens from {glass, doors} mapped to the collision
+    // groups extraction gave those entities, sorted so every spelling of the
+    // same state shares one collider cache entry.
+    static (List<string> Groups, string? Error) ParseBroken(string? broken)
+    {
+        var groups = new List<string>();
+        if (string.IsNullOrEmpty(broken))
+        {
+            return (groups, null);
+        }
+        foreach (var token in broken.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            if (token is not ("glass" or "doors"))
+            {
+                return (groups, "broken must be a comma list drawn from glass, doors");
+            }
+            var group = token == "glass" ? "EntityBreakable" : "EntityDoor";
+            if (!groups.Contains(group))
+            {
+                groups.Add(group);
+            }
+        }
+        groups.Sort(StringComparer.Ordinal);
+        return (groups, null);
     }
 
     // Every API error is the same {"error": "..."} object, whichever endpoint

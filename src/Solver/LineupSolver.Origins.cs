@@ -299,10 +299,10 @@ public static partial class LineupSolver
     /// Adds wall- and corner-pinned variants of the given origins in place, for
     /// callers that built their origin list some other way.
     /// </summary>
-    public static void AddPinnedOriginsTo(VoxelGrid grid, TriangleCollider collider, List<Vector3> origins) =>
-        AddPinnedOrigins(grid, collider, origins);
+    public static void AddPinnedOriginsTo(VoxelGrid grid, TriangleCollider collider, List<Vector3> origins, List<Vector3>? crouchOnlyOut = null) =>
+        AddPinnedOrigins(grid, collider, origins, crouchOnlyOut);
 
-    static void AddPinnedOrigins(VoxelGrid grid, TriangleCollider collider, List<Vector3> origins)
+    static void AddPinnedOrigins(VoxelGrid grid, TriangleCollider collider, List<Vector3> origins, List<Vector3>? crouchOnlyOut = null)
     {
         var seen = new HashSet<(int, int)>(origins.Select(o => ((int)MathF.Round(o.X / 4f), (int)MathF.Round(o.Y / 4f))));
         var pinned = new List<Vector3>();
@@ -339,7 +339,8 @@ public static partial class LineupSolver
             // the live solver: every unstandable origin left in the output came
             // from here, none from the hull-derived set. Hold pins to the same
             // bar as everything else.
-            if (StandSpots.StanceAt(collider, snapped) == StandSpots.Stance.None)
+            var stance = StandSpots.StanceAt(collider, snapped);
+            if (stance == StandSpots.Stance.None)
             {
                 return;
             }
@@ -350,6 +351,13 @@ public static partial class LineupSolver
             if (grid.InBounds(cx, cy, cz) && !grid.IsSolid(grid.Index(cx, cy, cz)))
             {
                 pinned.Add(snapped);
+                if (stance == StandSpots.Stance.Crouching)
+                {
+                    // A pin can wedge feet under a soffit or vent the lattice
+                    // never reaches; the caller's crouch-only filter needs to
+                    // know a standing release from here is not a real throw.
+                    crouchOnlyOut?.Add(snapped);
+                }
             }
         }
 
@@ -393,7 +401,87 @@ public static partial class LineupSolver
     /// grid step away from every lattice point, so the click must be tested
     /// as-is or the exact lineup the player asked about can never be found.
     /// </summary>
-    public static List<Vector3> ExactOriginWithPins(VoxelGrid grid, TriangleCollider? collider, Vector3 seed)
+    /// <summary>
+    /// The one origin a player standing at <paramref name="seed"/> actually
+    /// occupies - snapped to the ground under it and checked against the player
+    /// hull - or empty when nobody can stand there.
+    /// </summary>
+    // Deliberately without the pinned variants of ExactOriginWithPins: an
+    // "exactly here" solve that quietly substitutes a spot against the nearby
+    // wall answers a different question, and the answer would not work from
+    // where the player is standing.
+    /// <summary>
+    /// The height a player's feet rest at over <paramref name="at"/>: the
+    /// highest surface under the whole 32x32 hull footprint, not under its
+    /// centre alone.
+    /// </summary>
+    // A single downward ray answers for one point, and a player is a box. On
+    // any stepped or sloped ground the hull sits on the highest thing beneath
+    // it, so a centre-only drop reports a floor BELOW the one the player is
+    // standing on - measured against 15 real de_dust2 spawn positions, low by
+    // 1.2u at the median and 5.3u at worst, which is enough to teleport
+    // whoever pastes the setpos into the ground.
+    public static float? FloorUnderHull(TriangleCollider collider, Vector3 at, float up, float down)
+    {
+        const float half = StandSpots.HullHalfWidth;
+        float? best = null;
+        foreach (var (dx, dy) in new[] { (0f, 0f), (half, half), (half, -half), (-half, half), (-half, -half) })
+        {
+            var from = new Vector3(at.X + dx, at.Y + dy, at.Z + up);
+            var to = new Vector3(at.X + dx, at.Y + dy, at.Z - down);
+            if (collider.FirstHit(from, to) is { } hit)
+            {
+                var z = from.Z + (to.Z - from.Z) * hit.T;
+                if (best is null || z > best)
+                {
+                    best = z;
+                }
+            }
+        }
+        return best;
+    }
+
+    // How far above and below a foot position to look for the floor holding it
+    // up. A few units either way: enough to survive the sub-unit gap the engine
+    // keeps between feet and floor, tight enough that a point in mid-air fails.
+    const float SupportProbe = 4f;
+
+    public static List<Vector3> ExactOriginOnly(VoxelGrid grid, TriangleCollider? collider, Vector3 seed, List<Vector3>? crouchOnlyOut = null)
+    {
+        if (collider == null)
+        {
+            return [SnapToGround(grid, collider, seed)];
+        }
+        // The given position first, but only when a player could actually be
+        // standing there: the hull fits AND the floor is under it. SnapToGround
+        // re-derives a floor from the voxel grid, and on a spot the grid reads
+        // differently from the hull test it can land somewhere nobody can
+        // stand - which rejected a position that a moment earlier had produced
+        // three lineups. Without the support half of the test, though, anything
+        // in mid-air is accepted as given: a spawn entity sits 55u above
+        // de_dust2's T spawn floor, and every lineup from it was solved from
+        // where nobody is standing.
+        var supported = collider.FirstHit(
+            seed + new Vector3(0, 0, SupportProbe), seed - new Vector3(0, 0, SupportProbe)) != null;
+        foreach (var candidate in supported
+                     ? new[] { seed, SnapToGround(grid, collider, seed) }
+                     : new[] { SnapToGround(grid, collider, seed) })
+        {
+            var stance = StandSpots.StanceAt(collider, candidate);
+            if (stance == StandSpots.Stance.None)
+            {
+                continue;
+            }
+            if (stance == StandSpots.Stance.Crouching)
+            {
+                crouchOnlyOut?.Add(candidate);
+            }
+            return [candidate];
+        }
+        return [];
+    }
+
+    public static List<Vector3> ExactOriginWithPins(VoxelGrid grid, TriangleCollider? collider, Vector3 seed, List<Vector3>? crouchOnlyOut = null)
     {
         var snapped = SnapToGround(grid, collider, seed);
         if (collider == null)
@@ -405,15 +493,20 @@ public static partial class LineupSolver
         // few units from a wall names a spot the player hull cannot occupy - in
         // game they are simply pushed out of it. Handing back a setpos for a
         // position nobody can stand in is worse than saying nothing.
-        if (StandSpots.StanceAt(collider, snapped) != StandSpots.Stance.None)
+        var stance = StandSpots.StanceAt(collider, snapped);
+        if (stance != StandSpots.Stance.None)
         {
             list.Add(snapped);
+            if (stance == StandSpots.Stance.Crouching)
+            {
+                crouchOnlyOut?.Add(snapped);
+            }
         }
         // The pinned variants are still derived from where they clicked even
         // when that exact spot is unusable - walking into the nearby wall is
         // very often what they were reaching for.
         var pinned = new List<Vector3> { snapped };
-        AddPinnedOrigins(grid, collider, pinned);
+        AddPinnedOrigins(grid, collider, pinned, crouchOnlyOut);
         list.AddRange(pinned.Skip(1));
         return list;
     }
@@ -474,6 +567,86 @@ public static partial class LineupSolver
         return best;
     }
 
+    /// <summary>
+    /// Walkable height at a point, accepting an area within
+    /// <paramref name="maxDistance"/> rather than the default gap reach.
+    /// </summary>
+    // Callers that must stay ON the playable surface (the mesh diff) need a
+    // tighter rule than NavGroundZNearby's 96u gap-bridging, which reaches out
+    // over railings into structures nobody stands on.
+    public static float? NavGroundZWithin(IReadOnlyList<float[][]> areaCorners, float x, float y, float maxDistance)
+    {
+        var inside = NavGroundZ(areaCorners, x, y);
+        if (inside is not null)
+        {
+            return inside;
+        }
+        float? best = null;
+        var bestDistance = maxDistance;
+        foreach (var corners in areaCorners)
+        {
+            var d = DistanceToPolygon(corners, x, y);
+            if (d < bestDistance)
+            {
+                bestDistance = d;
+                best = corners.Average(c => c[2]);
+            }
+        }
+        return best;
+    }
+
+    /// <summary>
+    /// Every distinct walkable height stacked over one 2D point, lowest first.
+    /// </summary>
+    // A top-down click is ambiguous wherever a map stacks levels: on de_nuke a
+    // point over the A bombsite is also over B, and over the roof above both.
+    // NavGroundZ answers with the lowest, which is the safe default but silently
+    // sends a click meant for the site to the floor below it. Callers that can
+    // ask the user (the viewer) need the whole set to offer that choice; the
+    // separation threshold keeps a sloped or slightly-stepped single floor from
+    // reading as several levels.
+    // 128u apart to count as a separate level: that clears a standing player plus
+    // headroom, so a ramp, a step or a stack of crates stays one level while a
+    // real floor above another reads as two.
+    public static List<float> NavGroundLevels(IReadOnlyList<float[][]> areaCorners, float x, float y, float separation = 128f, bool strict = false)
+    {
+        var heights = new List<float>();
+        foreach (var corners in areaCorners)
+        {
+            if (PointInPolygon(corners, x, y))
+            {
+                heights.Add(corners.Average(c => c[2]));
+            }
+        }
+        // The 96u gap reach bridges the slivers between adjacent nav quads,
+        // which is what origin generation needs. Asking "what is stacked under
+        // this pixel" it answers with the floor BESIDE the click as well:
+        // standing on de_dust2's Xbox, the mid floor is a few units away
+        // horizontally and 159u down, so a click on top of the crate was
+        // offered a second "floor" that is not under it and cannot hold a
+        // smoke. Reached for only when nothing contains the point at all.
+        if (!strict || heights.Count == 0)
+        {
+            foreach (var corners in areaCorners)
+            {
+                if (!PointInPolygon(corners, x, y) && DistanceToPolygon(corners, x, y) < NavGapReach)
+                {
+                    heights.Add(corners.Average(c => c[2]));
+                }
+            }
+        }
+        heights.Sort();
+        var levels = new List<float>();
+        foreach (var z in heights)
+        {
+            if (levels.Count == 0 || z - levels[^1] > separation)
+            {
+                levels.Add(z);
+            }
+        }
+        return levels;
+    }
+
     static float DistanceToPolygon(float[][] corners, float x, float y)
     {
         var best = float.MaxValue;
@@ -521,20 +694,8 @@ public static partial class LineupSolver
         return best;
     }
 
-    static bool PointInPolygon(float[][] corners, float x, float y)
-    {
-        var inside = false;
-        for (int i = 0, j = corners.Length - 1; i < corners.Length; j = i++)
-        {
-            var (xi, yi) = (corners[i][0], corners[i][1]);
-            var (xj, yj) = (corners[j][0], corners[j][1]);
-            if (yi > y != yj > y && x < (xj - xi) * (y - yi) / (yj - yi) + xi)
-            {
-                inside = !inside;
-            }
-        }
-        return inside;
-    }
+    static bool PointInPolygon(float[][] corners, float x, float y) =>
+        StandSpots.PointInPolygon(corners, x, y);
 
     static Vector3 SnapToGround(VoxelGrid grid, TriangleCollider? collider, Vector3 p)
     {
@@ -556,8 +717,7 @@ public static partial class LineupSolver
     }
 
     // A player can stand on anything up to Source's 45.57 degree slope limit.
-    // Same physical value as GrenadeTrajectory.FloorNormalZ (sv_standable_normal).
-    const float StandableNormalZ = 0.7f;
+    const float StandableNormalZ = StandSpots.StandableNormalZ;
 
     /// <summary>
     /// Drops a voxel-derived foot position onto the collision surface underneath it.

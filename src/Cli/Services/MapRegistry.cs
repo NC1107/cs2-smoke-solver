@@ -47,6 +47,27 @@ public sealed record MapEntry(
         var (min, max) = Mesh.ComputeBounds();
         return new TriangleCollider(Mesh, min, max, Mesh.PlayerSolidFilter());
     }, LazyThreadSafetyMode.ExecutionAndPublication);
+
+    // Colliders for "broken" world states (glass shot out, doors open): the
+    // named groups are knocked out of the grenade filter. Built lazily per
+    // distinct state and kept - there are at most three beyond the default.
+    readonly System.Collections.Concurrent.ConcurrentDictionary<string, Lazy<TriangleCollider>> _brokenColliders = new();
+
+    public TriangleCollider ColliderExcluding(IReadOnlyList<string> excludedGroups)
+    {
+        if (excludedGroups.Count == 0)
+        {
+            return Collider.Value;
+        }
+        var key = string.Join(",", excludedGroups.OrderBy(g => g, StringComparer.Ordinal));
+        return _brokenColliders.GetOrAdd(key, _ => new Lazy<TriangleCollider>(() =>
+        {
+            var (min, max) = Mesh.ComputeBounds();
+            var baseFilter = Mesh.GrenadeSolidFilter();
+            var excluded = Mesh.GroupMask(excludedGroups);
+            return new TriangleCollider(Mesh, min, max, a => baseFilter(a) && !excluded[a]);
+        }, LazyThreadSafetyMode.ExecutionAndPublication)).Value;
+    }
 }
 
 /// <summary>
@@ -75,11 +96,22 @@ public static class MapRegistry
             var mapOptions = new Dictionary<string, string>(options) { ["geo"] = geoPath };
             var (mesh, _, _, attributeFilter) = LoadCommon(mapOptions);
             var constants = LoadConstants(mapOptions);
+            // A corrupt derived artifact (a truncated navareas/standspots file
+            // from an interrupted precompute) must degrade that one map to its
+            // documented fallback, not throw out of LoadMaps and take every
+            // map on the server down with it.
             List<NavAreaJson>? navAreas = null;
             var navPath = Path.Combine(dataDir, $"{mesh.MapName}.navareas.json");
             if (File.Exists(navPath))
             {
-                navAreas = JsonSerializer.Deserialize<List<NavAreaJson>>(File.ReadAllText(navPath));
+                try
+                {
+                    navAreas = JsonSerializer.Deserialize<List<NavAreaJson>>(File.ReadAllText(navPath));
+                }
+                catch (Exception e) when (e is JsonException or IOException)
+                {
+                    Console.Error.WriteLine($"navareas unreadable for {mesh.MapName} ({e.Message}) - lineup solving disabled for this map");
+                }
             }
             // The 3D view shows exactly what the grenade sim collides with (see
             // MeshPayloadSolid), not the --attrs subset the voxel sweep uses -
@@ -122,12 +154,20 @@ public static class MapRegistry
         {
             return null;
         }
-        var file = JsonSerializer.Deserialize<StandSpotsCommand.StandSpotFile>(File.ReadAllText(path));
-        return file?.Spots
-            .Select(s => new StandSpotOrigin(
-                new System.Numerics.Vector3(s.Feet[0], s.Feet[1], s.Feet[2]),
-                string.Equals(s.Stance, "Crouching", StringComparison.OrdinalIgnoreCase)))
-            .ToList();
+        try
+        {
+            var file = JsonSerializer.Deserialize<StandSpotsCommand.StandSpotFile>(File.ReadAllText(path));
+            return file?.Spots
+                .Select(s => new StandSpotOrigin(
+                    new System.Numerics.Vector3(s.Feet[0], s.Feet[1], s.Feet[2]),
+                    string.Equals(s.Stance, "Crouching", StringComparison.OrdinalIgnoreCase)))
+                .ToList();
+        }
+        catch (Exception e) when (e is JsonException or IOException or NullReferenceException or IndexOutOfRangeException)
+        {
+            Console.Error.WriteLine($"standspots unreadable for {mapName} ({e.Message}) - falling back to nav-area sampling");
+            return null;
+        }
     }
 
     static string BrotliCachePath(string dataDir, string mapName, string version) =>
@@ -151,26 +191,28 @@ public static class MapRegistry
             .ToHashSet(StringComparer.Ordinal);
         var cutoff = DateTime.UtcNow.AddDays(-30);
         var pruned = 0;
-        try
+        foreach (var file in Directory.EnumerateFiles(cacheDir))
         {
-            foreach (var file in Directory.EnumerateFiles(cacheDir))
+            var name = Path.GetFileName(file);
+            var stale =
+                (name.EndsWith(".json", StringComparison.Ordinal) && File.GetLastWriteTimeUtc(file) < cutoff) ||
+                (name.EndsWith(".mesh.br", StringComparison.Ordinal) && !live.Contains(name));
+            if (!stale)
             {
-                var name = Path.GetFileName(file);
-                var stale =
-                    (name.EndsWith(".json", StringComparison.Ordinal) && File.GetLastWriteTimeUtc(file) < cutoff) ||
-                    (name.EndsWith(".mesh.br", StringComparison.Ordinal) && !live.Contains(name));
-                if (stale)
-                {
-                    File.Delete(file);
-                    pruned++;
-                }
+                continue;
             }
-        }
-        catch (Exception e)
-        {
-            // Best-effort housekeeping; a locked or foreign-owned file is not
-            // worth failing startup over.
-            Console.Error.WriteLine($"cache prune stopped early: {e.Message}");
+            try
+            {
+                File.Delete(file);
+                pruned++;
+            }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+            {
+                // Best-effort housekeeping; a locked or foreign-owned file is
+                // not worth failing startup over - but it must not stop the
+                // rest of the directory from being swept either.
+                Console.Error.WriteLine($"cache prune skipped {name}: {e.Message}");
+            }
         }
         if (pruned > 0)
         {

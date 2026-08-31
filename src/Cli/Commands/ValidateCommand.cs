@@ -5,26 +5,10 @@ using System.Text.Json;
 using SmokeSolver.Extraction;
 using SmokeSolver.Sim;
 using SmokeSolver.Solver;
+
 using static SmokeSolver.Cli.CliParsing;
 using static SmokeSolver.Cli.MeshSetup;
-using static SmokeSolver.Cli.LineupApi;
 using static SmokeSolver.Cli.TargetSolver;
-using static SmokeSolver.Cli.ExtractCommand;
-using static SmokeSolver.Cli.InfoCommand;
-using static SmokeSolver.Cli.SmokeCommand;
-using static SmokeSolver.Cli.SightlineCommand;
-using static SmokeSolver.Cli.SolveCommand;
-using static SmokeSolver.Cli.GroundCommand;
-using static SmokeSolver.Cli.LineupsCommand;
-using static SmokeSolver.Cli.ViewerDataCommand;
-using static SmokeSolver.Cli.ServeCommand;
-using static SmokeSolver.Cli.ThrowCommand;
-using static SmokeSolver.Cli.CalibrateCommand;
-using static SmokeSolver.Cli.ValidateCommand;
-using static SmokeSolver.Cli.ExportGltfCommand;
-using static SmokeSolver.Cli.BestLineupCommand;
-using static SmokeSolver.Cli.PointLineupCommand;
-
 namespace SmokeSolver.Cli;
 
 public static class ValidateCommand
@@ -259,6 +243,7 @@ public static class ValidateCommand
         var within8 = 0;
         var notDetonated = 0;
         var culled = 0;
+        var stuck = 0;
         foreach (var p in plans)
         {
             if (!matches.TryGetValue(p.Index, out var c))
@@ -271,22 +256,31 @@ public static class ValidateCommand
             if (!detonated)
             {
                 notDetonated++;
-                // An undetonated capture whose last sample is still moving fast
-                // is a projectile the engine CULLED mid-flight (dense batches
-                // keep dozens airborne) - its "rest" is wherever deletion caught
-                // it, not physics. Grading those poisoned a whole campaign's
-                // metrics with phantom 1000u+ errors; they are counted and
-                // skipped, never scored.
+                // A grenade that never detonated never produced a smoke, so its
+                // "rest" is not a landing this sim was predicting - it is
+                // wherever the capture stopped. Two ways that happens: the
+                // engine CULLED the projectile mid-flight (dense batches keep
+                // dozens airborne; last sample still moving fast), or it wedged
+                // in geometry and never settled (last sample slow). Scoring
+                // either poisons the campaign with phantom 1000u+ errors - the
+                // slow case alone contributed 22 rows up to 2019u before this
+                // was split out. Both are counted and skipped, never scored.
                 var lastSample = c.GetProperty("samples").EnumerateArray().LastOrDefault();
+                var fast = false;
                 if (lastSample.ValueKind == JsonValueKind.Array)
                 {
                     var ls = lastSample.EnumerateArray().Select(e => e.GetSingle()).ToArray();
-                    if (ls.Length >= 7 && new Vector3(ls[4], ls[5], ls[6]).Length() > 50f)
-                    {
-                        culled++;
-                        continue;
-                    }
+                    fast = ls.Length >= 7 && new Vector3(ls[4], ls[5], ls[6]).Length() > 50f;
                 }
+                if (fast)
+                {
+                    culled++;
+                }
+                else
+                {
+                    stuck++;
+                }
+                continue;
             }
             var err = Vector3.Distance(real, p.PredictedRest);
             // Headline metrics stay base-throws-only so run summaries remain
@@ -332,13 +326,22 @@ public static class ValidateCommand
                 var dvx = samples[i][4] - samples[i - 1][4];
                 var dvy = samples[i][5] - samples[i - 1][5];
                 var dvz = samples[i][6] - samples[i - 1][6];
-                if (samples[i][4] == 0 && samples[i][5] == 0 && samples[i][6] == 0)
-                {
-                    break;
-                }
+                // Score the discontinuity BEFORE testing for rest: the final
+                // impact snaps velocity to zero, and breaking first silently
+                // dropped that settle contact - which the sim does count, so
+                // every cleanly tracked throw read predicted = real + 1.
                 if (MathF.Abs(dvx) > 0.5f || MathF.Abs(dvy) > 0.5f || MathF.Abs(dvz + 5f) > 0.5f)
                 {
                     realBounces++;
+                }
+                // Near-zero, not exactly zero: post-rest telemetry jitter on
+                // rough surfaces never hits exact zero and used to keep this
+                // loop counting noise as hundreds of "bounces". A ballistic
+                // sample can't sit under 1 u/s on all three axes (gravity moves
+                // vz ~5 per sample), so this only triggers at genuine rest.
+                if (MathF.Abs(samples[i][4]) < 1f && MathF.Abs(samples[i][5]) < 1f && MathF.Abs(samples[i][6]) < 1f)
+                {
+                    break;
                 }
             }
             var divergenceTick = -1;
@@ -421,6 +424,10 @@ public static class ValidateCommand
             graded = errors.Count,
             notDetonated,
             culled,
+            // Undetonated and wedged in geometry rather than culled in flight.
+            // Split out because these used to be scored, and a handful of them
+            // dominated a whole map's mean/p90/max.
+            stuck,
             passRadius,
             withinPass,
             within1,
@@ -433,7 +440,7 @@ public static class ValidateCommand
             perturbed,
         };
         Console.WriteLine($"predicted-vs-real rest error: median {summary.errMedian:F1}u  mean {summary.errMean:F1}u  p90 {summary.errP90:F1}u  max {summary.errMax:F1}u");
-        Console.WriteLine($"within {passRadius:F0}u: {withinPass}/{errors.Count} ({100.0 * withinPass / errors.Count:F0}%)   within 8u: {within8}/{errors.Count} ({100.0 * within8 / errors.Count:F0}%)   failed to detonate: {notDetonated}   culled by engine (excluded): {culled}");
+        Console.WriteLine($"within {passRadius:F0}u: {withinPass}/{errors.Count} ({100.0 * withinPass / errors.Count:F0}%)   within 8u: {within8}/{errors.Count} ({100.0 * within8 / errors.Count:F0}%)   failed to detonate: {notDetonated} (excluded: {culled} culled in flight, {stuck} wedged)");
         if (perturbed != null)
         {
             Console.WriteLine($"one-tick probes (+-{perturbed.radius:F2}u): {perturbed.count} thrown, median {perturbed.errMedian:F1}u, p90 {perturbed.errP90:F1}u, max {perturbed.errMax:F1}u, within 1u {100.0 * perturbed.within1 / perturbed.count:F0}%, within 2u {100.0 * perturbed.within2 / perturbed.count:F0}%");

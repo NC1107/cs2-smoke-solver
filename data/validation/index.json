@@ -1,6 +1,522 @@
 {
-  "generated": "2026-07-16T00:21:18.7592585-04:00",
+  "generated": "2026-08-30T12:21:29.8869358-04:00",
   "runs": [
+    {
+      "file": "cs_office-20260726-112237.json",
+      "map": "cs_office",
+      "name": "auto-1",
+      "batch": "hull-standspots-check",
+      "timestamp": "2026-07-26T11:22:37.7077039-04:00",
+      "target": [
+        -92.625,
+        -1050.8752,
+        -221.42958
+      ],
+      "summary": {
+        "lineups": 39,
+        "submitted": 39,
+        "matched": 39,
+        "graded": 39,
+        "notDetonated": 0,
+        "culled": 0,
+        "passRadius": 3,
+        "withinPass": 26,
+        "within1": 16,
+        "within2": 25,
+        "within8": 28,
+        "errMedian": 1.2567495,
+        "errMean": 6.723405,
+        "errP90": 18.69443,
+        "errMax": 51.596596,
+        "perturbed": null
+      }
+    },
+    {
+      "file": "cs_office-20260726-112453.json",
+      "map": "cs_office",
+      "name": "auto-2",
+      "batch": "hull-standspots-check",
+      "timestamp": "2026-07-26T11:24:53.0989716-04:00",
+      "target": [
+        2269.5,
+        3.9999542,
+        -157.42955
+      ],
+      "summary": {
+        "lineups": 40,
+        "submitted": 40,
+        "matched": 40,
+        "graded": 40,
+        "notDetonated": 0,
+        "culled": 0,
+        "passRadius": 3,
+        "withinPass": 37,
+        "within1": 24,
+        "within2": 32,
+        "within8": 40,
+        "errMedian": 0.6576337,
+        "errMean": 1.1848716,
+        "errP90": 2.9535096,
+        "errMax": 4.086928,
+        "perturbed": null
+      }
+    },
+    {
+      "file": "de_ancient-20260716-042857.json",
+      "map": "de_ancient",
+      "name": "fuzz-1",
+      "batch": "overnight-20260716-0421",
+      "timestamp": "2026-07-16T04:28:57.4144936-04:00",
+      "target": [
+        932.73865,
+        323.61942,
+        130.49997
+      ],
+      "summary": {
+        "lineups": 125,
+        "submitted": 125,
+        "matched": 123,
+        "graded": 25,
+        "notDetonated": 0,
+        "culled": 0,
+        "passRadius": 2,
+        "withinPass": 19,
+        "within1": 17,
+        "within2": 19,
+        "within8": 22,
+        "errMedian": 0.49661234,
+        "errMean": 6.515821,
+        "errP90": 38.941135,
+        "errMax": 56.739708,
+        "perturbed": {
+          "radius": 0.25,
+          "count": 98,
+          "errMedian": 0.49638382,
+          "errP90": 3.669153,
+          "errMax": 56.792824,
+          "within1": 62,
+          "within2": 75
+        }
+      }
+    },
+    {
+      "file": "de_ancient-20260716-043606.json",
+      "map": "de_ancient",
+      "name": "fuzz-2",
+      "batch": "overnight-20260716-0421",
+      "timestamp": "2026-07-16T04:36:06.1372816-04:00",
+      "target": [
+        -1669.5183,
+        -922.3568,
+        3.4999564
+      ],
+      "summary": {
+        "lineups": 125,
+        "submitted": 125,
+        "matched": 121,
+        "graded": 25,
+        "notDetonated": 0,
+        "culled": 0,
+        "passRadius": 2,
+        "withinPass": 20,
+        "within1": 12,
+        "within2": 20,
+        "within8": 25,
+        "errMedian": 1.0243198,
+        "errMean": 1.4377213,
+        "errP90": 3.664842,
+        "errMax": 5.820159,
+        "perturbed": {
+          "radius": 0.25,
+          "count": 96,
+          "errMedian": 1.1723528,
+          "errP90": 5.4541063,
+          "errMax": 41.307556,
+          "within1": 38,
+          "within2": 69
+        }
+      }
+    },
+    {
+      "file": "de_ancient-20260716-044228.json",
+      "map": "de_ancient",
+      "name": "fuzz-3",
+      "batch": "overnight-20260716-0421",
+      "timestamp": "2026-07-16T04:42:28.1674889-04:00",
+      "target": [
+        -1856.2257,
+        1219.3527,
+        58.33329
+      ],
+      "summary": {
+        "lineups": 125,
+        "submitted": 125,
+        "matched": 123,
+        "graded": 25,
+        "notDetonated": 0,
+        "culled": 0,
+        "passRadius": 2,
+        "withinPass": 22,
+        "within1": 17,
+        "within2": 22,
+        "within8": 25,
+        "errMedian": 0.5479474,
+        "errMean": 0.9516714,
+        "errP90": 2.0034666,
+        "errMax": 5.45436,
+        "perturbed": {
+          "radius": 0.25,
+          "count": 98,
+          "errMedian": 0.54928887,
+          "errP90": 2.258553,
+          "errMax": 7.130489,
+          "within1": 63,
+          "within2": 83
+        }
+      }
+    },
+    {
+      "file": "de_ancient-20260716-065934.json",
+      "map": "de_ancient",
+      "name": "fuzz-1",
+      "batch": "overnight-20260716-0421",
+      "timestamp": "2026-07-16T06:59:34.4637003-04:00",
+      "target": [
+        -682.0221,
+        -1607.7249,
+        -124.500046
+      ],
+      "summary": {
+        "lineups": 125,
+        "submitted": 125,
+        "matched": 124,
+        "graded": 25,
+        "notDetonated": 0,
+        "culled": 0,
+        "passRadius": 2,
+        "withinPass": 21,
+        "within1": 15,
+        "within2": 21,
+        "within8": 23,
+        "errMedian": 0.83343226,
+        "errMean": 3.9809802,
+        "errP90": 3.989055,
+        "errMax": 65.896385,
+        "perturbed": {
+          "radius": 0.25,
+          "count": 99,
+          "errMedian": 0.8464762,
+          "errP90": 3.420403,
+          "errMax": 65.73225,
+          "within1": 62,
+          "within2": 84
+        }
+      }
+    },
+    {
+      "file": "de_ancient-20260716-070459.json",
+      "map": "de_ancient",
+      "name": "fuzz-2",
+      "batch": "overnight-20260716-0421",
+      "timestamp": "2026-07-16T07:04:59.0056186-04:00",
+      "target": [
+        -609.2041,
+        -2365.056,
+        -152.50005
+      ],
+      "summary": {
+        "lineups": 125,
+        "submitted": 125,
+        "matched": 124,
+        "graded": 25,
+        "notDetonated": 0,
+        "culled": 0,
+        "passRadius": 2,
+        "withinPass": 24,
+        "within1": 23,
+        "within2": 24,
+        "within8": 25,
+        "errMedian": 0.3720543,
+        "errMean": 0.5908556,
+        "errP90": 0.8021351,
+        "errMax": 5.3915334,
+        "perturbed": {
+          "radius": 0.25,
+          "count": 99,
+          "errMedian": 0.5906586,
+          "errP90": 1.4206841,
+          "errMax": 4.1884174,
+          "within1": 77,
+          "within2": 96
+        }
+      }
+    },
+    {
+      "file": "de_ancient-20260716-071145.json",
+      "map": "de_ancient",
+      "name": "fuzz-3",
+      "batch": "overnight-20260716-0421",
+      "timestamp": "2026-07-16T07:11:45.9192564-04:00",
+      "target": [
+        1264.8048,
+        -618.5875,
+        27.499964
+      ],
+      "summary": {
+        "lineups": 125,
+        "submitted": 125,
+        "matched": 123,
+        "graded": 25,
+        "notDetonated": 0,
+        "culled": 0,
+        "passRadius": 2,
+        "withinPass": 22,
+        "within1": 20,
+        "within2": 22,
+        "within8": 24,
+        "errMedian": 0.50167584,
+        "errMean": 2.4091887,
+        "errP90": 2.9169815,
+        "errMax": 39.850384,
+        "perturbed": {
+          "radius": 0.25,
+          "count": 98,
+          "errMedian": 0.55716074,
+          "errP90": 3.5627615,
+          "errMax": 81.25575,
+          "within1": 76,
+          "within2": 83
+        }
+      }
+    },
+    {
+      "file": "de_anubis-20260716-045036.json",
+      "map": "de_anubis",
+      "name": "fuzz-1",
+      "batch": "overnight-20260716-0421",
+      "timestamp": "2026-07-16T04:50:36.8125706-04:00",
+      "target": [
+        -1212.4719,
+        297.969,
+        -10.499954
+      ],
+      "summary": {
+        "lineups": 125,
+        "submitted": 125,
+        "matched": 125,
+        "graded": 25,
+        "notDetonated": 0,
+        "culled": 0,
+        "passRadius": 2,
+        "withinPass": 23,
+        "within1": 19,
+        "within2": 23,
+        "within8": 25,
+        "errMedian": 0.58319974,
+        "errMean": 0.7070723,
+        "errP90": 1.6355693,
+        "errMax": 3.0662804,
+        "perturbed": {
+          "radius": 0.25,
+          "count": 100,
+          "errMedian": 0.58318657,
+          "errP90": 1.9048927,
+          "errMax": 8.917457,
+          "within1": 76,
+          "within2": 91
+        }
+      }
+    },
+    {
+      "file": "de_anubis-20260716-045705.json",
+      "map": "de_anubis",
+      "name": "fuzz-2",
+      "batch": "overnight-20260716-0421",
+      "timestamp": "2026-07-16T04:57:05.1359315-04:00",
+      "target": [
+        -275.84332,
+        2102.871,
+        26.000034
+      ],
+      "summary": {
+        "lineups": 125,
+        "submitted": 125,
+        "matched": 125,
+        "graded": 25,
+        "notDetonated": 0,
+        "culled": 0,
+        "passRadius": 2,
+        "withinPass": 15,
+        "within1": 13,
+        "within2": 15,
+        "within8": 25,
+        "errMedian": 0.9228681,
+        "errMean": 1.5642909,
+        "errP90": 3.3620555,
+        "errMax": 3.850023,
+        "perturbed": {
+          "radius": 0.25,
+          "count": 100,
+          "errMedian": 0.9953182,
+          "errP90": 3.3620858,
+          "errMax": 40.710743,
+          "within1": 51,
+          "within2": 66
+        }
+      }
+    },
+    {
+      "file": "de_anubis-20260716-050433.json",
+      "map": "de_anubis",
+      "name": "fuzz-3",
+      "batch": "overnight-20260716-0421",
+      "timestamp": "2026-07-16T05:04:33.1334622-04:00",
+      "target": [
+        -57.744377,
+        155.11632,
+        4.0000253
+      ],
+      "summary": {
+        "lineups": 125,
+        "submitted": 125,
+        "matched": 125,
+        "graded": 25,
+        "notDetonated": 0,
+        "culled": 0,
+        "passRadius": 2,
+        "withinPass": 24,
+        "within1": 22,
+        "within2": 24,
+        "within8": 25,
+        "errMedian": 0.39070636,
+        "errMean": 0.5534419,
+        "errP90": 1.01104,
+        "errMax": 2.8500159,
+        "perturbed": {
+          "radius": 0.25,
+          "count": 100,
+          "errMedian": 0.5065958,
+          "errP90": 1.0124363,
+          "errMax": 2.8500772,
+          "within1": 85,
+          "within2": 96
+        }
+      }
+    },
+    {
+      "file": "de_anubis-20260716-071902.json",
+      "map": "de_anubis",
+      "name": "fuzz-1",
+      "batch": "overnight-20260716-0421",
+      "timestamp": "2026-07-16T07:19:02.8359539-04:00",
+      "target": [
+        -1501.2051,
+        759.217,
+        42.000042
+      ],
+      "summary": {
+        "lineups": 125,
+        "submitted": 125,
+        "matched": 123,
+        "graded": 25,
+        "notDetonated": 0,
+        "culled": 0,
+        "passRadius": 2,
+        "withinPass": 22,
+        "within1": 21,
+        "within2": 22,
+        "within8": 25,
+        "errMedian": 0.5398918,
+        "errMean": 0.7971875,
+        "errP90": 2.157038,
+        "errMax": 4.220192,
+        "perturbed": {
+          "radius": 0.25,
+          "count": 98,
+          "errMedian": 0.6259881,
+          "errP90": 2.1570742,
+          "errMax": 4.2228274,
+          "within1": 82,
+          "within2": 86
+        }
+      }
+    },
+    {
+      "file": "de_anubis-20260716-072613.json",
+      "map": "de_anubis",
+      "name": "fuzz-2",
+      "batch": "overnight-20260716-0421",
+      "timestamp": "2026-07-16T07:26:13.0360825-04:00",
+      "target": [
+        972.2164,
+        164.77454,
+        -185.99998
+      ],
+      "summary": {
+        "lineups": 125,
+        "submitted": 125,
+        "matched": 121,
+        "graded": 25,
+        "notDetonated": 0,
+        "culled": 0,
+        "passRadius": 2,
+        "withinPass": 25,
+        "within1": 18,
+        "within2": 25,
+        "within8": 25,
+        "errMedian": 0.29057038,
+        "errMean": 0.5807716,
+        "errP90": 1.4579015,
+        "errMax": 1.6922355,
+        "perturbed": {
+          "radius": 0.25,
+          "count": 96,
+          "errMedian": 0.39888462,
+          "errP90": 1.711436,
+          "errMax": 67.510086,
+          "within1": 62,
+          "within2": 92
+        }
+      }
+    },
+    {
+      "file": "de_anubis-20260716-073201.json",
+      "map": "de_anubis",
+      "name": "fuzz-3",
+      "batch": "overnight-20260716-0421",
+      "timestamp": "2026-07-16T07:32:01.4179605-04:00",
+      "target": [
+        399.5095,
+        -1487.1858,
+        -3.3333044
+      ],
+      "summary": {
+        "lineups": 125,
+        "submitted": 125,
+        "matched": 124,
+        "graded": 25,
+        "notDetonated": 0,
+        "culled": 0,
+        "passRadius": 2,
+        "withinPass": 20,
+        "within1": 17,
+        "within2": 20,
+        "within8": 25,
+        "errMedian": 0.50643945,
+        "errMean": 0.91524744,
+        "errP90": 2.5605102,
+        "errMax": 3.73391,
+        "perturbed": {
+          "radius": 0.25,
+          "count": 99,
+          "errMedian": 0.5089448,
+          "errP90": 2.5605938,
+          "errMax": 4.0933166,
+          "within1": 68,
+          "within2": 79
+        }
+      }
+    },
     {
       "file": "de_dust2-20260709-200339.json",
       "map": "de_dust2",
@@ -866,6 +1382,1002 @@
       }
     },
     {
+      "file": "de_dust2-20260716-051243.json",
+      "map": "de_dust2",
+      "name": "fuzz-1",
+      "batch": "overnight-20260716-0421",
+      "timestamp": "2026-07-16T05:12:43.2873940-04:00",
+      "target": [
+        758.61255,
+        866.645,
+        3.499994
+      ],
+      "summary": {
+        "lineups": 125,
+        "submitted": 125,
+        "matched": 123,
+        "graded": 25,
+        "notDetonated": 0,
+        "culled": 0,
+        "passRadius": 2,
+        "withinPass": 21,
+        "within1": 13,
+        "within2": 21,
+        "within8": 24,
+        "errMedian": 0.93130726,
+        "errMean": 8.580397,
+        "errP90": 2.7093806,
+        "errMax": 189.21327,
+        "perturbed": {
+          "radius": 0.25,
+          "count": 98,
+          "errMedian": 1.0370845,
+          "errP90": 2.0434377,
+          "errMax": 189.2961,
+          "within1": 40,
+          "within2": 81
+        }
+      }
+    },
+    {
+      "file": "de_dust2-20260716-051907.json",
+      "map": "de_dust2",
+      "name": "fuzz-2",
+      "batch": "overnight-20260716-0421",
+      "timestamp": "2026-07-16T05:19:07.9218488-04:00",
+      "target": [
+        1556.0006,
+        1640.8668,
+        1.5318394E-05
+      ],
+      "summary": {
+        "lineups": 125,
+        "submitted": 125,
+        "matched": 118,
+        "graded": 25,
+        "notDetonated": 0,
+        "culled": 0,
+        "passRadius": 2,
+        "withinPass": 17,
+        "within1": 11,
+        "within2": 17,
+        "within8": 24,
+        "errMedian": 1.1766301,
+        "errMean": 3.4191628,
+        "errP90": 2.5159273,
+        "errMax": 55.574467,
+        "perturbed": {
+          "radius": 0.25,
+          "count": 93,
+          "errMedian": 1.1778405,
+          "errP90": 2.8217578,
+          "errMax": 139.57118,
+          "within1": 41,
+          "within2": 67
+        }
+      }
+    },
+    {
+      "file": "de_dust2-20260716-052601.json",
+      "map": "de_dust2",
+      "name": "fuzz-3",
+      "batch": "overnight-20260716-0421",
+      "timestamp": "2026-07-16T05:26:01.8390038-04:00",
+      "target": [
+        224.2756,
+        -461.1166,
+        2.5000064
+      ],
+      "summary": {
+        "lineups": 125,
+        "submitted": 125,
+        "matched": 124,
+        "graded": 25,
+        "notDetonated": 0,
+        "culled": 0,
+        "passRadius": 2,
+        "withinPass": 24,
+        "within1": 18,
+        "within2": 24,
+        "within8": 25,
+        "errMedian": 0.7039185,
+        "errMean": 0.79931045,
+        "errP90": 1.2593532,
+        "errMax": 2.8352091,
+        "perturbed": {
+          "radius": 0.25,
+          "count": 99,
+          "errMedian": 0.70400965,
+          "errP90": 1.1848855,
+          "errMax": 2.8951137,
+          "within1": 73,
+          "within2": 95
+        }
+      }
+    },
+    {
+      "file": "de_dust2-20260716-073749.json",
+      "map": "de_dust2",
+      "name": "fuzz-1",
+      "batch": "overnight-20260716-0421",
+      "timestamp": "2026-07-16T07:37:49.6511143-04:00",
+      "target": [
+        -189.32689,
+        2046.7614,
+        -122
+      ],
+      "summary": {
+        "lineups": 125,
+        "submitted": 125,
+        "matched": 125,
+        "graded": 25,
+        "notDetonated": 0,
+        "culled": 0,
+        "passRadius": 2,
+        "withinPass": 19,
+        "within1": 14,
+        "within2": 19,
+        "within8": 25,
+        "errMedian": 0.795249,
+        "errMean": 1.3622948,
+        "errP90": 3.2096455,
+        "errMax": 4.659825,
+        "perturbed": {
+          "radius": 0.25,
+          "count": 100,
+          "errMedian": 0.86679107,
+          "errP90": 3.2067952,
+          "errMax": 8.592379,
+          "within1": 55,
+          "within2": 76
+        }
+      }
+    },
+    {
+      "file": "de_dust2-20260716-074414.json",
+      "map": "de_dust2",
+      "name": "fuzz-2",
+      "batch": "overnight-20260716-0421",
+      "timestamp": "2026-07-16T07:44:14.5707506-04:00",
+      "target": [
+        1470.9542,
+        567.64417,
+        -134.5
+      ],
+      "summary": {
+        "lineups": 125,
+        "submitted": 125,
+        "matched": 124,
+        "graded": 25,
+        "notDetonated": 0,
+        "culled": 0,
+        "passRadius": 2,
+        "withinPass": 17,
+        "within1": 10,
+        "within2": 17,
+        "within8": 24,
+        "errMedian": 1.169368,
+        "errMean": 2.2276437,
+        "errP90": 5.0881877,
+        "errMax": 11.54118,
+        "perturbed": {
+          "radius": 0.25,
+          "count": 99,
+          "errMedian": 1.1654568,
+          "errP90": 6.6658216,
+          "errMax": 21.03571,
+          "within1": 40,
+          "within2": 69
+        }
+      }
+    },
+    {
+      "file": "de_dust2-20260716-075005.json",
+      "map": "de_dust2",
+      "name": "fuzz-3",
+      "batch": "overnight-20260716-0421",
+      "timestamp": "2026-07-16T07:50:05.7321196-04:00",
+      "target": [
+        -468.79074,
+        1767.8363,
+        -120.5
+      ],
+      "summary": {
+        "lineups": 125,
+        "submitted": 125,
+        "matched": 125,
+        "graded": 25,
+        "notDetonated": 0,
+        "culled": 0,
+        "passRadius": 2,
+        "withinPass": 20,
+        "within1": 16,
+        "within2": 20,
+        "within8": 25,
+        "errMedian": 0.7415207,
+        "errMean": 1.0124693,
+        "errP90": 2.283009,
+        "errMax": 2.6529775,
+        "perturbed": {
+          "radius": 0.25,
+          "count": 100,
+          "errMedian": 0.5660918,
+          "errP90": 2.4234622,
+          "errMax": 3.1978338,
+          "within1": 62,
+          "within2": 80
+        }
+      }
+    },
+    {
+      "file": "de_dust2-20260726-105040.json",
+      "map": "de_dust2",
+      "name": "mid_door",
+      "batch": "hull-standspots-check",
+      "timestamp": "2026-07-26T10:50:40.0084670-04:00",
+      "target": [
+        -395.9927,
+        1621.5656,
+        -126.52221
+      ],
+      "summary": {
+        "lineups": 40,
+        "submitted": 40,
+        "matched": 40,
+        "graded": 40,
+        "notDetonated": 0,
+        "culled": 0,
+        "passRadius": 3,
+        "withinPass": 36,
+        "within1": 23,
+        "within2": 32,
+        "within8": 40,
+        "errMedian": 0.7388009,
+        "errMean": 1.1167238,
+        "errP90": 3.1483784,
+        "errMax": 5.1861444,
+        "perturbed": null
+      }
+    },
+    {
+      "file": "de_dust2-20260726-105655.json",
+      "map": "de_dust2",
+      "name": "x_box",
+      "batch": "hull-standspots-check",
+      "timestamp": "2026-07-26T10:56:55.0242413-04:00",
+      "target": [
+        -292.44843,
+        1429.4453,
+        -27.96875
+      ],
+      "summary": {
+        "lineups": 40,
+        "submitted": 40,
+        "matched": 40,
+        "graded": 40,
+        "notDetonated": 0,
+        "culled": 0,
+        "passRadius": 3,
+        "withinPass": 31,
+        "within1": 21,
+        "within2": 30,
+        "within8": 37,
+        "errMedian": 0.90346867,
+        "errMean": 6.874817,
+        "errP90": 7.903842,
+        "errMax": 142.36378,
+        "perturbed": null
+      }
+    },
+    {
+      "file": "de_dust2-20260726-110144.json",
+      "map": "de_dust2",
+      "name": "long_boost_box",
+      "batch": "hull-standspots-check",
+      "timestamp": "2026-07-26T11:01:44.8665467-04:00",
+      "target": [
+        687.1343,
+        685.33527,
+        77.0283
+      ],
+      "summary": {
+        "lineups": 40,
+        "submitted": 40,
+        "matched": 40,
+        "graded": 40,
+        "notDetonated": 0,
+        "culled": 0,
+        "passRadius": 3,
+        "withinPass": 39,
+        "within1": 33,
+        "within2": 39,
+        "within8": 39,
+        "errMedian": 0.4212189,
+        "errMean": 2.4249144,
+        "errP90": 1.3616791,
+        "errMax": 75.615326,
+        "perturbed": null
+      }
+    },
+    {
+      "file": "de_dust2-20260726-110513.json",
+      "map": "de_dust2",
+      "name": "b_top_box",
+      "batch": "hull-standspots-check",
+      "timestamp": "2026-07-26T11:05:13.8417492-04:00",
+      "target": [
+        -1630.9525,
+        2546.232,
+        133.78125
+      ],
+      "summary": {
+        "lineups": 40,
+        "submitted": 40,
+        "matched": 40,
+        "graded": 40,
+        "notDetonated": 0,
+        "culled": 0,
+        "passRadius": 3,
+        "withinPass": 30,
+        "within1": 19,
+        "within2": 27,
+        "within8": 36,
+        "errMedian": 1.091625,
+        "errMean": 8.902993,
+        "errP90": 16.79962,
+        "errMax": 137.05687,
+        "perturbed": null
+      }
+    },
+    {
+      "file": "de_dust2-20260726-110927.json",
+      "map": "de_dust2",
+      "name": "pole",
+      "batch": "hull-standspots-check",
+      "timestamp": "2026-07-26T11:09:27.8724409-04:00",
+      "target": [
+        -246.02505,
+        757.6251,
+        542.9112
+      ],
+      "summary": {
+        "lineups": 2,
+        "submitted": 2,
+        "matched": 2,
+        "graded": 2,
+        "notDetonated": 0,
+        "culled": 0,
+        "passRadius": 3,
+        "withinPass": 2,
+        "within1": 2,
+        "within2": 2,
+        "within8": 2,
+        "errMedian": 0.11972151,
+        "errMean": 0.08404836,
+        "errP90": 0.11972151,
+        "errMax": 0.11972151,
+        "perturbed": null
+      }
+    },
+    {
+      "file": "de_dust2-20260726-111423.json",
+      "map": "de_dust2",
+      "name": "top_door",
+      "batch": "hull-standspots-check",
+      "timestamp": "2026-07-26T11:14:23.2769704-04:00",
+      "target": [
+        -436.71628,
+        1592.5829,
+        19.94853
+      ],
+      "summary": {
+        "lineups": 9,
+        "submitted": 9,
+        "matched": 9,
+        "graded": 9,
+        "notDetonated": 0,
+        "culled": 0,
+        "passRadius": 3,
+        "withinPass": 8,
+        "within1": 8,
+        "within2": 8,
+        "within8": 8,
+        "errMedian": 0.42958555,
+        "errMean": 23.937214,
+        "errP90": 212.60954,
+        "errMax": 212.60954,
+        "perturbed": null
+      }
+    },
+    {
+      "file": "de_dust2-20260726-111830.json",
+      "map": "de_dust2",
+      "name": "top_window",
+      "batch": "hull-standspots-check",
+      "timestamp": "2026-07-26T11:18:30.0199957-04:00",
+      "target": [
+        -1322.0044,
+        2633.8955,
+        224.58302
+      ],
+      "summary": {
+        "lineups": 40,
+        "submitted": 40,
+        "matched": 40,
+        "graded": 40,
+        "notDetonated": 0,
+        "culled": 0,
+        "passRadius": 3,
+        "withinPass": 37,
+        "within1": 31,
+        "within2": 33,
+        "within8": 40,
+        "errMedian": 0.6654601,
+        "errMean": 1.0182046,
+        "errP90": 2.6541343,
+        "errMax": 5.340712,
+        "perturbed": null
+      }
+    },
+    {
+      "file": "de_dust2-20260830-114913.json",
+      "map": "de_dust2",
+      "name": "mid_door",
+      "batch": "batch-20260830-1100",
+      "timestamp": "2026-08-30T11:49:13.8491390-04:00",
+      "target": [
+        -395.9927,
+        1621.5656,
+        -126.52221
+      ],
+      "summary": {
+        "lineups": 60,
+        "submitted": 60,
+        "matched": 60,
+        "graded": 60,
+        "notDetonated": 0,
+        "culled": 0,
+        "passRadius": 3,
+        "withinPass": 60,
+        "within1": 46,
+        "within2": 53,
+        "within8": 60,
+        "errMedian": 0.39527035,
+        "errMean": 0.730946,
+        "errP90": 2.2210355,
+        "errMax": 2.8402174,
+        "perturbed": null
+      }
+    },
+    {
+      "file": "de_dust2-20260830-115519.json",
+      "map": "de_dust2",
+      "name": "x_box",
+      "batch": "batch-20260830-1100",
+      "timestamp": "2026-08-30T11:55:19.1895348-04:00",
+      "target": [
+        -292.44843,
+        1429.4453,
+        -27.96875
+      ],
+      "summary": {
+        "lineups": 60,
+        "submitted": 60,
+        "matched": 60,
+        "graded": 60,
+        "notDetonated": 0,
+        "culled": 0,
+        "passRadius": 3,
+        "withinPass": 49,
+        "within1": 43,
+        "within2": 49,
+        "within8": 59,
+        "errMedian": 0.35677305,
+        "errMean": 1.6737441,
+        "errP90": 5.6354103,
+        "errMax": 25.076311,
+        "perturbed": null
+      }
+    },
+    {
+      "file": "de_dust2-20260830-120004.json",
+      "map": "de_dust2",
+      "name": "long_boost_box",
+      "batch": "batch-20260830-1100",
+      "timestamp": "2026-08-30T12:00:04.1974590-04:00",
+      "target": [
+        687.1343,
+        685.33527,
+        77.0283
+      ],
+      "summary": {
+        "lineups": 60,
+        "submitted": 60,
+        "matched": 60,
+        "graded": 60,
+        "notDetonated": 0,
+        "culled": 0,
+        "passRadius": 3,
+        "withinPass": 60,
+        "within1": 51,
+        "within2": 60,
+        "within8": 60,
+        "errMedian": 0.3790377,
+        "errMean": 0.51148665,
+        "errP90": 1.1141585,
+        "errMax": 1.7329538,
+        "perturbed": null
+      }
+    },
+    {
+      "file": "de_dust2-20260830-120338.json",
+      "map": "de_dust2",
+      "name": "b_top_box",
+      "batch": "batch-20260830-1100",
+      "timestamp": "2026-08-30T12:03:38.9724907-04:00",
+      "target": [
+        -1630.9525,
+        2546.232,
+        133.78125
+      ],
+      "summary": {
+        "lineups": 60,
+        "submitted": 60,
+        "matched": 60,
+        "graded": 60,
+        "notDetonated": 0,
+        "culled": 0,
+        "passRadius": 3,
+        "withinPass": 52,
+        "within1": 46,
+        "within2": 52,
+        "within8": 58,
+        "errMedian": 0.4217232,
+        "errMean": 1.4006364,
+        "errP90": 4.937928,
+        "errMax": 17.73113,
+        "perturbed": null
+      }
+    },
+    {
+      "file": "de_dust2-20260830-120729.json",
+      "map": "de_dust2",
+      "name": "pole",
+      "batch": "batch-20260830-1100",
+      "timestamp": "2026-08-30T12:07:29.2514943-04:00",
+      "target": [
+        -246.02505,
+        757.6251,
+        542.9112
+      ],
+      "summary": {
+        "lineups": 4,
+        "submitted": 4,
+        "matched": 4,
+        "graded": 4,
+        "notDetonated": 0,
+        "culled": 0,
+        "passRadius": 3,
+        "withinPass": 4,
+        "within1": 4,
+        "within2": 4,
+        "within8": 4,
+        "errMedian": 0.044639487,
+        "errMean": 0.05532436,
+        "errP90": 0.11388562,
+        "errMax": 0.11388562,
+        "perturbed": null
+      }
+    },
+    {
+      "file": "de_dust2-20260830-121430.json",
+      "map": "de_dust2",
+      "name": "top_door",
+      "batch": "batch-20260830-1100",
+      "timestamp": "2026-08-30T12:14:30.8976895-04:00",
+      "target": [
+        -436.71628,
+        1592.5829,
+        19.94853
+      ],
+      "summary": {
+        "lineups": 60,
+        "submitted": 60,
+        "matched": 60,
+        "graded": 60,
+        "notDetonated": 0,
+        "culled": 0,
+        "passRadius": 3,
+        "withinPass": 54,
+        "within1": 39,
+        "within2": 49,
+        "within8": 55,
+        "errMedian": 0.690112,
+        "errMean": 8.915892,
+        "errP90": 6.028806,
+        "errMax": 216.91957,
+        "perturbed": null
+      }
+    },
+    {
+      "file": "de_dust2-20260830-122129.json",
+      "map": "de_dust2",
+      "name": "top_window",
+      "batch": "batch-20260830-1100",
+      "timestamp": "2026-08-30T12:21:29.7791498-04:00",
+      "target": [
+        -1322.0044,
+        2633.8955,
+        224.58302
+      ],
+      "summary": {
+        "lineups": 60,
+        "submitted": 60,
+        "matched": 60,
+        "graded": 60,
+        "notDetonated": 0,
+        "culled": 0,
+        "passRadius": 3,
+        "withinPass": 57,
+        "within1": 53,
+        "within2": 56,
+        "within8": 58,
+        "errMedian": 0.38084984,
+        "errMean": 2.469002,
+        "errP90": 1.2913384,
+        "errMax": 107.207985,
+        "perturbed": null
+      }
+    },
+    {
+      "file": "de_inferno-20260716-053302.json",
+      "map": "de_inferno",
+      "name": "fuzz-1",
+      "batch": "overnight-20260716-0421",
+      "timestamp": "2026-07-16T05:33:02.2151755-04:00",
+      "target": [
+        1696.0302,
+        2917.0574,
+        130.6666
+      ],
+      "summary": {
+        "lineups": 125,
+        "submitted": 125,
+        "matched": 124,
+        "graded": 25,
+        "notDetonated": 0,
+        "culled": 0,
+        "passRadius": 2,
+        "withinPass": 19,
+        "within1": 14,
+        "within2": 19,
+        "within8": 25,
+        "errMedian": 0.7367942,
+        "errMean": 1.2909164,
+        "errP90": 2.827491,
+        "errMax": 4.466038,
+        "perturbed": {
+          "radius": 0.25,
+          "count": 99,
+          "errMedian": 1.0197357,
+          "errP90": 3.781749,
+          "errMax": 82.24881,
+          "within1": 49,
+          "within2": 72
+        }
+      }
+    },
+    {
+      "file": "de_inferno-20260716-054111.json",
+      "map": "de_inferno",
+      "name": "fuzz-2",
+      "batch": "overnight-20260716-0421",
+      "timestamp": "2026-07-16T05:41:11.2565000-04:00",
+      "target": [
+        1940.1033,
+        2672.1047,
+        127.99993
+      ],
+      "summary": {
+        "lineups": 125,
+        "submitted": 125,
+        "matched": 124,
+        "graded": 25,
+        "notDetonated": 0,
+        "culled": 0,
+        "passRadius": 2,
+        "withinPass": 25,
+        "within1": 16,
+        "within2": 25,
+        "within8": 25,
+        "errMedian": 0.74373996,
+        "errMean": 0.6983486,
+        "errP90": 1.0944018,
+        "errMax": 1.1570587,
+        "perturbed": {
+          "radius": 0.25,
+          "count": 99,
+          "errMedian": 0.74995035,
+          "errP90": 1.1055082,
+          "errMax": 1.4519138,
+          "within1": 60,
+          "within2": 99
+        }
+      }
+    },
+    {
+      "file": "de_inferno-20260716-054910.json",
+      "map": "de_inferno",
+      "name": "fuzz-3",
+      "batch": "overnight-20260716-0421",
+      "timestamp": "2026-07-16T05:49:10.1020668-04:00",
+      "target": [
+        -701.0582,
+        -392.55453,
+        0.49993747
+      ],
+      "summary": {
+        "lineups": 125,
+        "submitted": 125,
+        "matched": 124,
+        "graded": 25,
+        "notDetonated": 0,
+        "culled": 0,
+        "passRadius": 2,
+        "withinPass": 23,
+        "within1": 15,
+        "within2": 23,
+        "within8": 25,
+        "errMedian": 0.5206648,
+        "errMean": 0.90511006,
+        "errP90": 1.8742315,
+        "errMax": 4.243486,
+        "perturbed": {
+          "radius": 0.25,
+          "count": 99,
+          "errMedian": 0.5341295,
+          "errP90": 2.9269001,
+          "errMax": 10.215416,
+          "within1": 64,
+          "within2": 88
+        }
+      }
+    },
+    {
+      "file": "de_inferno-20260716-075823.json",
+      "map": "de_inferno",
+      "name": "fuzz-1",
+      "batch": "overnight-20260716-0421",
+      "timestamp": "2026-07-16T07:58:23.6417333-04:00",
+      "target": [
+        565.2907,
+        -126.01468,
+        83.99994
+      ],
+      "summary": {
+        "lineups": 125,
+        "submitted": 125,
+        "matched": 124,
+        "graded": 25,
+        "notDetonated": 0,
+        "culled": 0,
+        "passRadius": 2,
+        "withinPass": 21,
+        "within1": 17,
+        "within2": 21,
+        "within8": 23,
+        "errMedian": 0.49791756,
+        "errMean": 5.3972464,
+        "errP90": 3.5293715,
+        "errMax": 72.935715,
+        "perturbed": {
+          "radius": 0.25,
+          "count": 99,
+          "errMedian": 0.5039525,
+          "errP90": 3.5307913,
+          "errMax": 73.49223,
+          "within1": 66,
+          "within2": 84
+        }
+      }
+    },
+    {
+      "file": "de_inferno-20260716-080620.json",
+      "map": "de_inferno",
+      "name": "fuzz-2",
+      "batch": "overnight-20260716-0421",
+      "timestamp": "2026-07-16T08:06:20.3910634-04:00",
+      "target": [
+        692.21106,
+        -92.14351,
+        76.99994
+      ],
+      "summary": {
+        "lineups": 125,
+        "submitted": 125,
+        "matched": 123,
+        "graded": 25,
+        "notDetonated": 0,
+        "culled": 0,
+        "passRadius": 2,
+        "withinPass": 7,
+        "within1": 7,
+        "within2": 7,
+        "within8": 8,
+        "errMedian": 118.547714,
+        "errMean": 116.00947,
+        "errP90": 228.15462,
+        "errMax": 259.62796,
+        "perturbed": {
+          "radius": 0.25,
+          "count": 98,
+          "errMedian": 118.532326,
+          "errP90": 228.1886,
+          "errMax": 260.02905,
+          "within1": 26,
+          "within2": 28
+        }
+      }
+    },
+    {
+      "file": "de_inferno-20260716-081255.json",
+      "map": "de_inferno",
+      "name": "fuzz-3",
+      "batch": "overnight-20260716-0421",
+      "timestamp": "2026-07-16T08:12:55.5674127-04:00",
+      "target": [
+        -254.05171,
+        -418.86856,
+        195.99992
+      ],
+      "summary": {
+        "lineups": 125,
+        "submitted": 125,
+        "matched": 123,
+        "graded": 25,
+        "notDetonated": 0,
+        "culled": 0,
+        "passRadius": 2,
+        "withinPass": 15,
+        "within1": 8,
+        "within2": 15,
+        "within8": 25,
+        "errMedian": 1.66811,
+        "errMean": 1.9224799,
+        "errP90": 3.9022777,
+        "errMax": 5.181943,
+        "perturbed": {
+          "radius": 0.25,
+          "count": 98,
+          "errMedian": 1.5481505,
+          "errP90": 4.967692,
+          "errMax": 6.07331,
+          "within1": 31,
+          "within2": 60
+        }
+      }
+    },
+    {
+      "file": "de_inferno-20260830-112648.json",
+      "map": "de_inferno",
+      "name": "auto-1",
+      "batch": "batch-20260830-1100",
+      "timestamp": "2026-08-30T11:26:48.5809474-04:00",
+      "target": [
+        1190.5,
+        3195.4998,
+        131.99992
+      ],
+      "summary": {
+        "lineups": 60,
+        "submitted": 60,
+        "matched": 60,
+        "graded": 60,
+        "notDetonated": 0,
+        "culled": 0,
+        "passRadius": 3,
+        "withinPass": 58,
+        "within1": 40,
+        "within2": 56,
+        "within8": 60,
+        "errMedian": 0.50137466,
+        "errMean": 0.7966217,
+        "errP90": 1.5220288,
+        "errMax": 4.060243,
+        "perturbed": null
+      }
+    },
+    {
+      "file": "de_inferno-20260830-113206.json",
+      "map": "de_inferno",
+      "name": "auto-2",
+      "batch": "batch-20260830-1100",
+      "timestamp": "2026-08-30T11:32:06.2566302-04:00",
+      "target": [
+        -1053.6249,
+        -428.7501,
+        7.9999385
+      ],
+      "summary": {
+        "lineups": 60,
+        "submitted": 60,
+        "matched": 54,
+        "graded": 54,
+        "notDetonated": 0,
+        "culled": 0,
+        "passRadius": 3,
+        "withinPass": 46,
+        "within1": 32,
+        "within2": 40,
+        "within8": 54,
+        "errMedian": 0.5817998,
+        "errMean": 1.3236035,
+        "errP90": 4.5277915,
+        "errMax": 5.0596337,
+        "perturbed": null
+      }
+    },
+    {
+      "file": "de_inferno-20260830-113821.json",
+      "map": "de_inferno",
+      "name": "auto-3",
+      "batch": "batch-20260830-1100",
+      "timestamp": "2026-08-30T11:38:21.9735535-04:00",
+      "target": [
+        2567.5625,
+        -209.37529,
+        96.99993
+      ],
+      "summary": {
+        "lineups": 60,
+        "submitted": 60,
+        "matched": 60,
+        "graded": 60,
+        "notDetonated": 0,
+        "culled": 0,
+        "passRadius": 3,
+        "withinPass": 58,
+        "within1": 56,
+        "within2": 57,
+        "within8": 58,
+        "errMedian": 0.32311675,
+        "errMean": 1.9891652,
+        "errP90": 0.8638615,
+        "errMax": 58.31496,
+        "perturbed": null
+      }
+    },
+    {
+      "file": "de_inferno-20260830-114312.json",
+      "map": "de_inferno",
+      "name": "auto-4",
+      "batch": "batch-20260830-1100",
+      "timestamp": "2026-08-30T11:43:12.5979606-04:00",
+      "target": [
+        247.62494,
+        1297.9374,
+        109.49992
+      ],
+      "summary": {
+        "lineups": 60,
+        "submitted": 60,
+        "matched": 60,
+        "graded": 60,
+        "notDetonated": 0,
+        "culled": 0,
+        "passRadius": 3,
+        "withinPass": 51,
+        "within1": 28,
+        "within2": 49,
+        "within8": 55,
+        "errMedian": 1.0407379,
+        "errMean": 2.513494,
+        "errP90": 6.54389,
+        "errMax": 37.53135,
+        "perturbed": null
+      }
+    },
+    {
       "file": "de_mirage-20260714-200246.json",
       "map": "de_mirage",
       "name": "",
@@ -947,6 +2459,607 @@
       }
     },
     {
+      "file": "de_mirage-20260716-055516.json",
+      "map": "de_mirage",
+      "name": "fuzz-1",
+      "batch": "overnight-20260716-0421",
+      "timestamp": "2026-07-16T05:55:16.9573321-04:00",
+      "target": [
+        1174.0282,
+        289.161,
+        -252
+      ],
+      "summary": {
+        "lineups": 125,
+        "submitted": 125,
+        "matched": 124,
+        "graded": 25,
+        "notDetonated": 0,
+        "culled": 0,
+        "passRadius": 2,
+        "withinPass": 22,
+        "within1": 14,
+        "within2": 22,
+        "within8": 25,
+        "errMedian": 0.7484686,
+        "errMean": 1.1803199,
+        "errP90": 3.6071997,
+        "errMax": 4.4610615,
+        "perturbed": {
+          "radius": 0.25,
+          "count": 99,
+          "errMedian": 0.74876785,
+          "errP90": 2.0652194,
+          "errMax": 4.7890453,
+          "within1": 60,
+          "within2": 89
+        }
+      }
+    },
+    {
+      "file": "de_mirage-20260716-060117.json",
+      "map": "de_mirage",
+      "name": "fuzz-2",
+      "batch": "overnight-20260716-0421",
+      "timestamp": "2026-07-16T06:01:17.7622534-04:00",
+      "target": [
+        1149.6866,
+        -740.17847,
+        -224.5
+      ],
+      "summary": {
+        "lineups": 125,
+        "submitted": 125,
+        "matched": 116,
+        "graded": 25,
+        "notDetonated": 0,
+        "culled": 0,
+        "passRadius": 2,
+        "withinPass": 22,
+        "within1": 15,
+        "within2": 22,
+        "within8": 24,
+        "errMedian": 0.76798266,
+        "errMean": 5.383736,
+        "errP90": 2.0147827,
+        "errMax": 109.96234,
+        "perturbed": {
+          "radius": 0.25,
+          "count": 91,
+          "errMedian": 0.76042086,
+          "errP90": 1.8153235,
+          "errMax": 110.27297,
+          "within1": 57,
+          "within2": 83
+        }
+      }
+    },
+    {
+      "file": "de_mirage-20260716-060725.json",
+      "map": "de_mirage",
+      "name": "fuzz-3",
+      "batch": "overnight-20260716-0421",
+      "timestamp": "2026-07-16T06:07:25.8504206-04:00",
+      "target": [
+        -1918.2639,
+        -594.9221,
+        -164
+      ],
+      "summary": {
+        "lineups": 125,
+        "submitted": 125,
+        "matched": 122,
+        "graded": 25,
+        "notDetonated": 0,
+        "culled": 0,
+        "passRadius": 2,
+        "withinPass": 18,
+        "within1": 15,
+        "within2": 18,
+        "within8": 24,
+        "errMedian": 0.92643493,
+        "errMean": 10.4757805,
+        "errP90": 4.529015,
+        "errMax": 227.30429,
+        "perturbed": {
+          "radius": 0.25,
+          "count": 97,
+          "errMedian": 0.9277367,
+          "errP90": 4.5260444,
+          "errMax": 4.785824,
+          "within1": 57,
+          "within2": 73
+        }
+      }
+    },
+    {
+      "file": "de_mirage-20260716-081804.json",
+      "map": "de_mirage",
+      "name": "fuzz-1",
+      "batch": "overnight-20260716-0421",
+      "timestamp": "2026-07-16T08:18:04.8451084-04:00",
+      "target": [
+        -1751.954,
+        384.76453,
+        -165
+      ],
+      "summary": {
+        "lineups": 125,
+        "submitted": 125,
+        "matched": 125,
+        "graded": 25,
+        "notDetonated": 0,
+        "culled": 0,
+        "passRadius": 2,
+        "withinPass": 21,
+        "within1": 18,
+        "within2": 21,
+        "within8": 25,
+        "errMedian": 0.7779255,
+        "errMean": 1.1465409,
+        "errP90": 3.8147597,
+        "errMax": 4.1664677,
+        "perturbed": {
+          "radius": 0.25,
+          "count": 100,
+          "errMedian": 0.86554116,
+          "errP90": 3.8123314,
+          "errMax": 4.173301,
+          "within1": 66,
+          "within2": 83
+        }
+      }
+    },
+    {
+      "file": "de_mirage-20260716-082256.json",
+      "map": "de_mirage",
+      "name": "fuzz-2",
+      "batch": "overnight-20260716-0421",
+      "timestamp": "2026-07-16T08:22:56.0393430-04:00",
+      "target": [
+        -1130.5095,
+        -201.37057,
+        -51.999992
+      ],
+      "summary": {
+        "lineups": 125,
+        "submitted": 125,
+        "matched": 125,
+        "graded": 25,
+        "notDetonated": 0,
+        "culled": 0,
+        "passRadius": 2,
+        "withinPass": 18,
+        "within1": 12,
+        "within2": 18,
+        "within8": 23,
+        "errMedian": 1.2658293,
+        "errMean": 10.568319,
+        "errP90": 3.9067569,
+        "errMax": 119.349754,
+        "perturbed": {
+          "radius": 0.25,
+          "count": 100,
+          "errMedian": 1.1491216,
+          "errP90": 3.0447488,
+          "errMax": 133.62154,
+          "within1": 49,
+          "within2": 78
+        }
+      }
+    },
+    {
+      "file": "de_mirage-20260716-082957.json",
+      "map": "de_mirage",
+      "name": "fuzz-3",
+      "batch": "overnight-20260716-0421",
+      "timestamp": "2026-07-16T08:29:57.4000831-04:00",
+      "target": [
+        359.49252,
+        -407.7178,
+        -164
+      ],
+      "summary": {
+        "lineups": 125,
+        "submitted": 125,
+        "matched": 123,
+        "graded": 25,
+        "notDetonated": 0,
+        "culled": 0,
+        "passRadius": 2,
+        "withinPass": 20,
+        "within1": 12,
+        "within2": 20,
+        "within8": 25,
+        "errMedian": 1.0615203,
+        "errMean": 1.2701415,
+        "errP90": 2.5761473,
+        "errMax": 4.457125,
+        "perturbed": {
+          "radius": 0.25,
+          "count": 98,
+          "errMedian": 1.1707586,
+          "errP90": 3.4605663,
+          "errMax": 18.68272,
+          "within1": 47,
+          "within2": 74
+        }
+      }
+    },
+    {
+      "file": "de_nuke-20260716-061500.json",
+      "map": "de_nuke",
+      "name": "fuzz-1",
+      "batch": "overnight-20260716-0421",
+      "timestamp": "2026-07-16T06:15:00.4252809-04:00",
+      "target": [
+        1382.6351,
+        -370.36832,
+        -227.99998
+      ],
+      "summary": {
+        "lineups": 125,
+        "submitted": 125,
+        "matched": 125,
+        "graded": 25,
+        "notDetonated": 0,
+        "culled": 0,
+        "passRadius": 2,
+        "withinPass": 25,
+        "within1": 17,
+        "within2": 25,
+        "within8": 25,
+        "errMedian": 0.7095759,
+        "errMean": 0.77651554,
+        "errP90": 1.6857641,
+        "errMax": 1.8949283,
+        "perturbed": {
+          "radius": 0.25,
+          "count": 100,
+          "errMedian": 0.66253364,
+          "errP90": 1.6878589,
+          "errMax": 2.1576862,
+          "within1": 67,
+          "within2": 98
+        }
+      }
+    },
+    {
+      "file": "de_nuke-20260716-061929.json",
+      "map": "de_nuke",
+      "name": "fuzz-2",
+      "batch": "overnight-20260716-0421",
+      "timestamp": "2026-07-16T06:19:29.6930965-04:00",
+      "target": [
+        -2916.8813,
+        -901.9478,
+        -412
+      ],
+      "summary": {
+        "lineups": 125,
+        "submitted": 125,
+        "matched": 123,
+        "graded": 25,
+        "notDetonated": 0,
+        "culled": 0,
+        "passRadius": 2,
+        "withinPass": 24,
+        "within1": 20,
+        "within2": 24,
+        "within8": 25,
+        "errMedian": 0.48467016,
+        "errMean": 0.6268592,
+        "errP90": 1.1813554,
+        "errMax": 2.4431684,
+        "perturbed": {
+          "radius": 0.25,
+          "count": 98,
+          "errMedian": 0.5578507,
+          "errP90": 1.2023298,
+          "errMax": 2.4431684,
+          "within1": 76,
+          "within2": 94
+        }
+      }
+    },
+    {
+      "file": "de_nuke-20260716-062444.json",
+      "map": "de_nuke",
+      "name": "fuzz-3",
+      "batch": "overnight-20260716-0421",
+      "timestamp": "2026-07-16T06:24:44.4100478-04:00",
+      "target": [
+        3405.1057,
+        -767.2984,
+        -348.00003
+      ],
+      "summary": {
+        "lineups": 125,
+        "submitted": 125,
+        "matched": 124,
+        "graded": 25,
+        "notDetonated": 0,
+        "culled": 0,
+        "passRadius": 2,
+        "withinPass": 25,
+        "within1": 20,
+        "within2": 25,
+        "within8": 25,
+        "errMedian": 0.5925845,
+        "errMean": 0.664006,
+        "errP90": 1.3949639,
+        "errMax": 1.81857,
+        "perturbed": {
+          "radius": 0.25,
+          "count": 99,
+          "errMedian": 0.6496264,
+          "errP90": 1.4729435,
+          "errMax": 1.9853531,
+          "within1": 79,
+          "within2": 99
+        }
+      }
+    },
+    {
+      "file": "de_nuke-20260716-083814.json",
+      "map": "de_nuke",
+      "name": "fuzz-1",
+      "batch": "overnight-20260716-0421",
+      "timestamp": "2026-07-16T08:38:14.6451656-04:00",
+      "target": [
+        1322.36,
+        -784.45746,
+        -227.99998
+      ],
+      "summary": {
+        "lineups": 125,
+        "submitted": 125,
+        "matched": 125,
+        "graded": 25,
+        "notDetonated": 0,
+        "culled": 0,
+        "passRadius": 2,
+        "withinPass": 24,
+        "within1": 16,
+        "within2": 24,
+        "within8": 25,
+        "errMedian": 0.8048874,
+        "errMean": 0.85349697,
+        "errP90": 1.710884,
+        "errMax": 2.1784854,
+        "perturbed": {
+          "radius": 0.25,
+          "count": 100,
+          "errMedian": 0.74243623,
+          "errP90": 1.711003,
+          "errMax": 2.178599,
+          "within1": 70,
+          "within2": 96
+        }
+      }
+    },
+    {
+      "file": "de_nuke-20260716-084809.json",
+      "map": "de_nuke",
+      "name": "fuzz-2",
+      "batch": "overnight-20260716-0421",
+      "timestamp": "2026-07-16T08:48:09.9407948-04:00",
+      "target": [
+        855.1682,
+        -657.1563,
+        -764
+      ],
+      "summary": {
+        "lineups": 125,
+        "submitted": 125,
+        "matched": 120,
+        "graded": 25,
+        "notDetonated": 0,
+        "culled": 0,
+        "passRadius": 2,
+        "withinPass": 19,
+        "within1": 14,
+        "within2": 19,
+        "within8": 25,
+        "errMedian": 0.73274034,
+        "errMean": 1.153355,
+        "errP90": 2.4467072,
+        "errMax": 3.182683,
+        "perturbed": {
+          "radius": 0.25,
+          "count": 95,
+          "errMedian": 0.6934372,
+          "errP90": 2.478376,
+          "errMax": 3.182683,
+          "within1": 61,
+          "within2": 76
+        }
+      }
+    },
+    {
+      "file": "de_nuke-20260716-085350.json",
+      "map": "de_nuke",
+      "name": "fuzz-3",
+      "batch": "overnight-20260716-0421",
+      "timestamp": "2026-07-16T08:53:50.6301124-04:00",
+      "target": [
+        1927.5132,
+        -1788.1527,
+        -412
+      ],
+      "summary": {
+        "lineups": 125,
+        "submitted": 125,
+        "matched": 125,
+        "graded": 25,
+        "notDetonated": 0,
+        "culled": 0,
+        "passRadius": 2,
+        "withinPass": 21,
+        "within1": 10,
+        "within2": 21,
+        "within8": 25,
+        "errMedian": 1.167696,
+        "errMean": 1.2299919,
+        "errP90": 2.2603264,
+        "errMax": 2.4432857,
+        "perturbed": {
+          "radius": 0.25,
+          "count": 100,
+          "errMedian": 1.167696,
+          "errP90": 2.260542,
+          "errMax": 2.7692184,
+          "within1": 37,
+          "within2": 83
+        }
+      }
+    },
+    {
+      "file": "de_nuke-20260716-115534.json",
+      "map": "de_nuke",
+      "name": "",
+      "batch": "",
+      "timestamp": "2026-07-16T11:55:34.9650742-04:00",
+      "target": [
+        1023.26294,
+        -387.4095,
+        -127.96875
+      ],
+      "summary": {
+        "lineups": 336,
+        "submitted": 336,
+        "matched": 331,
+        "notDetonated": 0,
+        "passRadius": 1,
+        "withinPass": 105,
+        "within8": 310,
+        "errMedian": 1.5948685,
+        "errMean": 33.935143,
+        "errP90": 4.808631,
+        "errMax": 865.5796
+      }
+    },
+    {
+      "file": "de_nuke-20260830-110741.json",
+      "map": "de_nuke",
+      "name": "vents",
+      "batch": "batch-20260830-1100",
+      "timestamp": "2026-08-30T11:07:41.9374848-04:00",
+      "target": [
+        449.0457,
+        -1436.631,
+        -607.96875
+      ],
+      "summary": {
+        "lineups": 60,
+        "submitted": 60,
+        "matched": 60,
+        "graded": 60,
+        "notDetonated": 0,
+        "culled": 0,
+        "passRadius": 3,
+        "withinPass": 58,
+        "within1": 51,
+        "within2": 56,
+        "within8": 58,
+        "errMedian": 0.3178679,
+        "errMean": 5.3460503,
+        "errP90": 1.4782052,
+        "errMax": 276.96408,
+        "perturbed": null
+      }
+    },
+    {
+      "file": "de_nuke-20260830-111355.json",
+      "map": "de_nuke",
+      "name": "heaven",
+      "batch": "batch-20260830-1100",
+      "timestamp": "2026-08-30T11:13:55.0392314-04:00",
+      "target": [
+        1023.26294,
+        -387.4095,
+        -127.96875
+      ],
+      "summary": {
+        "lineups": 60,
+        "submitted": 60,
+        "matched": 60,
+        "graded": 60,
+        "notDetonated": 0,
+        "culled": 0,
+        "passRadius": 3,
+        "withinPass": 58,
+        "within1": 33,
+        "within2": 55,
+        "within8": 60,
+        "errMedian": 0.9235624,
+        "errMean": 1.0715698,
+        "errP90": 1.7746463,
+        "errMax": 4.4673367,
+        "perturbed": null
+      }
+    },
+    {
+      "file": "de_nuke-20260830-112014.json",
+      "map": "de_nuke",
+      "name": "outside_heaven",
+      "batch": "batch-20260830-1100",
+      "timestamp": "2026-08-30T11:20:14.8736368-04:00",
+      "target": [
+        1315.7423,
+        -478.1883,
+        -127.96875
+      ],
+      "summary": {
+        "lineups": 60,
+        "submitted": 60,
+        "matched": 60,
+        "graded": 60,
+        "notDetonated": 0,
+        "culled": 0,
+        "passRadius": 3,
+        "withinPass": 50,
+        "within1": 34,
+        "within2": 45,
+        "within8": 57,
+        "errMedian": 0.74922854,
+        "errMean": 2.7571204,
+        "errP90": 5.625715,
+        "errMax": 40.038696,
+        "perturbed": null
+      }
+    },
+    {
+      "file": "de_nuke-20260830-112210.json",
+      "map": "de_nuke",
+      "name": "auto-4",
+      "batch": "batch-20260830-1100",
+      "timestamp": "2026-08-30T11:22:10.2773344-04:00",
+      "target": [
+        -2945.8452,
+        -732.2501,
+        -412
+      ],
+      "summary": {
+        "lineups": 60,
+        "submitted": 60,
+        "matched": 60,
+        "graded": 60,
+        "notDetonated": 0,
+        "culled": 0,
+        "passRadius": 3,
+        "withinPass": 60,
+        "within1": 54,
+        "within2": 60,
+        "within8": 60,
+        "errMedian": 0.44187856,
+        "errMean": 0.44960463,
+        "errP90": 1.0793878,
+        "errMax": 1.3655593,
+        "perturbed": null
+      }
+    },
+    {
       "file": "de_overpass-20260715-233950.json",
       "map": "de_overpass",
       "name": "auto-1",
@@ -998,6 +3111,234 @@
         "errMax": 15.538039,
         "within1": 22,
         "within2": 29
+      }
+    },
+    {
+      "file": "de_overpass-20260716-063611.json",
+      "map": "de_overpass",
+      "name": "fuzz-1",
+      "batch": "overnight-20260716-0421",
+      "timestamp": "2026-07-16T06:36:11.6552424-04:00",
+      "target": [
+        -924.803,
+        -531.99976,
+        104.00001
+      ],
+      "summary": {
+        "lineups": 125,
+        "submitted": 125,
+        "matched": 124,
+        "graded": 25,
+        "notDetonated": 0,
+        "culled": 0,
+        "passRadius": 2,
+        "withinPass": 18,
+        "within1": 10,
+        "within2": 18,
+        "within8": 25,
+        "errMedian": 1.1402712,
+        "errMean": 1.482757,
+        "errP90": 3.2245705,
+        "errMax": 4.0349617,
+        "perturbed": {
+          "radius": 0.25,
+          "count": 99,
+          "errMedian": 1.1077513,
+          "errP90": 3.728409,
+          "errMax": 44.041824,
+          "within1": 44,
+          "within2": 75
+        }
+      }
+    },
+    {
+      "file": "de_overpass-20260716-064448.json",
+      "map": "de_overpass",
+      "name": "fuzz-2",
+      "batch": "overnight-20260716-0421",
+      "timestamp": "2026-07-16T06:44:48.3033334-04:00",
+      "target": [
+        -2022.1465,
+        641.47156,
+        481.99997
+      ],
+      "summary": {
+        "lineups": 125,
+        "submitted": 125,
+        "matched": 120,
+        "graded": 25,
+        "notDetonated": 0,
+        "culled": 0,
+        "passRadius": 2,
+        "withinPass": 19,
+        "within1": 14,
+        "within2": 19,
+        "within8": 24,
+        "errMedian": 0.8694127,
+        "errMean": 7.265635,
+        "errP90": 2.812099,
+        "errMax": 157.16988,
+        "perturbed": {
+          "radius": 0.25,
+          "count": 95,
+          "errMedian": 0.8695212,
+          "errP90": 2.81216,
+          "errMax": 157.17355,
+          "within1": 55,
+          "within2": 73
+        }
+      }
+    },
+    {
+      "file": "de_overpass-20260716-065204.json",
+      "map": "de_overpass",
+      "name": "fuzz-3",
+      "batch": "overnight-20260716-0421",
+      "timestamp": "2026-07-16T06:52:04.6830219-04:00",
+      "target": [
+        -771.6428,
+        -2382.1929,
+        164.66666
+      ],
+      "summary": {
+        "lineups": 125,
+        "submitted": 125,
+        "matched": 124,
+        "graded": 25,
+        "notDetonated": 0,
+        "culled": 0,
+        "passRadius": 2,
+        "withinPass": 23,
+        "within1": 20,
+        "within2": 23,
+        "within8": 24,
+        "errMedian": 0.38799223,
+        "errMean": 1.7373316,
+        "errP90": 1.7587109,
+        "errMax": 30.068964,
+        "perturbed": {
+          "radius": 0.25,
+          "count": 99,
+          "errMedian": 0.49499145,
+          "errP90": 2.2133029,
+          "errMax": 58.19817,
+          "within1": 72,
+          "within2": 89
+        }
+      }
+    },
+    {
+      "file": "de_overpass-20260716-090331.json",
+      "map": "de_overpass",
+      "name": "fuzz-1",
+      "batch": "overnight-20260716-0421",
+      "timestamp": "2026-07-16T09:03:31.1022605-04:00",
+      "target": [
+        -3022.2415,
+        -1476.6176,
+        527
+      ],
+      "summary": {
+        "lineups": 125,
+        "submitted": 125,
+        "matched": 123,
+        "graded": 25,
+        "notDetonated": 0,
+        "culled": 0,
+        "passRadius": 2,
+        "withinPass": 19,
+        "within1": 10,
+        "within2": 19,
+        "within8": 24,
+        "errMedian": 1.1206961,
+        "errMean": 2.7705038,
+        "errP90": 3.5137606,
+        "errMax": 34.950706,
+        "perturbed": {
+          "radius": 0.25,
+          "count": 98,
+          "errMedian": 1.0719817,
+          "errP90": 3.4639568,
+          "errMax": 35.219738,
+          "within1": 44,
+          "within2": 76
+        }
+      }
+    },
+    {
+      "file": "de_overpass-20260716-090807.json",
+      "map": "de_overpass",
+      "name": "fuzz-2",
+      "batch": "overnight-20260716-0421",
+      "timestamp": "2026-07-16T09:08:07.2768654-04:00",
+      "target": [
+        -2949.2024,
+        -2798.66,
+        479.99997
+      ],
+      "summary": {
+        "lineups": 125,
+        "submitted": 125,
+        "matched": 125,
+        "graded": 25,
+        "notDetonated": 0,
+        "culled": 0,
+        "passRadius": 2,
+        "withinPass": 21,
+        "within1": 16,
+        "within2": 21,
+        "within8": 24,
+        "errMedian": 0.566792,
+        "errMean": 3.3961792,
+        "errP90": 2.7899516,
+        "errMax": 62.962585,
+        "perturbed": {
+          "radius": 0.25,
+          "count": 100,
+          "errMedian": 0.7715427,
+          "errP90": 2.7881908,
+          "errMax": 63.175045,
+          "within1": 59,
+          "within2": 81
+        }
+      }
+    },
+    {
+      "file": "de_overpass-20260716-091610.json",
+      "map": "de_overpass",
+      "name": "fuzz-3",
+      "batch": "overnight-20260716-0421",
+      "timestamp": "2026-07-16T09:16:10.9424155-04:00",
+      "target": [
+        -3451.8735,
+        -1984.9236,
+        487.49997
+      ],
+      "summary": {
+        "lineups": 125,
+        "submitted": 125,
+        "matched": 122,
+        "graded": 25,
+        "notDetonated": 0,
+        "culled": 0,
+        "passRadius": 2,
+        "withinPass": 25,
+        "within1": 21,
+        "within2": 25,
+        "within8": 25,
+        "errMedian": 0.50658685,
+        "errMean": 0.63509893,
+        "errP90": 1.3525413,
+        "errMax": 1.7115046,
+        "perturbed": {
+          "radius": 0.25,
+          "count": 97,
+          "errMedian": 0.5382403,
+          "errP90": 1.6891679,
+          "errMax": 5.5962777,
+          "within1": 75,
+          "within2": 90
+        }
       }
     }
   ]

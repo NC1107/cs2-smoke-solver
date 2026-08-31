@@ -80,6 +80,59 @@ public class TriBoxOverlapDifferentialTests
         Assert.Equal(0, disagreements);
     }
 
+    // The random case above samples coordinates within +-200 of the origin,
+    // which is flatgrass scale, not map scale: de_nuke reaches x=6528 and
+    // de_vertigo's geometry sits at z~15368, where a float32 ULP is ~0.001u
+    // rather than ~0.00002u. Voxelization runs at those magnitudes on every
+    // real map, so the predicate has to agree with the reference there too.
+    [Fact]
+    public void AgreesWithReferenceAtRealMapCoordinates()
+    {
+        var rng = new Random(20260830);
+        float Span() => (float)(rng.NextDouble() * 400 - 200);
+        var disagreements = 0;
+        for (var i = 0; i < 200_000; i++)
+        {
+            // A voxel-sized box anywhere in the extent real maps actually span.
+            var center = new Vector3(
+                (float)(rng.NextDouble() * 24000 - 12000),
+                (float)(rng.NextDouble() * 24000 - 12000),
+                (float)(rng.NextDouble() * 17000 - 1500));
+            var half = new Vector3(8f);
+            var a = center + new Vector3(Span() / 20, Span() / 20, Span() / 20);
+            var b = a + new Vector3(Span() / 20, Span() / 20, Span() / 20);
+            var c = a + new Vector3(Span() / 20, Span() / 20, Span() / 20);
+            if (TriBoxOverlap.Test(center, half, a, b, c) != Reference(center, half, a, b, c))
+            {
+                disagreements++;
+            }
+        }
+        Assert.Equal(0, disagreements);
+    }
+
+    // Map geometry is authored on 8/16u grids, so triangles sitting exactly on
+    // a voxel boundary plane are the common case, not a corner case. Voxel
+    // bucketing walks the cells CellOf(triMin)..CellOf(triMax) (floor-based, so
+    // a boundary belongs to the cell above it) while this predicate is
+    // inclusive on both sides, so the cell below a boundary-flush triangle is
+    // never asked about it. That is sound because the cell that CONTAINS the
+    // triangle is always asked - contact with the skipped cell is exactly the
+    // shared face, which carries no volume - but the asymmetry is load-bearing
+    // enough to pin: it is why a floor plane can mark the cell above it solid.
+    [Fact]
+    public void ATriangleFlushWithACellBoundaryOverlapsBothNeighbours()
+    {
+        var below = new Vector3(0, 0, -8);
+        var above = new Vector3(0, 0, 8);
+        var half = new Vector3(8f);
+        var (a, b, c) = (new Vector3(-4, -4, 0), new Vector3(4, -4, 0), new Vector3(0, 4, 0));
+
+        Assert.True(TriBoxOverlap.Test(below, half, a, b, c), "the cell under the plane overlaps it");
+        Assert.True(TriBoxOverlap.Test(above, half, a, b, c), "the cell over the plane overlaps it");
+        Assert.Equal(Reference(below, half, a, b, c), TriBoxOverlap.Test(below, half, a, b, c));
+        Assert.Equal(Reference(above, half, a, b, c), TriBoxOverlap.Test(above, half, a, b, c));
+    }
+
     [Fact]
     public void AgreesWithReferenceOnDegenerateAndTouchingCases()
     {

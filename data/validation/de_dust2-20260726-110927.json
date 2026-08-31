@@ -1,0 +1,119 @@
+{
+  "map": "de_dust2",
+  "build": "2000877",
+  "timestamp": "2026-07-26T11:09:27.8724409-04:00",
+  "name": "pole",
+  "batch": "hull-standspots-check",
+  "target": [
+    -246.02505,
+    757.6251,
+    542.9112
+  ],
+  "tolerance": 80,
+  "summary": {
+    "lineups": 2,
+    "submitted": 2,
+    "matched": 2,
+    "graded": 2,
+    "notDetonated": 0,
+    "culled": 0,
+    "passRadius": 3,
+    "withinPass": 2,
+    "within1": 2,
+    "within2": 2,
+    "within8": 2,
+    "errMedian": 0.11972151,
+    "errMean": 0.08404836,
+    "errP90": 0.11972151,
+    "errMax": 0.11972151,
+    "perturbed": null
+  },
+  "results": [
+    {
+      "Index": 0,
+      "Type": "CrouchJumpThrow",
+      "Strength": 1,
+      "Stability": 0.6,
+      "Feet": [
+        -243.5691,
+        697.299,
+        1.2944138
+      ],
+      "Yaw": 87.92964,
+      "Pitch": -89,
+      "RunDeg": 0,
+      "PerturbU": 0,
+      "Scatter": 0.25,
+      "PredictedBounces": 4,
+      "RealBounces": 3,
+      "Pos": [
+        -243.56013,
+        697.54706,
+        89.43249
+      ],
+      "Vel": [
+        0.37829697,
+        10.464595,
+        952.41876
+      ],
+      "PredictedRest": [
+        -241.41452,
+        757.61005,
+        544.8805
+      ],
+      "RealRest": [
+        -241.38419,
+        757.5882,
+        544.9112
+      ],
+      "Detonated": true,
+      "ErrPredicted": 0.048375204,
+      "ErrTarget": 4.641016,
+      "DivergenceTick": -1,
+      "DivergenceClass": "TRACKED"
+    },
+    {
+      "Index": 1,
+      "Type": "Crouch",
+      "Strength": 1,
+      "Stability": 0.4,
+      "Feet": [
+        -240,
+        720,
+        0.7814331
+      ],
+      "Yaw": 91.80407,
+      "Pitch": -89,
+      "RunDeg": 0,
+      "PerturbU": 0,
+      "Scatter": 0.25,
+      "PredictedBounces": 4,
+      "RealBounces": 3,
+      "Pos": [
+        -240.00781,
+        720.2481,
+        62.819508
+      ],
+      "Vel": [
+        -0.3296598,
+        10.46624,
+        674.91876
+      ],
+      "PredictedRest": [
+        -241.29259,
+        761.2149,
+        544.88055
+      ],
+      "RealRest": [
+        -241.30266,
+        761.3302,
+        544.9112
+      ],
+      "Detonated": true,
+      "ErrPredicted": 0.11972151,
+      "ErrTarget": 6.0023856,
+      "DivergenceTick": -1,
+      "DivergenceClass": "TRACKED"
+    }
+  ]
+}

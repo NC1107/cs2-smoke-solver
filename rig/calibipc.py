@@ -67,8 +67,12 @@ def parse_solver_result(argv, name: str, action_desc: str) -> dict:
 
 def click_hint_aim(res: dict) -> tuple[str, list]:
     """The player-facing click hint and the aim vector for a solver result.
-    The click bands mirror CliParsing.ClickName - one wording everywhere."""
-    strength = res["strength"]
-    click = "left" if strength >= 0.99 else ("left+right" if strength >= 0.49 else "right")
+    The click label comes from the solver itself (CliParsing.ClickName), so
+    the bands live in exactly one place; the local computation only covers a
+    solver binary from before the field existed."""
+    click = res.get("click")
+    if not click:
+        strength = res["strength"]
+        click = "left" if strength >= 0.99 else ("left+right" if strength >= 0.49 else "right")
     hint = f"{res['type']} {click} click"
     return hint, list(res["aim"]) + [res["yaw"]]

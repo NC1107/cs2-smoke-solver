@@ -3,14 +3,40 @@
 // wired via wireCopyButtons on document.body). Setting a target and
 // selecting a lineup route through the callbacks main.js registers.
 
-import { state, filtered, typeLabel, clickShort, clickClass, esc, skyAngle, DEFAULT_EYE_HEIGHT } from "./state.js?v=16";
+import { state, filtered, clickShort, clickClass, esc, skyAngle, proMatched, scoreBreakdown,
+  movementWords, clickWords, aimWords, difficultyWords } from "./state.js?v=80";
 
 const statusEl = state.statusEl;
 const PAGE_SIZE = 50;
 
-// Which page of results the list is showing. Reset when a fresh solve replaces
-// the result set; snapped to the selection's page when the selection changes
-// (so clicking a marker past page 1 actually shows that lineup's card).
+// The results header: how many, how sorted, best-few or all, and where you
+// are in the list. One row, wired once, updated per render.
+function updateHead(shownCount, page, pageCount) {
+  document.getElementById("head-count").textContent =
+    `${shownCount} result${shownCount === 1 ? "" : "s"}`;
+  // Paging appears only when the list does not fit on one page.
+  const pager = document.getElementById("list-pager");
+  pager.hidden = pageCount <= 1;
+  document.getElementById("pager-label").textContent = `${page + 1}/${pageCount}`;
+  document.getElementById("pager-prev").disabled = page <= 0;
+  document.getElementById("pager-next").disabled = page >= pageCount - 1;
+}
+
+// Sorting the full list. Score is the default because it is the ranking the
+// top picks use; the rest are the single measures people ask results by.
+function sortForList(list, target) {
+  const by = document.getElementById("sort-by")?.value ?? "score";
+  const copy = [...list];
+  const missOf = l => Math.hypot(l.rest[0] - target[0], l.rest[1] - target[1]);
+  switch (by) {
+    case "precision": return copy.sort((a, b) => missOf(a) - missOf(b));
+    case "stability": return copy.sort((a, b) => (b.stability ?? 0) - (a.stability ?? 0));
+    case "bounces": return copy.sort((a, b) => (a.Bounces ?? 0) - (b.Bounces ?? 0));
+    case "flight": return copy.sort((a, b) => (a.flightTime ?? 0) - (b.flightTime ?? 0));
+    default: return copy.sort((a, b) => scoreBreakdown(b, target).total - scoreBreakdown(a, target).total);
+  }
+}
+
 let page = 0;
 let pagedResultRef = null;
 let lastRenderedSelection = -2;
@@ -25,32 +51,64 @@ let callbacks = {
   onShare: () => {},
 };
 
+// One result, said the way a lineup guide says it: which button, how you are
+// standing, how hard it is to land, and what you point at. Every published
+// resource answers those four and stops; this row used to answer thirteen
+// things at once, in solver units, and a new player could not tell which of
+// them was the one that mattered.
+//
+// The rest of the telemetry (bounces, flight time, exact miss distance,
+// stability percent, aim degrees, ranking score) is real and still reachable:
+// Detailed mode puts it back on the row, and the opened card shows the full
+// score working either way.
 function lineupSummaryHtml(l) {
-  // Aim reference badge: SKY = nothing to line the crosshair against, shown
-  // with how far above the horizon it points (CS2's grenade reticle reaches the
-  // screen edge, so a shallow sky shot can still be aligned against the skyline
-  // while a steep one has nothing on screen at all); flat = geometry but no
-  // silhouette; edge = a silhouette within X degrees of the crosshair (smaller
-  // = easier to align).
-  const ref = !l.aimRef ? ""
-    : l.aimRef.tier === "sky" ? `<span class="ref sky" title="aims ${skyAngle(l).toFixed(0)} deg above the horizon with nothing on screen to line up against">SKY ${skyAngle(l).toFixed(0)}°</span>`
-    : l.aimRef.tier === "reticle" ? `<span class="ref reticle" title="open sky at the crosshair, but the grenade reticle's arms cross a silhouette ${l.aimRef.reticleDeg.toFixed(0)} deg out - line it up on that">reticle ${l.aimRef.reticleDeg.toFixed(0)}°</span>`
-    : l.aimRef.tier === "flat" ? `<span class="ref flat" title="aims at featureless surface - weak reference">flat</span>`
-    : `<span class="ref edge" title="silhouette ${l.aimRef.edgeDeg.toFixed(1)} deg from crosshair">${l.aimRef.edgeDeg.toFixed(1)}°</span>`;
-  // Geometry-pinned stand spots: the wall places the player, so only aim
-  // remains - the easiest lineups to reproduce in a real round.
-  const pin = l.pin === "corner" ? `<span class="ref pin" title="stand spot is wedged into a corner - walk into it and your position is exact">corner</span>`
-    : l.pin === "wall" ? `<span class="ref pin" title="stand spot presses against a wall - walk into it to remove position error">wall</span>`
+  const detailed = state.expertRows;
+  const diff = difficultyWords(l);
+  // The whole execution - how you stand, what you press, what you point at -
+  // hangs off the one part of the row that names the throw, and only appears
+  // when asked for. A player scanning a list is choosing between throws, not
+  // performing one; the instructions matter after the choice, not during it.
+  const how = [esc(l.how), l.aimRef ? `Aim at ${esc(aimWords(l))}.` : ""]
+    .filter(Boolean).join(" · ");
+  const head =
+    `<span class="lu-head" title="${how}">` +
+    `<b class="${clickClass(l.strength)}">${clickWords(l.strength)}</b>` +
+    `<span class="lu-move">${movementWords(l)}</span>` +
+    `<span class="diff ${diff.cls}" title="how forgiving this throw is of your feet and your crosshair">${diff.word}</span>` +
+    `</span>`;
+
+  // At most one line of tags, and only facts a player would change their pick
+  // over: pros use this spot, or you can be seen throwing it. "exposed" was
+  // our word for the second one and had to be learned.
+  const tags = [
+    // The strongest "you can reproduce this" signal there is: geometry places
+    // the feet, so only the aim is left to get right. It was folded into the
+    // hover with the rest of the execution detail, and a whole class of lineup
+    // people hunt for became invisible.
+    l.pin === "corner" ? `<span class="ref pin" title="wedged into a corner - walk into it and your feet are exactly right every time, with nothing to measure">Corner spot</span>`
+      : l.pin === "wall" ? `<span class="ref pin" title="against a wall - walk into it and your feet are exactly right every time, with nothing to measure">Wall spot</span>` : "",
+    proMatched(l) ? `<span class="ref pro" title="pros throw this exact smoke from this spot in real matches - same spot, and it lands where this one lands">Pro pick</span>` : "",
+    l.exposed ? `<span class="ref exposed" title="Seen while throwing: a clear line of sight from this spot to where the smoke lands, so anyone holding that area sees you throw it">Exposed</span>` : "",
+    detailed && l._spawn ? `<span class="ref spawn" title="throwable from a player spawn">spawn</span>` : "",
+    l._favorite ? `<span class="ref fav" title="saved">★</span>` : "",
+  ].filter(Boolean).join("");
+
+  // Detailed mode keeps the aim line and the raw numbers on the row; simple
+  // mode keeps both behind the hover above.
+  const aimExtra = !l.aimRef ? ""
+    : l.aimRef.tier === "sky" ? ` (${skyAngle(l).toFixed(0)}° up)`
+    : l.aimRef.tier === "reticle" ? ` (${l.aimRef.reticleDeg.toFixed(0)}° out)`
+    : l.aimRef.tier === "edge" ? ` (${l.aimRef.edgeDeg.toFixed(1)}° off crosshair)`
     : "";
-  const fav = l._favorite ? `<span class="ref fav" title="favorited">★</span>` : "";
-  const spawn = l._spawn ? `<span class="ref spawn" title="throwable from a player spawn">spawn</span>` : "";
-  // Exposed: a clear sightline from the throw spot to where the smoke lands, so
-  // anyone holding that area sees you throw. Ranked below concealed throws;
-  // badged so that penalty is legible rather than mysterious.
-  const exposed = l.exposed ? `<span class="ref exposed" title="clear line of sight from this spot to where the smoke lands - you are visible to that area while throwing, so this ranks below concealed spots">exposed</span>` : "";
-  return `<b class="${clickClass(l.strength)}">${clickShort(l.strength)}</b><span>${typeLabel(l)}</span>` +
-    `<span>${l.Bounces}b</span><span>${l.flightTime.toFixed(1)}s</span>${spawn}${exposed}${pin}${ref}${fav}` +
-    `<span class="pct">${(l.stability * 100).toFixed(0)}%</span>`;
+  const t = state.result?.target;
+  const miss = t && l.rest ? Math.hypot(l.rest[0] - t[0], l.rest[1] - t[1]) : null;
+  const nums = !detailed ? "" :
+    `<span class="lu-aim">Aim: ${esc(aimWords(l))}${aimExtra}</span>` +
+    `<span class="lu-nums">${l.Bounces} bounces · ${l.flightTime.toFixed(1)}s` +
+    (miss === null ? "" : ` · lands ${miss.toFixed(1)}u off`) +
+    ` · ${(l.stability * 100).toFixed(0)}% forgiving</span>`;
+
+  return head + (tags ? `<span class="lu-tags">${tags}</span>` : "") + nums;
 }
 
 // Roving tabindex: one list button is tabbable; arrows/Home/End move focus.
@@ -102,8 +160,9 @@ export function renderLineups() {
   const focusIdx = list.contains(document.activeElement)
     ? document.activeElement.dataset.idx : undefined;
   list.innerHTML = "";
-  // The header pager lives outside the list; hide it until updatePager shows it
-  // for a non-empty result, so it never lingers over an empty/cleared panel.
+  // The header row lives outside the list; keep the pager hidden until a
+  // render shows it for a non-empty result, so it never lingers over an
+  // empty or cleared panel.
   document.getElementById("list-pager").hidden = true;
   if (!state.result) {
     return;
@@ -140,7 +199,12 @@ export function renderLineups() {
     }
   }
   const pageCount = Math.ceil(shown.length / PAGE_SIZE);
-  const selPos = state.selected >= 0 ? shown.findIndex(l => l._idx === state.selected) : -1;
+  // Ordered first, because the page a lineup lives on is its position in the
+  // list being displayed. Looking the selection up in the unsorted set sent
+  // the panel to whatever page that lineup happened to occupy before sorting,
+  // so clicking the top result jumped to page 7 of 8.
+  const ordered = sortForList(shown, state.result.target);
+  const selPos = state.selected >= 0 ? ordered.findIndex(l => l._idx === state.selected) : -1;
   // Follow the selection onto its page only when it actually changed - a manual
   // page turn leaves a selection on another page put, so browsing still works.
   if (selPos >= 0 && state.selected !== lastRenderedSelection) {
@@ -149,9 +213,13 @@ export function renderLineups() {
   lastRenderedSelection = state.selected;
   page = Math.min(Math.max(page, 0), pageCount - 1);
   const start = page * PAGE_SIZE;
-  const pageItems = shown.slice(start, start + PAGE_SIZE);
 
-  updatePager(shown.length, page, pageCount);
+  // No separate "best five" mode: the list is sorted by the same ranking, so
+  // the best five are simply the top of page one. A mode that showed the same
+  // rows behind an extra switch was one more thing to understand.
+  const pageItems = ordered.slice(start, start + PAGE_SIZE);
+
+  updateHead(shown.length, page, pageCount);
 
   const box = document.createElement("div");
   box.className = "lineup-options";
@@ -185,16 +253,6 @@ export function renderLineups() {
 // the scrolling list. Turning a page re-renders but deliberately does not touch
 // the selection, so a lineup selected on another page stays selected. Prev/next
 // are wired once in initPanel; this only refreshes the labels and disabled state.
-function updatePager(total, page, pageCount) {
-  const pager = document.getElementById("list-pager");
-  pager.hidden = false;
-  pager.classList.toggle("single-page", pageCount <= 1);
-  document.getElementById("pager-label").innerHTML = `page <b>${page + 1}</b> of <b>${pageCount}</b>`;
-  document.getElementById("pager-count").textContent = `${total} result${total === 1 ? "" : "s"}`;
-  document.getElementById("pager-prev").disabled = page <= 0;
-  document.getElementById("pager-next").disabled = page >= pageCount - 1;
-}
-
 function optionButton(l) {
   const b = document.createElement("button");
   b.type = "button";
@@ -207,22 +265,80 @@ function optionButton(l) {
   return b;
 }
 
+// Why this lineup ranks where it does: the same numbers the sort used, in the
+// order they were applied. A ranking that cannot show its work is just an
+// opinion with a number on it. It hangs off the score chip - the thing whose
+// meaning is in question - rather than a separate row asking to be found.
+function scoreRowsHtml(l) {
+  const target = state.result?.target;
+  if (!target) {
+    return "";
+  }
+  const { parts } = scoreBreakdown(l, target);
+  const rows = parts
+    .map(p => `<div class="score-row"><span>${esc(p.label)}</span>` +
+      `<b class="${p.delta >= 0 ? "up" : "down"}">${p.delta >= 0 ? "+" : ""}${p.delta}</b></div>`)
+    .join("");
+  const total = scoreBreakdown(l, target).total;
+  return `<div class="score-rows"><div class="score-row"><span>base</span><b>140</b></div>${rows}` +
+    `<div class="score-row score-total"><span>Match score</span><b>${total}</b></div></div>`;
+}
+
+// The disclosure that holds the score working. Absent when there is no target
+// to score against (a spot probe with no picked landing point).
+function detailsToggleHtml(l) {
+  const rows = scoreRowsHtml(l);
+  return !rows ? "" :
+    `<button type="button" class="details-toggle" aria-expanded="false">Show details</button>${rows}`;
+}
+
 function detailCard(l) {
   const i = l._idx;
   const el = document.createElement("div");
   el.className = "lineup selected";
+  // Keep and discard are single icons in the corners, where they stay out of
+  // the way of reading the lineup; the score hides behind its own summary; and
+  // the remaining actions are one compact row. The card used to spend four
+  // full-width buttons and an always-open score table on a lineup you were
+  // trying to read.
+  // Keep on the left, discard on the right, and the console command behind a
+  // clipboard button beside it - the command itself was a whole row of
+  // monospace nobody reads, in a card that is meant to be glanced at.
   el.innerHTML =
+    `<button type="button" class="card-fav fav-btn" title="${l._favorite ? "Remove from favourites" : "Save this lineup"}" aria-label="${l._favorite ? "Remove from favourites" : "Save this lineup"}" aria-pressed="${l._favorite}">${l._favorite ? "★" : "☆"}</button>` +
+    `<button type="button" class="card-copy" data-copy-text="${esc(l.console)}" title="Copy the throw position and angles (setpos)" aria-label="Copy position command">` +
+    `<svg viewBox="0 0 20 20" aria-hidden="true"><rect x="7" y="7" width="9" height="9" rx="1.5"/><path d="M13 7V5.5A1.5 1.5 0 0 0 11.5 4H5.5A1.5 1.5 0 0 0 4 5.5v6A1.5 1.5 0 0 0 5.5 13H7"/></svg></button>` +
+    `<button type="button" class="card-remove remove-btn" title="Remove this lineup from the list" aria-label="Remove this lineup">×</button>` +
     `<div class="row1">${lineupSummaryHtml(l)}</div>` +
-    `<div style="margin:4px 0 2px">${esc(l.how)}</div>` +
-    `<div class="cmd" id="cmd-l${i}">${esc(l.console)}<button data-copy="cmd-l${i}" class="btn">copy</button></div>` +
+    // No how-text here: the same sentence is the hover on the row above it,
+    // in the card as well as in the list, and printing it twice made the
+    // opened lineup taller without saying anything new.
+    detailsToggleHtml(l) +
     `<div class="lineup-actions">` +
     `<button type="button" class="btn share-btn" title="copy a link that opens this exact lineup">Share</button>` +
     `<button type="button" class="btn goto-btn" title="move the free 3D camera into this lineup's exact throw spot">Go to</button>` +
-    `<button type="button" class="btn fav-btn">${l._favorite ? "★ favorited" : "☆ favorite"}</button>` +
-    `<button type="button" class="btn remove-btn">Remove</button>` +
     `</div>`;
-  // Card click toggles the selection off, matching marker behavior (L16).
-  el.addEventListener("click", () => callbacks.onSelect(i));
+  // Only the summary row collapses the card. It used to be the whole card, so
+  // opening the score breakdown, or clicking anywhere near the console command,
+  // closed the lineup instead of doing the thing that was clicked.
+  el.querySelector(".row1")?.addEventListener("click", () => callbacks.onSelect(i));
+  // The numbers behind the ranking, one click away rather than on the row:
+  // whoever opens this has asked for them, which is the only time they help.
+  el.querySelector(".details-toggle")?.addEventListener("click", e => {
+    e.stopPropagation();
+    const open = !el.classList.contains("show-score");
+    el.classList.toggle("show-score", open);
+    e.currentTarget.setAttribute("aria-expanded", String(open));
+    e.currentTarget.textContent = open ? "Hide details" : "Show details";
+  });
+  el.querySelector(".card-copy")?.addEventListener("click", e => {
+    e.stopPropagation();
+    const btn = e.currentTarget;
+    navigator.clipboard.writeText(btn.dataset.copyText).then(() => {
+      btn.classList.add("copied");
+      setTimeout(() => btn.classList.remove("copied"), 1200);
+    }).catch(() => {});
+  });
   wireCopyButtons(el);
 
   for (const [selector, action] of [
@@ -244,18 +360,6 @@ function detailCard(l) {
 export function revealSelected() {
   document.querySelector("#lineup-list .lineup.selected")
     ?.scrollIntoView({ block: "nearest", behavior: "smooth" });
-}
-
-function setTargetFromGetpos() {
-  const m = document.getElementById("getpos-in").value
-    .match(/setpos\s+(-?[\d.]+)\s+(-?[\d.]+)\s+(-?[\d.]+)/);
-  if (!m) {
-    statusEl.textContent = "cannot parse getpos";
-    return;
-  }
-  callbacks.onSetTarget(
-    [Number.parseFloat(m[1]), Number.parseFloat(m[2]), Number.parseFloat(m[3]) - DEFAULT_EYE_HEIGHT],
-    `target ${(+m[1]).toFixed(0)}, ${(+m[2]).toFixed(0)}`);
 }
 
 function wireCopyButtons(container) {
@@ -280,12 +384,6 @@ function wireCopyButtons(container) {
 
 export function initPanel(cb) {
   callbacks = cb;
-  document.getElementById("getpos-set").addEventListener("click", setTargetFromGetpos);
-  document.getElementById("getpos-in").addEventListener("keydown", e => {
-    if (e.key === "Enter") {
-      setTargetFromGetpos();
-    }
-  });
   document.getElementById("pager-prev").addEventListener("click", () => { page -= 1; renderLineups(); });
   document.getElementById("pager-next").addEventListener("click", () => { page += 1; renderLineups(); });
   initPanelResize();

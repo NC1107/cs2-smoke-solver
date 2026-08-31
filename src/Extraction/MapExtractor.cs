@@ -61,16 +61,16 @@ public static class MapExtractor
         var names = attributeNames.ToList();
         var interactAs = attributeInteractAs.ToList();
 
-        AppendPhys(phys, vertices, indices, triangleAttributes, i => (byte)i, v => v);
-        AppendSolidEntityModels(package, vertices, indices, triangleAttributes, names, interactAs);
-
-        // Static prop models themselves are almost never inside the map's own
-        // small VPK - only the compiled level/entity/nav data is. The actual
+        // Static prop and dynamic prop models are almost never inside the map's
+        // own small VPK - only the compiled level/entity/nav data is. The actual
         // .vmdl_c/.vphys_c payloads live in the shared game content archive
         // alongside it (pak01_dir.vpk), same directory as the maps/ folder.
         var sharedVpkPath = Path.Combine(Path.GetDirectoryName(Path.GetDirectoryName(mapVpkPath))!, "pak01_dir.vpk");
         using var sharedPackage = File.Exists(sharedVpkPath) ? new Package() : null;
         sharedPackage?.Read(sharedVpkPath);
+
+        AppendPhys(phys, vertices, indices, triangleAttributes, i => (byte)i, v => v);
+        AppendSolidEntityModels(package, sharedPackage, vertices, indices, triangleAttributes, names, interactAs);
         AppendStaticProps(package, sharedPackage, vertices, indices, triangleAttributes, names, interactAs);
 
         return new CollisionMesh
@@ -127,7 +127,14 @@ public static class MapExtractor
     // this is an allowlist, not a blocklist. func_clip_vphysics blocks physics
     // objects (grenades) while letting players and bullets through - on
     // de_dust2 it seals the mid-doors gap, which is lineup-critical.
-    static readonly string[] SolidEntityClasses = ["func_brush", "func_clip_vphysics", "func_door", "func_door_rotating", "func_breakable"];
+    // prop_dynamic is here for structural props the game treats as solid at
+    // round start - de_nuke's vent slats being the canonical case: a bot stood
+    // INSIDE the unbroken vent and threw through it because the solver had no
+    // collision there (validated 2026-08-30, tick-1 divergence at [439,-1401]).
+    // Breakable ones follow the same intact-at-round-start baseline as
+    // func_breakable glass. prop_physics* stay out: loose junk (mugs, hard
+    // hats) that moves the moment anything touches it is not geometry.
+    static readonly string[] SolidEntityClasses = ["func_brush", "func_clip_vphysics", "func_door", "func_door_rotating", "func_breakable", "prop_dynamic", "prop_door_rotating"];
 
     // Retake is a separate game mode: its brushes (the tape borders walling off
     // each bombsite, e.g. de_mirage's [PR#]retake.asite/bsite func_brushes) are
@@ -153,6 +160,7 @@ public static class MapExtractor
 
     static void AppendSolidEntityModels(
         Package package,
+        Package? sharedPackage,
         List<float> vertices,
         List<int> indices,
         List<byte> triangleAttributes,
@@ -160,7 +168,28 @@ public static class MapExtractor
         List<string[]> interactAs)
     {
         // Lazy: built once, replacing an O(entities x entries) rescan per entity.
+        // Brush entity models are compiled into the map's own VPK; prop models
+        // (prop_dynamic) live in the shared content archive, and usually
+        // reference their collision as a separate .vphys_c rather than
+        // embedding it - the same two-step lookup AppendStaticProps does.
         Dictionary<string, SteamDatabase.ValvePak.PackageEntry>? modelsByPath = null;
+        Dictionary<string, SteamDatabase.ValvePak.PackageEntry>? sharedModelsByPath = null;
+        Dictionary<string, SteamDatabase.ValvePak.PackageEntry>? physByPath = null;
+        Dictionary<string, SteamDatabase.ValvePak.PackageEntry>? sharedPhysByPath = null;
+        (Package Package, SteamDatabase.ValvePak.PackageEntry Entry)? Find(string path, string extension, ref Dictionary<string, SteamDatabase.ValvePak.PackageEntry>? local, ref Dictionary<string, SteamDatabase.ValvePak.PackageEntry>? shared)
+        {
+            local ??= FindEntries(package, extension).ToDictionary(e => e.GetFullPath().ToLowerInvariant(), e => e);
+            if (local.TryGetValue(path, out var localEntry))
+            {
+                return (package, localEntry);
+            }
+            if (sharedPackage == null)
+            {
+                return null;
+            }
+            shared ??= FindEntries(sharedPackage, extension).ToDictionary(e => e.GetFullPath().ToLowerInvariant(), e => e);
+            return shared.TryGetValue(path, out var sharedEntry) ? (sharedPackage, sharedEntry) : null;
+        }
         foreach (var lumpEntry in FindEntries(package, "vents_c"))
         {
             package.ReadEntry(lumpEntry, out var lumpRaw);
@@ -182,17 +211,24 @@ public static class MapExtractor
                 {
                     continue;
                 }
-                modelsByPath ??= FindEntries(package, "vmdl_c")
-                    .ToDictionary(e => e.GetFullPath().ToLowerInvariant(), e => e);
-                modelsByPath.TryGetValue((model + "_c").ToLowerInvariant(), out var modelEntry);
-                if (modelEntry == null)
+                if (Find((model + "_c").ToLowerInvariant(), "vmdl_c", ref modelsByPath, ref sharedModelsByPath) is not { } modelHit)
                 {
                     continue;
                 }
-                package.ReadEntry(modelEntry, out var raw);
+                modelHit.Package.ReadEntry(modelHit.Entry, out var raw);
                 using var resource = new Resource();
                 resource.Read(new MemoryStream(raw));
-                var phys = ((Model)resource.DataBlock!).GetEmbeddedPhys();
+                var modelData = (Model)resource.DataBlock!;
+                var phys = modelData.GetEmbeddedPhys();
+                if (phys == null &&
+                    modelData.GetReferencedPhysNames().FirstOrDefault() is { } refPhysName &&
+                    Find((refPhysName + "_c").ToLowerInvariant(), "vphys_c", ref physByPath, ref sharedPhysByPath) is { } physHit)
+                {
+                    physHit.Package.ReadEntry(physHit.Entry, out var physRaw);
+                    using var physResource = new Resource();
+                    physResource.Read(new MemoryStream(physRaw));
+                    phys = physResource.DataBlock as PhysAggregateData;
+                }
                 if (phys == null)
                 {
                     continue;
@@ -200,14 +236,30 @@ public static class MapExtractor
 
                 var origin = entity.GetVector3Property("origin", Vector3.Zero);
                 var angles = entity.GetVector3Property("angles", Vector3.Zero);
+                // Props can carry a per-instance scale; brush entities never do.
+                var scales = entity.GetVector3Property("scales", Vector3.One);
                 var rotation = SourceAngleMatrix(angles);
 
                 // Entity geometry gets its own attribute entries instead of
                 // merging into the world's "default" group: func_clip_vphysics
                 // blocks grenades but NOT vision or bullets, so sightline
                 // consumers (which select groups by name) must be able to
-                // exclude it while the grenade filter keeps it solid.
-                var attrName = className == "func_clip_vphysics" ? "EntityPhysicsClip" : "EntitySolid";
+                // exclude it while the grenade filter keeps it solid. Doors
+                // and breakables get their own groups for the same reason:
+                // both are solid at round start (this mesh's baseline), but a
+                // round where the glass got shot out or the door stands open
+                // is a different world - the solver offers that as a per-query
+                // "broken" toggle by excluding these groups.
+                var attrName = className switch
+                {
+                    "func_clip_vphysics" => "EntityPhysicsClip",
+                    "func_door" or "func_door_rotating" or "prop_door_rotating" => "EntityDoor",
+                    "func_breakable" => "EntityBreakable",
+                    // A prop with health is breakable in game (de_nuke's vent
+                    // slats, wooden shutters); one without is furniture.
+                    "prop_dynamic" when entity.GetIntegerProperty("health", 0) > 0 => "EntityBreakable",
+                    _ => "EntitySolid",
+                };
                 var attrIndex = names.IndexOf(attrName);
                 if (attrIndex < 0)
                 {
@@ -223,7 +275,7 @@ public static class MapExtractor
 
                 AppendPhys(phys, vertices, indices, triangleAttributes,
                     _ => mapped,
-                    v => Vector3.Transform(v, rotation) + origin);
+                    v => Vector3.Transform(v * scales, rotation) + origin);
             }
         }
     }

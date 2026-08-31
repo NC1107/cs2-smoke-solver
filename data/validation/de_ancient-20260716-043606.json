@@ -1,0 +1,5244 @@
+{
+  "map": "de_ancient",
+  "build": "2000872",
+  "timestamp": "2026-07-16T04:36:06.1372816-04:00",
+  "name": "fuzz-2",
+  "batch": "overnight-20260716-0421",
+  "target": [
+    -1669.5183,
+    -922.3568,
+    3.4999564
+  ],
+  "tolerance": 80,
+  "summary": {
+    "lineups": 125,
+    "submitted": 125,
+    "matched": 121,
+    "graded": 25,
+    "notDetonated": 0,
+    "culled": 0,
+    "passRadius": 2,
+    "withinPass": 20,
+    "within1": 12,
+    "within2": 20,
+    "within8": 25,
+    "errMedian": 1.0243198,
+    "errMean": 1.4377213,
+    "errP90": 3.664842,
+    "errMax": 5.820159,
+    "perturbed": {
+      "radius": 0.25,
+      "count": 96,
+      "errMedian": 1.1723528,
+      "errP90": 5.4541063,
+      "errMax": 41.307556,
+      "within1": 38,
+      "within2": 69
+    }
+  },
+  "results": [
+    {
+      "Index": 0,
+      "Type": "Crouch",
+      "Strength": 0.5,
+      "Stability": 1,
+      "Feet": [
+        -2124,
+        -807.60144,
+        -20
+      ],
+      "Yaw": -13.679715,
+      "Pitch": -5.6,
+      "RunDeg": 0,
+      "PerturbU": 0,
+      "Scatter": 0.30222952,
+      "PredictedBounces": 4,
+      "RealBounces": 3,
+      "Pos": [
+        -2108.982,
+        -811.2568,
+        30.175112
+      ],
+      "Vel": [
+        411.8207,
+        -100.23662,
+        113.39247
+      ],
+      "PredictedRest": [
+        -1621.2982,
+        -952.64056,
+        2.8641553
+      ],
+      "RealRest": [
+        -1620.1737,
+        -953.1161,
+        3.1264713
+      ],
+      "Detonated": true,
+      "ErrPredicted": 1.2487835,
+      "ErrTarget": 58.146564,
+      "DivergenceTick": -1,
+      "DivergenceClass": "TRACKED"
+    },
+    {
+      "Index": 1,
+      "Type": "Stand",
+      "Strength": 0,
+      "Stability": 1,
+      "Feet": [
+        -1560,
+        -1056,
+        -7.1693554
+      ],
+      "Yaw": 119.72539,
+      "Pitch": -21,
+      "RunDeg": 0,
+      "PerturbU": 0,
+      "Scatter": 0.2357717,
+      "PredictedBounces": 4,
+      "RealBounces": 3,
+      "Pos": [
+        -1566.961,
+        -1043.8086,
+        64.56605
+      ],
+      "Vel": [
+        -88.100815,
+        154.29826,
+        97.141914
+      ],
+      "PredictedRest": [
+        -1719.7397,
+        -848.7953,
+        -9.041551
+      ],
+      "RealRest": [
+        -1720.8784,
+        -848.47986,
+        -8.950325
+      ],
+      "Detonated": true,
+      "ErrPredicted": 1.1850703,
+      "ErrTarget": 89.975914,
+      "DivergenceTick": -1,
+      "DivergenceClass": "TRACKED"
+    },
+    {
+      "Index": 2,
+      "Type": "Crouch",
+      "Strength": 0,
+      "Stability": 1,
+      "Feet": [
+        -1704,
+        -960,
+        -17.850956
+      ],
+      "Yaw": 57.97585,
+      "Pitch": -61,
+      "RunDeg": 0,
+      "PerturbU": 0,
+      "Scatter": 0.23891506,
+      "PredictedBounces": 4,
+      "RealBounces": 3,
+      "Pos": [
+        -1700.3103,
+        -954.10077,
+        42.596848
+      ],
+      "Vel": [
+        46.698063,
+        74.66247,
+        182.34874
+      ],
+      "PredictedRest": [
+        -1710.7423,
+        -856.6654,
+        -9.305058
+      ],
+      "RealRest": [
+        -1713.0544,
+        -856.8404,
+        -9.471974
+      ],
+      "Detonated": true,
+      "ErrPredicted": 2.3247461,
+      "ErrTarget": 78.662544,
+      "DivergenceTick": -1,
+      "DivergenceClass": "TRACKED"
+    },
+    {
+      "Index": 3,
+      "Type": "Stand",
+      "Strength": 0,
+      "Stability": 1,
+      "Feet": [
+        -1536,
+        -1032,
+        3.409649
+      ],
+      "Yaw": 127.92793,
+      "Pitch": -41,
+      "RunDeg": 0,
+      "PerturbU": 0,
+      "Scatter": 0.24310787,
+      "PredictedBounces": 4,
+      "RealBounces": 3,
+      "Pos": [
+        -1542.7767,
+        -1023.3037,
+        79.06496
+      ],
+      "Vel": [
+        -85.767456,
+        110.06238,
+        146.7531
+      ],
+      "PredictedRest": [
+        -1735.2904,
+        -852.37665,
+        -9.585126
+      ],
+      "RealRest": [
+        -1734.9447,
+        -852.2815,
+        -9.528341
+      ],
+      "Detonated": true,
+      "ErrPredicted": 0.36302808,
+      "ErrTarget": 95.87055,
+      "DivergenceTick": -1,
+      "DivergenceClass": "TRACKED"
+    },
+    {
+      "Index": 4,
+      "Type": "Stand",
+      "Strength": 0,
+      "Stability": 1,
+      "Feet": [
+        -1752,
+        -1056,
+        -23.328459
+      ],
+      "Yaw": 59.24893,
+      "Pitch": -37,
+      "RunDeg": 0,
+      "PerturbU": 0,
+      "Scatter": 1.2253339,
+      "PredictedBounces": 4,
+      "RealBounces": 3,
+      "Pos": [
+        -1746.006,
+        -1045.9254,
+        51.620796
+      ],
+      "Vel": [
+        75.86122,
+        127.505844,
+        137.81723
+      ],
+      "PredictedRest": [
+        -1699.2018,
+        -861.4421,
+        -8.833103
+      ],
+      "RealRest": [
+        -1699.6346,
+        -860.8899,
+        -8.785587
+      ],
+      "Detonated": true,
+      "ErrPredicted": 0.7032319,
+      "ErrTarget": 68.44834,
+      "DivergenceTick": -1,
+      "DivergenceClass": "TRACKED"
+    },
+    {
+      "Index": 5,
+      "Type": "Stand",
+      "Strength": 0,
+      "Stability": 1,
+      "Feet": [
+        -1776,
+        -960,
+        -24.784653
+      ],
+      "Yaw": 42.194847,
+      "Pitch": -49,
+      "RunDeg": 0,
+      "PerturbU": 0,
+      "Scatter": 14.001276,
+      "PredictedBounces": 4,
+      "RealBounces": 3,
+      "Pos": [
+        -1768.9583,
+        -953.61615,
+        52.14628
+      ],
+      "Vel": [
+        89.12141,
+        80.795746,
+        162.89775
+      ],
+      "PredictedRest": [
+        -1686.7201,
+        -908.89935,
+        -9.381374
+      ],
+      "RealRest": [
+        -1686.6294,
+        -908.587,
+        -9.307085
+      ],
+      "Detonated": true,
+      "ErrPredicted": 0.33365408,
+      "ErrTarget": 21.96355,
+      "DivergenceTick": -1,
+      "DivergenceClass": "TRACKED"
+    },
+    {
+      "Index": 6,
+      "Type": "Stand",
+      "Strength": 0,
+      "Stability": 1,
+      "Feet": [
+        -1824,
+        -984,
+        -24.263298
+      ],
+      "Yaw": 30.003489,
+      "Pitch": -37,
+      "RunDeg": 0,
+      "PerturbU": 0,
+      "Scatter": 0.23945364,
+      "PredictedBounces": 4,
+      "RealBounces": 3,
+      "Pos": [
+        -1813.8481,
+        -978.138,
+        50.68596
+      ],
+      "Vel": [
+        128.48479,
+        74.19116,
+        137.81723
+      ],
+      "PredictedRest": [
+        -1688.6648,
+        -875.5035,
+        -8.210203
+      ],
+      "RealRest": [
+        -1688.323,
+        -875.4298,
+        -8.132386
+      ],
+      "Detonated": true,
+      "ErrPredicted": 0.35820073,
+      "ErrTarget": 50.554523,
+      "DivergenceTick": -1,
+      "DivergenceClass": "TRACKED"
+    },
+    {
+      "Index": 7,
+      "Type": "Crouch",
+      "Strength": 0.5,
+      "Stability": 1,
+      "Feet": [
+        -1616,
+        -1488,
+        -32.302822
+      ],
+      "Yaw": 90.018814,
+      "Pitch": -9,
+      "RunDeg": 0,
+      "PerturbU": 0,
+      "Scatter": 0.20091033,
+      "PredictedBounces": 5,
+      "RealBounces": 4,
+      "Pos": [
+        -1616.005,
+        -1472.7831,
+        18.68145
+      ],
+      "Vel": [
+        -0.1370607,
+        417.276,
+        135.5812
+      ],
+      "PredictedRest": [
+        -1650.979,
+        -923.91144,
+        -2.1667788
+      ],
+      "RealRest": [
+        -1655.1223,
+        -920.6343,
+        -2.8202631
+      ],
+      "Detonated": true,
+      "ErrPredicted": 5.3229547,
+      "ErrTarget": 14.498684,
+      "DivergenceTick": -1,
+      "DivergenceClass": "TRACKED"
+    },
+    {
+      "Index": 8,
+      "Type": "Crouch",
+      "Strength": 0.5,
+      "Stability": 1,
+      "Feet": [
+        -1392,
+        -1488,
+        -23.453327
+      ],
+      "Yaw": 115.27649,
+      "Pitch": -7,
+      "RunDeg": 0,
+      "PerturbU": 0,
+      "Scatter": 0.92592967,
+      "PredictedBounces": 5,
+      "RealBounces": 4,
+      "Pos": [
+        -1398.5598,
+        -1474.1079,
+        27.05649
+      ],
+      "Vel": [
+        -179.88159,
+        380.94693,
+        122.57075
+      ],
+      "PredictedRest": [
+        -1668.5627,
+        -978.07043,
+        -14.100718
+      ],
+      "RealRest": [
+        -1669.3315,
+        -977.4251,
+        -14.30501
+      ],
+      "Detonated": true,
+      "ErrPredicted": 1.0243198,
+      "ErrTarget": 55.068615,
+      "DivergenceTick": -1,
+      "DivergenceClass": "TRACKED"
+    },
+    {
+      "Index": 9,
+      "Type": "Crouch",
+      "Strength": 0.5,
+      "Stability": 1,
+      "Feet": [
+        -1128,
+        -1248,
+        -21.68093
+      ],
+      "Yaw": 151.09041,
+      "Pitch": -11,
+      "RunDeg": 0,
+      "PerturbU": 0,
+      "Scatter": 3.003532,
+      "PredictedBounces": 5,
+      "RealBounces": 4,
+      "Pos": [
+        -1141.1799,
+        -1240.7214,
+        29.77304
+      ],
+      "Vel": [
+        -361.4188,
+        199.59282,
+        148.46115
+      ],
+      "PredictedRest": [
+        -1675.7568,
+        -1000.0777,
+        -16.658724
+      ],
+      "RealRest": [
+        -1677.704,
+        -999.13837,
+        -16.793993
+      ],
+      "Detonated": true,
+      "ErrPredicted": 2.1661046,
+      "ErrTarget": 77.21666,
+      "DivergenceTick": -1,
+      "DivergenceClass": "TRACKED"
+    },
+    {
+      "Index": 10,
+      "Type": "Stand",
+      "Strength": 0,
+      "Stability": 1,
+      "Feet": [
+        -1800,
+        -816,
+        22.273167
+      ],
+      "Yaw": -26.605957,
+      "Pitch": -9,
+      "RunDeg": 0,
+      "PerturbU": 0,
+      "Scatter": 2.9245472,
+      "PredictedBounces": 5,
+      "RealBounces": 4,
+      "Pos": [
+        -1786.3944,
+        -822.81494,
+        91.277435
+      ],
+      "Vel": [
+        172.19527,
+        -86.251366,
+        62.575947
+      ],
+      "PredictedRest": [
+        -1612.794,
+        -968.91675,
+        2.1592364
+      ],
+      "RealRest": [
+        -1612.276,
+        -969.1046,
+        2.3391619
+      ],
+      "Detonated": true,
+      "ErrPredicted": 0.5795974,
+      "ErrTarget": 73.90561,
+      "DivergenceTick": -1,
+      "DivergenceClass": "TRACKED"
+    },
+    {
+      "Index": 11,
+      "Type": "Stand",
+      "Strength": 0,
+      "Stability": 1,
+      "Feet": [
+        -1800,
+        -1056,
+        -22.956522
+      ],
+      "Yaw": 42.97169,
+      "Pitch": -33,
+      "RunDeg": 0,
+      "PerturbU": 0,
+      "Scatter": 0.22965162,
+      "PredictedBounces": 5,
+      "RealBounces": 4,
+      "Pos": [
+        -1790.945,
+        -1047.5643,
+        51.244774
+      ],
+      "Vel": [
+        114.603226,
+        106.76345,
+        128.35078
+      ],
+      "PredictedRest": [
+        -1671.747,
+        -921.5393,
+        -8.627776
+      ],
+      "RealRest": [
+        -1672.7654,
+        -921.8148,
+        -8.985342
+      ],
+      "Detonated": true,
+      "ErrPredicted": 1.1139864,
+      "ErrTarget": 3.2919934,
+      "DivergenceTick": -1,
+      "DivergenceClass": "TRACKED"
+    },
+    {
+      "Index": 12,
+      "Type": "Crouch",
+      "Strength": 0,
+      "Stability": 1,
+      "Feet": [
+        -1608,
+        -1008,
+        -7.692663
+      ],
+      "Yaw": 99.61575,
+      "Pitch": -53,
+      "RunDeg": 0,
+      "PerturbU": 0,
+      "Scatter": 0.2187151,
+      "PredictedBounces": 5,
+      "RealBounces": 3,
+      "Pos": [
+        -1609.4513,
+        -999.4339,
+        51.78294
+      ],
+      "Vel": [
+        -18.36768,
+        108.41494,
+        170.04437
+      ],
+      "PredictedRest": [
+        -1714.4266,
+        -865.19196,
+        -10.335745
+      ],
+      "RealRest": [
+        -1713.398,
+        -864.84796,
+        -10.226372
+      ],
+      "Detonated": true,
+      "ErrPredicted": 1.0901791,
+      "ErrTarget": 72.33734,
+      "DivergenceTick": -1,
+      "DivergenceClass": "TRACKED"
+    },
+    {
+      "Index": 13,
+      "Type": "Stand",
+      "Strength": 0,
+      "Stability": 1,
+      "Feet": [
+        -1656,
+        -1104,
+        -21.415741
+      ],
+      "Yaw": 66.92471,
+      "Pitch": -48,
+      "RunDeg": 0,
+      "PerturbU": 0,
+      "Scatter": 0.23254777,
+      "PredictedBounces": 5,
+      "RealBounces": 4,
+      "Pos": [
+        -1652.1969,
+        -1095.0731,
+        55.366188
+      ],
+      "Vel": [
+        48.132763,
+        112.9807,
+        161.01196
+      ],
+      "PredictedRest": [
+        -1654.0109,
+        -939.0863,
+        -5.790336
+      ],
+      "RealRest": [
+        -1654.5691,
+        -938.68475,
+        -5.8570027
+      ],
+      "Detonated": true,
+      "ErrPredicted": 0.69087267,
+      "ErrTarget": 22.13777,
+      "DivergenceTick": -1,
+      "DivergenceClass": "TRACKED"
+    },
+    {
+      "Index": 14,
+      "Type": "Crouch",
+      "Strength": 0.5,
+      "Stability": 1,
+      "Feet": [
+        -1968,
+        -960,
+        -31.287058
+      ],
+      "Yaw": 21.457218,
+      "Pitch": -1,
+      "RunDeg": 0,
+      "PerturbU": 0,
+      "Scatter": 0.18585402,
+      "PredictedBounces": 5,
+      "RealBounces": 4,
+      "Pos": [
+        -1953.3771,
+        -954.2525,
+        17.775423
+      ],
+      "Vel": [
+        400.9886,
+        157.60785,
+        82.88207
+      ],
+      "PredictedRest": [
+        -1682.044,
+        -886.04047,
+        -7.5620604
+      ],
+      "RealRest": [
+        -1678.9868,
+        -890.9821,
+        -7.232958
+      ],
+      "Detonated": true,
+      "ErrPredicted": 5.820159,
+      "ErrTarget": 32.772305,
+      "DivergenceTick": 141,
+      "DivergenceClass": "DRIFT"
+    },
+    {
+      "Index": 15,
+      "Type": "Stand",
+      "Strength": 0,
+      "Stability": 1,
+      "Feet": [
+        -1704,
+        -1056,
+        -21.486715
+      ],
+      "Yaw": 83.41337,
+      "Pitch": -33,
+      "RunDeg": 0,
+      "PerturbU": 0,
+      "Scatter": 0.2340417,
+      "PredictedBounces": 5,
+      "RealBounces": 4,
+      "Pos": [
+        -1702.5804,
+        -1043.7062,
+        52.714577
+      ],
+      "Vel": [
+        17.966066,
+        155.5942,
+        128.35078
+      ],
+      "PredictedRest": [
+        -1721.8607,
+        -862.2386,
+        -10.690516
+      ],
+      "RealRest": [
+        -1721.5667,
+        -861.55853,
+        -10.573975
+      ],
+      "Detonated": true,
+      "ErrPredicted": 0.75002044,
+      "ErrTarget": 80.03412,
+      "DivergenceTick": -1,
+      "DivergenceClass": "TRACKED"
+    },
+    {
+      "Index": 16,
+      "Type": "Stand",
+      "Strength": 0,
+      "Stability": 1,
+      "Feet": [
+        -1776,
+        -888,
+        -19.540844
+      ],
+      "Yaw": -15.074303,
+      "Pitch": -45,
+      "RunDeg": 0,
+      "PerturbU": 0,
+      "Scatter": 40.56599,
+      "PredictedBounces": 5,
+      "RealBounces": 4,
+      "Pos": [
+        -1766.0693,
+        -890.67474,
+        56.775864
+      ],
+      "Vel": [
+        125.68546,
+        -33.852074,
+        155.12401
+      ],
+      "PredictedRest": [
+        -1646.1067,
+        -1000.5255,
+        -11.960376
+      ],
+      "RealRest": [
+        -1645.6062,
+        -1000.27625,
+        -11.846904
+      ],
+      "Detonated": true,
+      "ErrPredicted": 0.57052493,
+      "ErrTarget": 81.506,
+      "DivergenceTick": -1,
+      "DivergenceClass": "TRACKED"
+    },
+    {
+      "Index": 17,
+      "Type": "Stand",
+      "Strength": 0.5,
+      "Stability": 1,
+      "Feet": [
+        -1398.4723,
+        -1609.8894,
+        -29.841463
+      ],
+      "Yaw": 112.05259,
+      "Pitch": -14,
+      "RunDeg": 0,
+      "PerturbU": 0,
+      "Scatter": 1.6660393,
+      "PredictedBounces": 5,
+      "RealBounces": 4,
+      "Pos": [
+        -1404.0245,
+        -1596.1833,
+        40.327137
+      ],
+      "Vel": [
+        -152.2535,
+        375.8471,
+        167.50923
+      ],
+      "PredictedRest": [
+        -1689.8849,
+        -962.3733,
+        -15.673736
+      ],
+      "RealRest": [
+        -1690.1147,
+        -962.40436,
+        -15.649895
+      ],
+      "Detonated": true,
+      "ErrPredicted": 0.23317038,
+      "ErrTarget": 45.033535,
+      "DivergenceTick": -1,
+      "DivergenceClass": "TRACKED"
+    },
+    {
+      "Index": 18,
+      "Type": "Stand",
+      "Strength": 0,
+      "Stability": 1,
+      "Feet": [
+        -1752,
+        -1008,
+        -23.167799
+      ],
+      "Yaw": 28.561928,
+      "Pitch": -49,
+      "RunDeg": 0,
+      "PerturbU": 0,
+      "Scatter": 0.23752359,
+      "PredictedBounces": 5,
+      "RealBounces": 4,
+      "Pos": [
+        -1743.652,
+        -1003.45575,
+        53.76313
+      ],
+      "Vel": [
+        105.654076,
+        57.513435,
+        162.89775
+      ],
+      "PredictedRest": [
+        -1663.7335,
+        -964.3337,
+        -11.653292
+      ],
+      "RealRest": [
+        -1664.3503,
+        -964.7612,
+        -11.800052
+      ],
+      "Detonated": true,
+      "ErrPredicted": 0.76472676,
+      "ErrTarget": 42.718178,
+      "DivergenceTick": -1,
+      "DivergenceClass": "TRACKED"
+    },
+    {
+      "Index": 19,
+      "Type": "Stand",
+      "Strength": 0.5,
+      "Stability": 1,
+      "Feet": [
+        -1320,
+        -1560,
+        -20
+      ],
+      "Yaw": 120.79047,
+      "Pitch": -11,
+      "RunDeg": 0,
+      "PerturbU": 0,
+      "Scatter": 0.26348817,
+      "PredictedBounces": 5,
+      "RealBounces": 4,
+      "Pos": [
+        -1327.7073,
+        -1547.066,
+        49.473965
+      ],
+      "Vel": [
+        -211.34769,
+        354.6731,
+        148.46115
+      ],
+      "PredictedRest": [
+        -1717.4663,
+        -972.59515,
+        -18.176916
+      ],
+      "RealRest": [
+        -1718.7592,
+        -971.1372,
+        -18.185976
+      ],
+      "Detonated": true,
+      "ErrPredicted": 1.948626,
+      "ErrTarget": 69.31225,
+      "DivergenceTick": -1,
+      "DivergenceClass": "TRACKED"
+    },
+    {
+      "Index": 20,
+      "Type": "Crouch",
+      "Strength": 0,
+      "Stability": 1,
+      "Feet": [
+        -1728,
+        -864,
+        -11.425055
+      ],
+      "Yaw": -28.95092,
+      "Pitch": -57,
+      "RunDeg": 0,
+      "PerturbU": 0,
+      "Scatter": 0.23628592,
+      "PredictedBounces": 5,
+      "RealBounces": 4,
+      "Pos": [
+        -1721.1412,
+        -867.7942,
+        48.563496
+      ],
+      "Vel": [
+        86.80578,
+        -48.02007,
+        176.53636
+      ],
+      "PredictedRest": [
+        -1655.5922,
+        -961.5872,
+        -9.464656
+      ],
+      "RealRest": [
+        -1655.6923,
+        -962.13074,
+        -9.477473
+      ],
+      "Detonated": true,
+      "ErrPredicted": 0.5528071,
+      "ErrTarget": 42.10849,
+      "DivergenceTick": -1,
+      "DivergenceClass": "TRACKED"
+    },
+    {
+      "Index": 21,
+      "Type": "Crouch",
+      "Strength": 0,
+      "Stability": 1,
+      "Feet": [
+        -1728,
+        -816,
+        22.233772
+      ],
+      "Yaw": -42.017235,
+      "Pitch": -54,
+      "RunDeg": 0,
+      "PerturbU": 0,
+      "Scatter": 0.24383822,
+      "PredictedBounces": 5,
+      "RealBounces": 4,
+      "Pos": [
+        -1721.7008,
+        -821.67523,
+        81.842545
+      ],
+      "Vel": [
+        79.72427,
+        -71.82749,
+        171.72975
+      ],
+      "PredictedRest": [
+        -1670.6168,
+        -969.87244,
+        -13.757331
+      ],
+      "RealRest": [
+        -1673.5298,
+        -971.9401,
+        -14.576095
+      ],
+      "Detonated": true,
+      "ErrPredicted": 3.664842,
+      "ErrTarget": 49.74532,
+      "DivergenceTick": -1,
+      "DivergenceClass": "TRACKED"
+    },
+    {
+      "Index": 22,
+      "Type": "Crouch",
+      "Strength": 0.5,
+      "Stability": 1,
+      "Feet": [
+        -1368,
+        -1560,
+        -20
+      ],
+      "Yaw": 112.88002,
+      "Pitch": -17,
+      "RunDeg": 0,
+      "PerturbU": 0,
+      "Scatter": 0.84194136,
+      "PredictedBounces": 5,
+      "RealBounces": 4,
+      "Pos": [
+        -1373.6329,
+        -1546.6521,
+        32.83
+      ],
+      "Vel": [
+        -154.4644,
+        366.02444,
+        186.19453
+      ],
+      "PredictedRest": [
+        -1711.1621,
+        -932.77106,
+        -13.377844
+      ],
+      "RealRest": [
+        -1711.1178,
+        -932.4408,
+        -13.306566
+      ],
+      "Detonated": true,
+      "ErrPredicted": 0.34075868,
+      "ErrTarget": 42.804253,
+      "DivergenceTick": -1,
+      "DivergenceClass": "TRACKED"
+    },
+    {
+      "Index": 23,
+      "Type": "Stand",
+      "Strength": 0.5,
+      "Stability": 1,
+      "Feet": [
+        -1330.7076,
+        -1626.8308,
+        -16
+      ],
+      "Yaw": 113.201805,
+      "Pitch": -17,
+      "RunDeg": 0,
+      "PerturbU": 0,
+      "Scatter": 0.614161,
+      "PredictedBounces": 5,
+      "RealBounces": 4,
+      "Pos": [
+        -1336.4154,
+        -1613.5148,
+        54.85
+      ],
+      "Vel": [
+        -156.51762,
+        365.15118,
+        186.19453
+      ],
+      "PredictedRest": [
+        -1683.4623,
+        -954.5783,
+        -14.911497
+      ],
+      "RealRest": [
+        -1683.8389,
+        -953.31165,
+        -14.785974
+      ],
+      "Detonated": true,
+      "ErrPredicted": 1.3274065,
+      "ErrTarget": 34.10689,
+      "DivergenceTick": -1,
+      "DivergenceClass": "TRACKED"
+    },
+    {
+      "Index": 24,
+      "Type": "Crouch",
+      "Strength": 0,
+      "Stability": 1,
+      "Feet": [
+        -1599.0115,
+        -877.5469,
+        48
+      ],
+      "Yaw": -177.07643,
+      "Pitch": -89,
+      "RunDeg": 0,
+      "PerturbU": 0,
+      "Scatter": 0.47265843,
+      "PredictedBounces": 5,
+      "RealBounces": 4,
+      "Pos": [
+        -1599.2594,
+        -877.5595,
+        110.03808
+      ],
+      "Vel": [
+        -3.1373408,
+        -0.16022511,
+        202.47565
+      ],
+      "PredictedRest": [
+        -1664.7499,
+        -940.33905,
+        -8.400772
+      ],
+      "RealRest": [
+        -1665.8793,
+        -941.21985,
+        -8.710048
+      ],
+      "Detonated": true,
+      "ErrPredicted": 1.4652607,
+      "ErrTarget": 19.21085,
+      "DivergenceTick": -1,
+      "DivergenceClass": "TRACKED"
+    },
+    {
+      "Index": 25,
+      "Type": "Crouch",
+      "Strength": 0.5,
+      "Stability": 1,
+      "Feet": [
+        -2123.75,
+        -807.60144,
+        -20
+      ],
+      "Yaw": -13.679715,
+      "Pitch": -5.6,
+      "RunDeg": 0,
+      "PerturbU": 0.25,
+      "Scatter": 0.30222952,
+      "PredictedBounces": 4,
+      "RealBounces": 3,
+      "Pos": [
+        -2108.732,
+        -811.2568,
+        30.175112
+      ],
+      "Vel": [
+        411.8207,
+        -100.23662,
+        113.39247
+      ],
+      "PredictedRest": [
+        -1621.2102,
+        -952.6098,
+        2.9020414
+      ],
+      "RealRest": [
+        -1620.0096,
+        -953.0845,
+        3.189507
+      ],
+      "Detonated": true,
+      "ErrPredicted": 1.3226097,
+      "ErrTarget": 58.26918,
+      "DivergenceTick": -1,
+      "DivergenceClass": "TRACKED"
+    },
+    {
+      "Index": 26,
+      "Type": "Crouch",
+      "Strength": 0.5,
+      "Stability": 1,
+      "Feet": [
+        -2124.25,
+        -807.60144,
+        -20
+      ],
+      "Yaw": -13.679715,
+      "Pitch": -5.6,
+      "RunDeg": 0,
+      "PerturbU": 0.25,
+      "Scatter": 0.30222952,
+      "PredictedBounces": 4,
+      "RealBounces": 3,
+      "Pos": [
+        -2109.232,
+        -811.2568,
+        30.175112
+      ],
+      "Vel": [
+        411.8207,
+        -100.23662,
+        113.39247
+      ],
+      "PredictedRest": [
+        -1621.3857,
+        -952.6721,
+        2.8262467
+      ],
+      "RealRest": [
+        -1620.3396,
+        -953.145,
+        3.0636537
+      ],
+      "Detonated": true,
+      "ErrPredicted": 1.1723528,
+      "ErrTarget": 58.0212,
+      "DivergenceTick": -1,
+      "DivergenceClass": "TRACKED"
+    },
+    {
+      "Index": 27,
+      "Type": "Crouch",
+      "Strength": 0.5,
+      "Stability": 1,
+      "Feet": [
+        -2124,
+        -807.35144,
+        -20
+      ],
+      "Yaw": -13.679715,
+      "Pitch": -5.6,
+      "RunDeg": 0,
+      "PerturbU": 0.25,
+      "Scatter": 0.30222952,
+      "PredictedBounces": 4,
+      "RealBounces": 3,
+      "Pos": [
+        -2108.982,
+        -811.0068,
+        30.175112
+      ],
+      "Vel": [
+        411.8207,
+        -100.23662,
+        113.39247
+      ],
+      "PredictedRest": [
+        -1621.3948,
+        -952.35913,
+        2.9153466
+      ],
+      "RealRest": [
+        -1620.2191,
+        -952.86975,
+        3.1840518
+      ],
+      "Detonated": true,
+      "ErrPredicted": 1.309622,
+      "ErrTarget": 57.978016,
+      "DivergenceTick": -1,
+      "DivergenceClass": "TRACKED"
+    },
+    {
+      "Index": 28,
+      "Type": "Crouch",
+      "Strength": 0.5,
+      "Stability": 1,
+      "Feet": [
+        -2124,
+        -807.85144,
+        -20
+      ],
+      "Yaw": -13.679715,
+      "Pitch": -5.6,
+      "RunDeg": 0,
+      "PerturbU": 0.25,
+      "Scatter": 0.30222952,
+      "PredictedBounces": 4,
+      "RealBounces": 3,
+      "Pos": [
+        -2108.982,
+        -811.5068,
+        30.175112
+      ],
+      "Vel": [
+        411.8207,
+        -100.23662,
+        113.39247
+      ],
+      "PredictedRest": [
+        -1621.2015,
+        -952.9223,
+        2.8129766
+      ],
+      "RealRest": [
+        -1620.1293,
+        -953.3605,
+        3.069135
+      ],
+      "Detonated": true,
+      "ErrPredicted": 1.1863241,
+      "ErrTarget": 58.313843,
+      "DivergenceTick": -1,
+      "DivergenceClass": "TRACKED"
+    },
+    {
+      "Index": 29,
+      "Type": "Stand",
+      "Strength": 0,
+      "Stability": 1,
+      "Feet": [
+        -1559.75,
+        -1056,
+        -7.113123
+      ],
+      "Yaw": 119.72539,
+      "Pitch": -21,
+      "RunDeg": 0,
+      "PerturbU": 0.25,
+      "Scatter": 0.2357717,
+      "PredictedBounces": 4,
+      "RealBounces": 3,
+      "Pos": [
+        -1566.711,
+        -1043.8086,
+        64.622284
+      ],
+      "Vel": [
+        -88.100815,
+        154.29826,
+        97.141914
+      ],
+      "PredictedRest": [
+        -1719.5552,
+        -848.76324,
+        -9.038509
+      ],
+      "RealRest": [
+        -1720.6584,
+        -848.46277,
+        -8.949943
+      ],
+      "Detonated": true,
+      "ErrPredicted": 1.1468818,
+      "ErrTarget": 89.86458,
+      "DivergenceTick": -1,
+      "DivergenceClass": "TRACKED"
+    },
+    {
+      "Index": 30,
+      "Type": "Stand",
+      "Strength": 0,
+      "Stability": 1,
+      "Feet": [
+        -1560.25,
+        -1056,
+        -7.225588
+      ],
+      "Yaw": 119.72539,
+      "Pitch": -21,
+      "RunDeg": 0,
+      "PerturbU": 0.25,
+      "Scatter": 0.2357717,
+      "PredictedBounces": 4,
+      "RealBounces": 3,
+      "Pos": [
+        -1567.211,
+        -1043.8086,
+        64.50982
+      ],
+      "Vel": [
+        -88.100815,
+        154.29826,
+        97.141914
+      ],
+      "PredictedRest": [
+        -1719.9248,
+        -848.8263,
+        -9.044421
+      ],
+      "RealRest": [
+        -1721.0981,
+        -848.49677,
+        -8.950689
+      ],
+      "Detonated": true,
+      "ErrPredicted": 1.2223344,
+      "ErrTarget": 90.08766,
+      "DivergenceTick": -1,
+      "DivergenceClass": "TRACKED"
+    },
+    {
+      "Index": 31,
+      "Type": "Stand",
+      "Strength": 0,
+      "Stability": 1,
+      "Feet": [
+        -1560,
+        -1055.75,
+        -7.115061
+      ],
+      "Yaw": 119.72539,
+      "Pitch": -21,
+      "RunDeg": 0,
+      "PerturbU": 0.25,
+      "Scatter": 0.2357717,
+      "PredictedBounces": 4,
+      "RealBounces": 3,
+      "Pos": [
+        -1566.961,
+        -1043.5586,
+        64.620346
+      ],
+      "Vel": [
+        -88.100815,
+        154.29826,
+        97.141914
+      ],
+      "PredictedRest": [
+        -1719.7064,
+        -848.5329,
+        -9.001699
+      ],
+      "RealRest": [
+        -1720.8613,
+        -848.22504,
+        -8.911472
+      ],
+      "Detonated": true,
+      "ErrPredicted": 1.1986369,
+      "ErrTarget": 90.17553,
+      "DivergenceTick": -1,
+      "DivergenceClass": "TRACKED"
+    },
+    {
+      "Index": 32,
+      "Type": "Stand",
+      "Strength": 0,
+      "Stability": 1,
+      "Feet": [
+        -1560,
+        -1056.25,
+        -7.223646
+      ],
+      "Yaw": 119.72539,
+      "Pitch": -21,
+      "RunDeg": 0,
+      "PerturbU": 0.25,
+      "Scatter": 0.2357717,
+      "PredictedBounces": 4,
+      "RealBounces": 3,
+      "Pos": [
+        -1566.961,
+        -1044.0586,
+        64.51176
+      ],
+      "Vel": [
+        -88.100815,
+        154.29826,
+        97.141914
+      ],
+      "PredictedRest": [
+        -1719.7733,
+        -849.0569,
+        -9.081276
+      ],
+      "RealRest": [
+        -1720.895,
+        -848.73456,
+        -8.989162
+      ],
+      "Detonated": true,
+      "ErrPredicted": 1.1707261,
+      "ErrTarget": 89.776405,
+      "DivergenceTick": -1,
+      "DivergenceClass": "TRACKED"
+    },
+    {
+      "Index": 33,
+      "Type": "Crouch",
+      "Strength": 0,
+      "Stability": 1,
+      "Feet": [
+        -1703.75,
+        -960,
+        -17.8493
+      ],
+      "Yaw": 57.97585,
+      "Pitch": -61,
+      "RunDeg": 0,
+      "PerturbU": 0.25,
+      "Scatter": 0.23891506,
+      "PredictedBounces": 4,
+      "RealBounces": 3,
+      "Pos": [
+        -1700.0603,
+        -954.10077,
+        42.598503
+      ],
+      "Vel": [
+        46.698063,
+        74.66247,
+        182.34874
+      ],
+      "PredictedRest": [
+        -1710.6366,
+        -856.7107,
+        -9.300877
+      ],
+      "RealRest": [
+        -1712.8977,
+        -856.86554,
+        -9.461926
+      ],
+      "Detonated": true,
+      "ErrPredicted": 2.2721193,
+      "ErrTarget": 78.55494,
+      "DivergenceTick": -1,
+      "DivergenceClass": "TRACKED"
+    },
+    {
+      "Index": 34,
+      "Type": "Crouch",
+      "Strength": 0,
+      "Stability": 1,
+      "Feet": [
+        -1704.25,
+        -960,
+        -17.852612
+      ],
+      "Yaw": 57.97585,
+      "Pitch": -61,
+      "RunDeg": 0,
+      "PerturbU": 0.25,
+      "Scatter": 0.23891506,
+      "PredictedBounces": 4,
+      "RealBounces": 3,
+      "Pos": [
+        -1700.5603,
+        -954.10077,
+        42.595192
+      ],
+      "Vel": [
+        46.698063,
+        74.66247,
+        182.34874
+      ],
+      "PredictedRest": [
+        -1710.8519,
+        -856.62146,
+        -9.30966
+      ],
+      "RealRest": [
+        -1713.2113,
+        -856.81537,
+        -9.48203
+      ],
+      "Detonated": true,
+      "ErrPredicted": 2.373597,
+      "ErrTarget": 78.77029,
+      "DivergenceTick": -1,
+      "DivergenceClass": "TRACKED"
+    },
+    {
+      "Index": 35,
+      "Type": "Crouch",
+      "Strength": 0,
+      "Stability": 1,
+      "Feet": [
+        -1704,
+        -959.75,
+        -17.833767
+      ],
+      "Yaw": 57.97585,
+      "Pitch": -61,
+      "RunDeg": 0,
+      "PerturbU": 0.25,
+      "Scatter": 0.23891506,
+      "PredictedBounces": 4,
+      "RealBounces": 3,
+      "Pos": [
+        -1700.3103,
+        -953.85077,
+        42.614037
+      ],
+      "Vel": [
+        46.698063,
+        74.66247,
+        182.34874
+      ],
+      "PredictedRest": [
+        -1710.764,
+        -856.4231,
+        -9.284595
+      ],
+      "RealRest": [
+        -1713.0687,
+        -856.59454,
+        -9.450601
+      ],
+      "Detonated": true,
+      "ErrPredicted": 2.3170102,
+      "ErrTarget": 78.87531,
+      "DivergenceTick": -1,
+      "DivergenceClass": "TRACKED"
+    },
+    {
+      "Index": 36,
+      "Type": "Crouch",
+      "Strength": 0,
+      "Stability": 1,
+      "Feet": [
+        -1704,
+        -960.25,
+        -17.868137
+      ],
+      "Yaw": 57.97585,
+      "Pitch": -61,
+      "RunDeg": 0,
+      "PerturbU": 0.25,
+      "Scatter": 0.23891506,
+      "PredictedBounces": 4,
+      "RealBounces": 3,
+      "Pos": [
+        -1700.3103,
+        -954.35077,
+        42.579666
+      ],
+      "Vel": [
+        46.698063,
+        74.66247,
+        182.34874
+      ],
+      "PredictedRest": [
+        -1710.7211,
+        -856.9088,
+        -9.325648
+      ],
+      "RealRest": [
+        -1713.0404,
+        -857.0863,
+        -9.493359
+      ],
+      "Detonated": true,
+      "ErrPredicted": 2.3321555,
+      "ErrTarget": 78.45006,
+      "DivergenceTick": -1,
+      "DivergenceClass": "TRACKED"
+    },
+    {
+      "Index": 37,
+      "Type": "Stand",
+      "Strength": 0,
+      "Stability": 1,
+      "Feet": [
+        -1535.75,
+        -1032,
+        3.4613495
+      ],
+      "Yaw": 127.92793,
+      "Pitch": -41,
+      "RunDeg": 0,
+      "PerturbU": 0.25,
+      "Scatter": 0.24310787,
+      "PredictedBounces": 4,
+      "RealBounces": 3,
+      "Pos": [
+        -1542.5267,
+        -1023.3037,
+        79.11665
+      ],
+      "Vel": [
+        -85.767456,
+        110.06238,
+        146.7531
+      ],
+      "PredictedRest": [
+        -1735.0942,
+        -852.3576,
+        -9.576458
+      ],
+      "RealRest": [
+        -1734.718,
+        -852.2721,
+        -9.520393
+      ],
+      "Detonated": true,
+      "ErrPredicted": 0.38986826,
+      "ErrTarget": 95.72288,
+      "DivergenceTick": -1,
+      "DivergenceClass": "TRACKED"
+    },
+    {
+      "Index": 38,
+      "Type": "Stand",
+      "Strength": 0,
+      "Stability": 1,
+      "Feet": [
+        -1536.25,
+        -1032,
+        3.357952
+      ],
+      "Yaw": 127.92793,
+      "Pitch": -41,
+      "RunDeg": 0,
+      "PerturbU": 0.25,
+      "Scatter": 0.24310787,
+      "PredictedBounces": 4,
+      "RealBounces": 3,
+      "Pos": [
+        -1543.0267,
+        -1023.3037,
+        79.01326
+      ],
+      "Vel": [
+        -85.767456,
+        110.06238,
+        146.7531
+      ],
+      "PredictedRest": [
+        -1735.4895,
+        -852.39575,
+        -9.593889
+      ],
+      "RealRest": [
+        -1734.9207,
+        -852.0254,
+        -9.485463
+      ],
+      "Detonated": true,
+      "ErrPredicted": 0.6873946,
+      "ErrTarget": 96.04153,
+      "DivergenceTick": -1,
+      "DivergenceClass": "TRACKED"
+    },
+    {
+      "Index": 39,
+      "Type": "Stand",
+      "Strength": 0,
+      "Stability": 1,
+      "Feet": [
+        -1536,
+        -1031.75,
+        3.4794273
+      ],
+      "Yaw": 127.92793,
+      "Pitch": -41,
+      "RunDeg": 0,
+      "PerturbU": 0.25,
+      "Scatter": 0.24310787,
+      "PredictedBounces": 4,
+      "RealBounces": 3,
+      "Pos": [
+        -1542.7767,
+        -1023.0537,
+        79.134735
+      ],
+      "Vel": [
+        -85.767456,
+        110.06238,
+        146.7531
+      ],
+      "PredictedRest": [
+        -1735.258,
+        -852.1112,
+        -9.540468
+      ],
+      "RealRest": [
+        -1735.171,
+        -852.2909,
+        -9.536269
+      ],
+      "Detonated": true,
+      "ErrPredicted": 0.19970107,
+      "ErrTarget": 96.01829,
+      "DivergenceTick": -1,
+      "DivergenceClass": "TRACKED"
+    },
+    {
+      "Index": 40,
+      "Type": "Stand",
+      "Strength": 0,
+      "Stability": 1,
+      "Feet": [
+        -1536,
+        -1032.25,
+        3.3398705
+      ],
+      "Yaw": 127.92793,
+      "Pitch": -41,
+      "RunDeg": 0,
+      "PerturbU": 0.25,
+      "Scatter": 0.24310787,
+      "PredictedBounces": 4,
+      "RealBounces": 3,
+      "Pos": [
+        -1542.7767,
+        -1023.5537,
+        78.99518
+      ],
+      "Vel": [
+        -85.767456,
+        110.06238,
+        146.7531
+      ],
+      "PredictedRest": [
+        -1735.3254,
+        -852.642,
+        -9.6298485
+      ],
+      "RealRest": [
+        -1734.9686,
+        -852.53754,
+        -9.571206
+      ],
+      "Detonated": true,
+      "ErrPredicted": 0.37639344,
+      "ErrTarget": 95.69992,
+      "DivergenceTick": -1,
+      "DivergenceClass": "TRACKED"
+    },
+    {
+      "Index": 41,
+      "Type": "Stand",
+      "Strength": 0,
+      "Stability": 1,
+      "Feet": [
+        -1751.75,
+        -1056,
+        -23.327383
+      ],
+      "Yaw": 59.24893,
+      "Pitch": -37,
+      "RunDeg": 0,
+      "PerturbU": 0.25,
+      "Scatter": 1.2253339,
+      "PredictedBounces": 4,
+      "RealBounces": 3,
+      "Pos": [
+        -1745.756,
+        -1045.9254,
+        51.621872
+      ],
+      "Vel": [
+        75.86122,
+        127.505844,
+        137.81723
+      ],
+      "PredictedRest": [
+        -1698.0142,
+        -861.29675,
+        -8.726261
+      ],
+      "RealRest": [
+        -1697.2972,
+        -861.7616,
+        -8.681254
+      ],
+      "Detonated": true,
+      "ErrPredicted": 0.8556156,
+      "ErrTarget": 66.6592,
+      "DivergenceTick": -1,
+      "DivergenceClass": "TRACKED"
+    },
+    {
+      "Index": 42,
+      "Type": "Stand",
+      "Strength": 0,
+      "Stability": 1,
+      "Feet": [
+        -1752.25,
+        -1056,
+        -23.32955
+      ],
+      "Yaw": 59.24893,
+      "Pitch": -37,
+      "RunDeg": 0,
+      "PerturbU": 0.25,
+      "Scatter": 1.2253339,
+      "PredictedBounces": 4,
+      "RealBounces": 3,
+      "Pos": [
+        -1746.256,
+        -1045.9254,
+        51.619705
+      ],
+      "Vel": [
+        75.86122,
+        127.505844,
+        137.81723
+      ],
+      "PredictedRest": [
+        -1699.3672,
+        -861.4079,
+        -8.843003
+      ],
+      "RealRest": [
+        -1698.5421,
+        -860.84576,
+        -8.695517
+      ],
+      "Detonated": true,
+      "ErrPredicted": 1.0092039,
+      "ErrTarget": 68.01463,
+      "DivergenceTick": -1,
+      "DivergenceClass": "TRACKED"
+    },
+    {
+      "Index": 43,
+      "Type": "Stand",
+      "Strength": 0,
+      "Stability": 1,
+      "Feet": [
+        -1752,
+        -1055.75,
+        -23.327799
+      ],
+      "Yaw": 59.24893,
+      "Pitch": -37,
+      "RunDeg": 0,
+      "PerturbU": 0.25,
+      "Scatter": 1.2253339,
+      "PredictedBounces": 4,
+      "RealBounces": 3,
+      "Pos": [
+        -1746.006,
+        -1045.6754,
+        51.62146
+      ],
+      "Vel": [
+        75.86122,
+        127.505844,
+        137.81723
+      ],
+      "PredictedRest": [
+        -1698.2026,
+        -861.02985,
+        -8.716695
+      ],
+      "RealRest": [
+        -1698.3789,
+        -860.6165,
+        -8.661691
+      ],
+      "Detonated": true,
+      "ErrPredicted": 0.45270097,
+      "ErrTarget": 68.152756,
+      "DivergenceTick": -1,
+      "DivergenceClass": "TRACKED"
+    },
+    {
+      "Index": 44,
+      "Type": "Stand",
+      "Strength": 0,
+      "Stability": 1,
+      "Feet": [
+        -1752,
+        -1056.25,
+        -23.329134
+      ],
+      "Yaw": 59.24893,
+      "Pitch": -37,
+      "RunDeg": 0,
+      "PerturbU": 0.25,
+      "Scatter": 1.2253339,
+      "PredictedBounces": 4,
+      "RealBounces": 3,
+      "Pos": [
+        -1746.006,
+        -1046.1754,
+        51.620125
+      ],
+      "Vel": [
+        75.86122,
+        127.505844,
+        137.81723
+      ],
+      "PredictedRest": [
+        -1699.1826,
+        -861.67474,
+        -8.852882
+      ],
+      "RealRest": [
+        -1699.6307,
+        -861.13245,
+        -8.807469
+      ],
+      "Detonated": true,
+      "ErrPredicted": 0.7049542,
+      "ErrTarget": 68.22889,
+      "DivergenceTick": -1,
+      "DivergenceClass": "TRACKED"
+    },
+    {
+      "Index": 45,
+      "Type": "Stand",
+      "Strength": 0,
+      "Stability": 1,
+      "Feet": [
+        -1775.75,
+        -960,
+        -24.768486
+      ],
+      "Yaw": 42.194847,
+      "Pitch": -49,
+      "RunDeg": 0,
+      "PerturbU": 0.25,
+      "Scatter": 14.001276,
+      "PredictedBounces": 4,
+      "RealBounces": 3,
+      "Pos": [
+        -1768.7083,
+        -953.61615,
+        52.162445
+      ],
+      "Vel": [
+        89.12141,
+        80.795746,
+        162.89775
+      ],
+      "PredictedRest": [
+        -1686.5845,
+        -908.97284,
+        -9.388888
+      ],
+      "RealRest": [
+        -1686.405,
+        -908.59393,
+        -9.304232
+      ],
+      "Detonated": true,
+      "ErrPredicted": 0.42771092,
+      "ErrTarget": 21.784813,
+      "DivergenceTick": -1,
+      "DivergenceClass": "TRACKED"
+    },
+    {
+      "Index": 46,
+      "Type": "Stand",
+      "Strength": 0,
+      "Stability": 1,
+      "Feet": [
+        -1776.25,
+        -960,
+        -24.800823
+      ],
+      "Yaw": 42.194847,
+      "Pitch": -49,
+      "RunDeg": 0,
+      "PerturbU": 0.25,
+      "Scatter": 14.001276,
+      "PredictedBounces": 4,
+      "RealBounces": 3,
+      "Pos": [
+        -1769.2083,
+        -953.61615,
+        52.130108
+      ],
+      "Vel": [
+        89.12141,
+        80.795746,
+        162.89775
+      ],
+      "PredictedRest": [
+        -1698.9384,
+        -915.59125,
+        -10.882963
+      ],
+      "RealRest": [
+        -1686.6378,
+        -908.4371,
+        -9.287514
+      ],
+      "Detonated": true,
+      "ErrPredicted": 14.318899,
+      "ErrTarget": 22.064375,
+      "DivergenceTick": 96,
+      "DivergenceClass": "DRIFT"
+    },
+    {
+      "Index": 47,
+      "Type": "Stand",
+      "Strength": 0,
+      "Stability": 1,
+      "Feet": [
+        -1776,
+        -959.75,
+        -24.792881
+      ],
+      "Yaw": 42.194847,
+      "Pitch": -49,
+      "RunDeg": 0,
+      "PerturbU": 0.25,
+      "Scatter": 14.001276,
+      "PredictedBounces": 4,
+      "RealBounces": 3,
+      "Pos": [
+        -1768.9583,
+        -953.36615,
+        52.13805
+      ],
+      "Vel": [
+        89.12141,
+        80.795746,
+        162.89775
+      ],
+      "PredictedRest": [
+        -1686.7543,
+        -908.702,
+        -9.355701
+      ],
+      "RealRest": [
+        -1698.7917,
+        -915.364,
+        -10.812217
+      ],
+      "Detonated": true,
+      "ErrPredicted": 13.834895,
+      "ErrTarget": 30.097065,
+      "DivergenceTick": 97,
+      "DivergenceClass": "DRIFT"
+    },
+    {
+      "Index": 48,
+      "Type": "Stand",
+      "Strength": 0,
+      "Stability": 1,
+      "Feet": [
+        -1776,
+        -960.25,
+        -24.776436
+      ],
+      "Yaw": 42.194847,
+      "Pitch": -49,
+      "RunDeg": 0,
+      "PerturbU": 0.25,
+      "Scatter": 14.001276,
+      "PredictedBounces": 4,
+      "RealBounces": 3,
+      "Pos": [
+        -1768.9583,
+        -953.86615,
+        52.154495
+      ],
+      "Vel": [
+        89.12141,
+        80.795746,
+        162.89775
+      ],
+      "PredictedRest": [
+        -1686.688,
+        -909.0954,
+        -9.40693
+      ],
+      "RealRest": [
+        -1686.621,
+        -908.7368,
+        -9.3268795
+      ],
+      "Detonated": true,
+      "ErrPredicted": 0.37347025,
+      "ErrTarget": 21.863333,
+      "DivergenceTick": -1,
+      "DivergenceClass": "TRACKED"
+    },
+    {
+      "Index": 49,
+      "Type": "Stand",
+      "Strength": 0,
+      "Stability": 1,
+      "Feet": [
+        -1823.75,
+        -984,
+        -24.263302
+      ],
+      "Yaw": 30.003489,
+      "Pitch": -37,
+      "RunDeg": 0,
+      "PerturbU": 0.25,
+      "Scatter": 0.23945364,
+      "PredictedBounces": 4,
+      "RealBounces": 3,
+      "Pos": [
+        -1813.5981,
+        -978.138,
+        50.68596
+      ],
+      "Vel": [
+        128.48479,
+        74.19116,
+        137.81723
+      ],
+      "PredictedRest": [
+        -1688.4736,
+        -875.52716,
+        -8.185465
+      ],
+      "RealRest": [
+        -1688.3269,
+        -875.18616,
+        -8.127686
+      ],
+      "Detonated": true,
+      "ErrPredicted": 0.37570074,
+      "ErrTarget": 50.78222,
+      "DivergenceTick": -1,
+      "DivergenceClass": "TRACKED"
+    },
+    {
+      "Index": 50,
+      "Type": "Stand",
+      "Strength": 0,
+      "Stability": 1,
+      "Feet": [
+        -1824.25,
+        -984,
+        -24.263302
+      ],
+      "Yaw": 30.003489,
+      "Pitch": -37,
+      "RunDeg": 0,
+      "PerturbU": 0.25,
+      "Scatter": 0.23945364,
+      "PredictedBounces": 4,
+      "RealBounces": 3,
+      "Pos": [
+        -1814.0981,
+        -978.138,
+        50.68596
+      ],
+      "Vel": [
+        128.48479,
+        74.19116,
+        137.81723
+      ],
+      "PredictedRest": [
+        -1688.8561,
+        -875.4812,
+        -8.234996
+      ],
+      "RealRest": [
+        -1688.5405,
+        -875.4281,
+        -8.161088
+      ],
+      "Detonated": true,
+      "ErrPredicted": 0.32841277,
+      "ErrTarget": 50.637424,
+      "DivergenceTick": -1,
+      "DivergenceClass": "TRACKED"
+    },
+    {
+      "Index": 51,
+      "Type": "Stand",
+      "Strength": 0,
+      "Stability": 1,
+      "Feet": [
+        -1824,
+        -983.75,
+        -24.269226
+      ],
+      "Yaw": 30.003489,
+      "Pitch": -37,
+      "RunDeg": 0,
+      "PerturbU": 0.25,
+      "Scatter": 0.23945364,
+      "PredictedBounces": 4,
+      "RealBounces": 3,
+      "Pos": [
+        -1813.8481,
+        -977.888,
+        50.68003
+      ],
+      "Vel": [
+        128.48479,
+        74.19116,
+        137.81723
+      ],
+      "PredictedRest": [
+        -1688.691,
+        -875.2682,
+        -8.208628
+      ],
+      "RealRest": [
+        -1688.1055,
+        -875.4314,
+        -8.1037
+      ],
+      "Detonated": true,
+      "ErrPredicted": 0.61687964,
+      "ErrTarget": 50.472538,
+      "DivergenceTick": -1,
+      "DivergenceClass": "TRACKED"
+    },
+    {
+      "Index": 52,
+      "Type": "Stand",
+      "Strength": 0,
+      "Stability": 1,
+      "Feet": [
+        -1824,
+        -984.25,
+        -24.257381
+      ],
+      "Yaw": 30.003489,
+      "Pitch": -37,
+      "RunDeg": 0,
+      "PerturbU": 0.25,
+      "Scatter": 0.23945364,
+      "PredictedBounces": 4,
+      "RealBounces": 3,
+      "Pos": [
+        -1813.8481,
+        -978.388,
+        50.69188
+      ],
+      "Vel": [
+        128.48479,
+        74.19116,
+        137.81723
+      ],
+      "PredictedRest": [
+        -1688.6345,
+        -875.7401,
+        -8.211277
+      ],
+      "RealRest": [
+        -1688.3192,
+        -875.6734,
+        -8.137119
+      ],
+      "Detonated": true,
+      "ErrPredicted": 0.33070934,
+      "ErrTarget": 50.327076,
+      "DivergenceTick": -1,
+      "DivergenceClass": "TRACKED"
+    },
+    {
+      "Index": 53,
+      "Type": "Crouch",
+      "Strength": 0.5,
+      "Stability": 1,
+      "Feet": [
+        -1615.75,
+        -1488,
+        -32.312496
+      ],
+      "Yaw": 90.018814,
+      "Pitch": -9,
+      "RunDeg": 0,
+      "PerturbU": 0.25,
+      "Scatter": 0.20091033,
+      "PredictedBounces": 5,
+      "RealBounces": 4,
+      "Pos": [
+        -1615.755,
+        -1472.7831,
+        18.671776
+      ],
+      "Vel": [
+        -0.1370607,
+        417.276,
+        135.5812
+      ],
+      "PredictedRest": [
+        -1650.823,
+        -924.03973,
+        -2.1417935
+      ],
+      "RealRest": [
+        -1650.9429,
+        -922.61316,
+        -1.8921105
+      ],
+      "Detonated": true,
+      "ErrPredicted": 1.4532125,
+      "ErrTarget": 18.577208,
+      "DivergenceTick": -1,
+      "DivergenceClass": "TRACKED"
+    },
+    {
+      "Index": 54,
+      "Type": "Crouch",
+      "Strength": 0.5,
+      "Stability": 1,
+      "Feet": [
+        -1616.25,
+        -1488,
+        -32.293148
+      ],
+      "Yaw": 90.018814,
+      "Pitch": -9,
+      "RunDeg": 0,
+      "PerturbU": 0.25,
+      "Scatter": 0.20091033,
+      "PredictedBounces": 5,
+      "RealBounces": 4,
+      "Pos": [
+        -1616.255,
+        -1472.7831,
+        18.691124
+      ],
+      "Vel": [
+        -0.1370607,
+        417.276,
+        135.5812
+      ],
+      "PredictedRest": [
+        -1651.1396,
+        -923.78296,
+        -2.1931489
+      ],
+      "RealRest": [
+        -1651.2075,
+        -922.33655,
+        -1.9240036
+      ],
+      "Detonated": true,
+      "ErrPredicted": 1.4728037,
+      "ErrTarget": 18.310802,
+      "DivergenceTick": -1,
+      "DivergenceClass": "TRACKED"
+    },
+    {
+      "Index": 55,
+      "Type": "Crouch",
+      "Strength": 0.5,
+      "Stability": 1,
+      "Feet": [
+        -1616,
+        -1487.75,
+        -32.317482
+      ],
+      "Yaw": 90.018814,
+      "Pitch": -9,
+      "RunDeg": 0,
+      "PerturbU": 0.25,
+      "Scatter": 0.20091033,
+      "PredictedBounces": 5,
+      "RealBounces": 4,
+      "Pos": [
+        -1616.005,
+        -1472.5331,
+        18.66679
+      ],
+      "Vel": [
+        -0.1370607,
+        417.276,
+        135.5812
+      ],
+      "PredictedRest": [
+        -1650.9932,
+        -923.7534,
+        -2.1430361
+      ],
+      "RealRest": [
+        -1655.3597,
+        -920.5699,
+        -2.8815455
+      ],
+      "Detonated": true,
+      "ErrPredicted": 5.4541063,
+      "ErrTarget": 14.270886,
+      "DivergenceTick": -1,
+      "DivergenceClass": "TRACKED"
+    },
+    {
+      "Index": 56,
+      "Type": "Crouch",
+      "Strength": 0.5,
+      "Stability": 1,
+      "Feet": [
+        -1616,
+        -1488.25,
+        -32.288162
+      ],
+      "Yaw": 90.018814,
+      "Pitch": -9,
+      "RunDeg": 0,
+      "PerturbU": 0.25,
+      "Scatter": 0.20091033,
+      "PredictedBounces": 5,
+      "RealBounces": 4,
+      "Pos": [
+        -1616.005,
+        -1473.0331,
+        18.69611
+      ],
+      "Vel": [
+        -0.1370607,
+        417.276,
+        135.5812
+      ],
+      "PredictedRest": [
+        -1650.9625,
+        -924.0699,
+        -2.1898873
+      ],
+      "RealRest": [
+        -1655.1144,
+        -920.841,
+        -2.8545785
+      ],
+      "Detonated": true,
+      "ErrPredicted": 5.301452,
+      "ErrTarget": 14.48347,
+      "DivergenceTick": -1,
+      "DivergenceClass": "TRACKED"
+    },
+    {
+      "Index": 57,
+      "Type": "Crouch",
+      "Strength": 0.5,
+      "Stability": 1,
+      "Feet": [
+        -1391.75,
+        -1488,
+        -23.453014
+      ],
+      "Yaw": 115.27649,
+      "Pitch": -7,
+      "RunDeg": 0,
+      "PerturbU": 0.25,
+      "Scatter": 0.92592967,
+      "PredictedBounces": 5,
+      "RealBounces": 4,
+      "Pos": [
+        -1398.3098,
+        -1474.1079,
+        27.056803
+      ],
+      "Vel": [
+        -179.88159,
+        380.94693,
+        122.57075
+      ],
+      "PredictedRest": [
+        -1667.7024,
+        -978.26556,
+        -13.823174
+      ],
+      "RealRest": [
+        -1669.0842,
+        -977.46326,
+        -14.224811
+      ],
+      "Detonated": true,
+      "ErrPredicted": 1.6475676,
+      "ErrTarget": 55.108154,
+      "DivergenceTick": -1,
+      "DivergenceClass": "TRACKED"
+    },
+    {
+      "Index": 58,
+      "Type": "Crouch",
+      "Strength": 0.5,
+      "Stability": 1,
+      "Feet": [
+        -1392.25,
+        -1488,
+        -23.45364
+      ],
+      "Yaw": 115.27649,
+      "Pitch": -7,
+      "RunDeg": 0,
+      "PerturbU": 0.25,
+      "Scatter": 0.92592967,
+      "PredictedBounces": 5,
+      "RealBounces": 4,
+      "Pos": [
+        -1398.8098,
+        -1474.1079,
+        27.056177
+      ],
+      "Vel": [
+        -179.88159,
+        380.94693,
+        122.57075
+      ],
+      "PredictedRest": [
+        -1668.8947,
+        -977.96967,
+        -14.207192
+      ],
+      "RealRest": [
+        -1669.5756,
+        -977.3876,
+        -14.384137
+      ],
+      "Detonated": true,
+      "ErrPredicted": 0.91311383,
+      "ErrTarget": 55.030792,
+      "DivergenceTick": -1,
+      "DivergenceClass": "TRACKED"
+    },
+    {
+      "Index": 59,
+      "Type": "Crouch",
+      "Strength": 0.5,
+      "Stability": 1,
+      "Feet": [
+        -1392,
+        -1487.75,
+        -23.451485
+      ],
+      "Yaw": 115.27649,
+      "Pitch": -7,
+      "RunDeg": 0,
+      "PerturbU": 0.25,
+      "Scatter": 0.92592967,
+      "PredictedBounces": 5,
+      "RealBounces": 4,
+      "Pos": [
+        -1398.5598,
+        -1473.8579,
+        27.058332
+      ],
+      "Vel": [
+        -179.88159,
+        380.94693,
+        122.57075
+      ],
+      "PredictedRest": [
+        -1668.5931,
+        -977.8828,
+        -14.106297
+      ],
+      "RealRest": [
+        -1669.2911,
+        -977.21674,
+        -14.286929
+      ],
+      "Detonated": true,
+      "ErrPredicted": 0.981574,
+      "ErrTarget": 54.860394,
+      "DivergenceTick": -1,
+      "DivergenceClass": "TRACKED"
+    },
+    {
+      "Index": 60,
+      "Type": "Crouch",
+      "Strength": 0.5,
+      "Stability": 1,
+      "Feet": [
+        -1392,
+        -1488.25,
+        -23.45517
+      ],
+      "Yaw": 115.27649,
+      "Pitch": -7,
+      "RunDeg": 0,
+      "PerturbU": 0.25,
+      "Scatter": 0.92592967,
+      "PredictedBounces": 5,
+      "RealBounces": 4,
+      "Pos": [
+        -1398.5598,
+        -1474.3579,
+        27.054647
+      ],
+      "Vel": [
+        -179.88159,
+        380.94693,
+        122.57075
+      ],
+      "PredictedRest": [
+        -1668.0106,
+        -978.352,
+        -13.926259
+      ],
+      "RealRest": [
+        -1668.7896,
+        -977.75323,
+        -14.134953
+      ],
+      "Detonated": true,
+      "ErrPredicted": 1.004387,
+      "ErrTarget": 55.401215,
+      "DivergenceTick": -1,
+      "DivergenceClass": "TRACKED"
+    },
+    {
+      "Index": 61,
+      "Type": "Crouch",
+      "Strength": 0.5,
+      "Stability": 1,
+      "Feet": [
+        -1127.75,
+        -1248,
+        -21.680593
+      ],
+      "Yaw": 151.09041,
+      "Pitch": -11,
+      "RunDeg": 0,
+      "PerturbU": 0.25,
+      "Scatter": 3.003532,
+      "PredictedBounces": 5,
+      "RealBounces": 4,
+      "Pos": [
+        -1140.9299,
+        -1240.7214,
+        29.773376
+      ],
+      "Vel": [
+        -361.4188,
+        199.59282,
+        148.46115
+      ],
+      "PredictedRest": [
+        -1674.9065,
+        -1000.2687,
+        -16.590923
+      ],
+      "RealRest": [
+        -1673.9998,
+        -999.4225,
+        -16.510798
+      ],
+      "Detonated": true,
+      "ErrPredicted": 1.2428331,
+      "ErrTarget": 77.19586,
+      "DivergenceTick": -1,
+      "DivergenceClass": "TRACKED"
+    },
+    {
+      "Index": 62,
+      "Type": "Crouch",
+      "Strength": 0.5,
+      "Stability": 1,
+      "Feet": [
+        -1128.25,
+        -1248,
+        -21.681265
+      ],
+      "Yaw": 151.09041,
+      "Pitch": -11,
+      "RunDeg": 0,
+      "PerturbU": 0.25,
+      "Scatter": 3.003532,
+      "PredictedBounces": 5,
+      "RealBounces": 4,
+      "Pos": [
+        -1141.4299,
+        -1240.7214,
+        29.772705
+      ],
+      "Vel": [
+        -361.4188,
+        199.59282,
+        148.46115
+      ],
+      "PredictedRest": [
+        -1676.0251,
+        -1000.041,
+        -16.679588
+      ],
+      "RealRest": [
+        -1674.2214,
+        -999.19055,
+        -16.53252
+      ],
+      "Detonated": true,
+      "ErrPredicted": 1.9995728,
+      "ErrTarget": 76.97755,
+      "DivergenceTick": -1,
+      "DivergenceClass": "TRACKED"
+    },
+    {
+      "Index": 63,
+      "Type": "Crouch",
+      "Strength": 0.5,
+      "Stability": 1,
+      "Feet": [
+        -1128,
+        -1247.75,
+        -21.671202
+      ],
+      "Yaw": 151.09041,
+      "Pitch": -11,
+      "RunDeg": 0,
+      "PerturbU": 0.25,
+      "Scatter": 3.003532,
+      "PredictedBounces": 5,
+      "RealBounces": 4,
+      "Pos": [
+        -1141.1799,
+        -1240.4714,
+        29.782768
+      ],
+      "Vel": [
+        -361.4188,
+        199.59282,
+        148.46115
+      ],
+      "PredictedRest": [
+        -1672.8516,
+        -999.42,
+        -16.385674
+      ],
+      "RealRest": [
+        -1677.985,
+        -999.1034,
+        -16.815767
+      ],
+      "Detonated": true,
+      "ErrPredicted": 5.1611276,
+      "ErrTarget": 77.21219,
+      "DivergenceTick": -1,
+      "DivergenceClass": "TRACKED"
+    },
+    {
+      "Index": 64,
+      "Type": "Crouch",
+      "Strength": 0.5,
+      "Stability": 1,
+      "Feet": [
+        -1128,
+        -1248.25,
+        -21.690649
+      ],
+      "Yaw": 151.09041,
+      "Pitch": -11,
+      "RunDeg": 0,
+      "PerturbU": 0.25,
+      "Scatter": 3.003532,
+      "PredictedBounces": 5,
+      "RealBounces": 4,
+      "Pos": [
+        -1141.1799,
+        -1240.9714,
+        29.76332
+      ],
+      "Vel": [
+        -361.4188,
+        199.59282,
+        148.46115
+      ],
+      "PredictedRest": [
+        -1675.7711,
+        -1000.2779,
+        -16.655334
+      ],
+      "RealRest": [
+        -1677.7252,
+        -999.34,
+        -16.791094
+      ],
+      "Detonated": true,
+      "ErrPredicted": 2.171759,
+      "ErrTarget": 77.41943,
+      "DivergenceTick": -1,
+      "DivergenceClass": "TRACKED"
+    },
+    {
+      "Index": 65,
+      "Type": "Stand",
+      "Strength": 0,
+      "Stability": 1,
+      "Feet": [
+        -1799.75,
+        -816,
+        22.27303
+      ],
+      "Yaw": -26.605957,
+      "Pitch": -9,
+      "RunDeg": 0,
+      "PerturbU": 0.25,
+      "Scatter": 2.9245472,
+      "PredictedBounces": 5,
+      "RealBounces": 4,
+      "Pos": [
+        -1786.1444,
+        -822.81494,
+        91.2773
+      ],
+      "Vel": [
+        172.19527,
+        -86.251366,
+        62.575947
+      ],
+      "PredictedRest": [
+        -1612.6039,
+        -968.9108,
+        2.2273386
+      ],
+      "RealRest": [
+        -1612.4515,
+        -969.5132,
+        2.1989136
+      ],
+      "Detonated": true,
+      "ErrPredicted": 0.6219721,
+      "ErrTarget": 74.02932,
+      "DivergenceTick": -1,
+      "DivergenceClass": "TRACKED"
+    },
+    {
+      "Index": 66,
+      "Type": "Stand",
+      "Strength": 0,
+      "Stability": 1,
+      "Feet": [
+        -1800.25,
+        -816,
+        22.2733
+      ],
+      "Yaw": -26.605957,
+      "Pitch": -9,
+      "RunDeg": 0,
+      "PerturbU": 0.25,
+      "Scatter": 2.9245472,
+      "PredictedBounces": 5,
+      "RealBounces": 4,
+      "Pos": [
+        -1786.6444,
+        -822.81494,
+        91.27757
+      ],
+      "Vel": [
+        172.19527,
+        -86.251366,
+        62.575947
+      ],
+      "PredictedRest": [
+        -1615.4867,
+        -969.3869,
+        1.1201084
+      ],
+      "RealRest": [
+        -1612.5068,
+        -969.12756,
+        2.250173
+      ],
+      "Detonated": true,
+      "ErrPredicted": 3.1974769,
+      "ErrTarget": 73.741516,
+      "DivergenceTick": -1,
+      "DivergenceClass": "TRACKED"
+    },
+    {
+      "Index": 67,
+      "Type": "Stand",
+      "Strength": 0,
+      "Stability": 1,
+      "Feet": [
+        -1800,
+        -815.75,
+        22.448471
+      ],
+      "Yaw": -26.605957,
+      "Pitch": -9,
+      "RunDeg": 0,
+      "PerturbU": 0.25,
+      "Scatter": 2.9245472,
+      "PredictedBounces": 5,
+      "RealBounces": 4,
+      "Pos": [
+        -1786.3944,
+        -822.56494,
+        91.45274
+      ],
+      "Vel": [
+        172.19527,
+        -86.251366,
+        62.575947
+      ],
+      "PredictedRest": [
+        -1612.6968,
+        -968.67505,
+        2.2398305
+      ],
+      "RealRest": [
+        -1612.2441,
+        -968.9146,
+        2.3868797
+      ],
+      "Detonated": true,
+      "ErrPredicted": 0.53281695,
+      "ErrTarget": 73.81029,
+      "DivergenceTick": -1,
+      "DivergenceClass": "TRACKED"
+    },
+    {
+      "Index": 68,
+      "Type": "Stand",
+      "Strength": 0,
+      "Stability": 1,
+      "Feet": [
+        -1800,
+        -816.25,
+        22.097855
+      ],
+      "Yaw": -26.605957,
+      "Pitch": -9,
+      "RunDeg": 0,
+      "PerturbU": 0.25,
+      "Scatter": 2.9245472,
+      "PredictedBounces": 5,
+      "RealBounces": 4,
+      "Pos": [
+        -1786.3944,
+        -823.06494,
+        91.10213
+      ],
+      "Vel": [
+        172.19527,
+        -86.251366,
+        62.575947
+      ],
+      "PredictedRest": [
+        -1612.8911,
+        -969.15906,
+        2.0784905
+      ],
+      "RealRest": [
+        -1613.1184,
+        -970.9232,
+        1.6934152
+      ],
+      "Detonated": true,
+      "ErrPredicted": 1.819947,
+      "ErrTarget": 74.42879,
+      "DivergenceTick": -1,
+      "DivergenceClass": "TRACKED"
+    },
+    {
+      "Index": 69,
+      "Type": "Stand",
+      "Strength": 0,
+      "Stability": 1,
+      "Feet": [
+        -1799.75,
+        -1056,
+        -23.081522
+      ],
+      "Yaw": 42.97169,
+      "Pitch": -33,
+      "RunDeg": 0,
+      "PerturbU": 0.25,
+      "Scatter": 0.22965162,
+      "PredictedBounces": 5,
+      "RealBounces": 4,
+      "Pos": [
+        -1790.695,
+        -1047.5643,
+        51.119774
+      ],
+      "Vel": [
+        114.603226,
+        106.76345,
+        128.35078
+      ],
+      "PredictedRest": [
+        -1671.6345,
+        -921.6317,
+        -8.5909395
+      ],
+      "RealRest": [
+        -1672.5599,
+        -921.8577,
+        -8.911577
+      ],
+      "Detonated": true,
+      "ErrPredicted": 1.0051286,
+      "ErrTarget": 3.0823002,
+      "DivergenceTick": -1,
+      "DivergenceClass": "TRACKED"
+    },
+    {
+      "Index": 70,
+      "Type": "Stand",
+      "Strength": 0,
+      "Stability": 1,
+      "Feet": [
+        -1800.25,
+        -1056,
+        -22.831522
+      ],
+      "Yaw": 42.97169,
+      "Pitch": -33,
+      "RunDeg": 0,
+      "PerturbU": 0.25,
+      "Scatter": 0.22965162,
+      "PredictedBounces": 5,
+      "RealBounces": 4,
+      "Pos": [
+        -1791.195,
+        -1047.5643,
+        51.369774
+      ],
+      "Vel": [
+        114.603226,
+        106.76345,
+        128.35078
+      ],
+      "PredictedRest": [
+        -1671.8619,
+        -921.4457,
+        -8.665496
+      ],
+      "RealRest": [
+        -1672.9708,
+        -921.7719,
+        -9.0590925
+      ],
+      "Detonated": true,
+      "ErrPredicted": 1.2210553,
+      "ErrTarget": 3.5017087,
+      "DivergenceTick": -1,
+      "DivergenceClass": "TRACKED"
+    },
+    {
+      "Index": 71,
+      "Type": "Stand",
+      "Strength": 0,
+      "Stability": 1,
+      "Feet": [
+        -1800,
+        -1055.75,
+        -23.043478
+      ],
+      "Yaw": 42.97169,
+      "Pitch": -33,
+      "RunDeg": 0,
+      "PerturbU": 0.25,
+      "Scatter": 0.22965162,
+      "PredictedBounces": 5,
+      "RealBounces": 4,
+      "Pos": [
+        -1790.945,
+        -1047.3143,
+        51.157814
+      ],
+      "Vel": [
+        114.603226,
+        106.76345,
+        128.35078
+      ],
+      "PredictedRest": [
+        -1671.8301,
+        -921.35516,
+        -8.649128
+      ],
+      "RealRest": [
+        -1672.7993,
+        -921.5958,
+        -8.986696
+      ],
+      "Detonated": true,
+      "ErrPredicted": 1.054179,
+      "ErrTarget": 3.3681004,
+      "DivergenceTick": -1,
+      "DivergenceClass": "TRACKED"
+    },
+    {
+      "Index": 72,
+      "Type": "Stand",
+      "Strength": 0,
+      "Stability": 1,
+      "Feet": [
+        -1800,
+        -1056.25,
+        -22.869566
+      ],
+      "Yaw": 42.97169,
+      "Pitch": -33,
+      "RunDeg": 0,
+      "PerturbU": 0.25,
+      "Scatter": 0.22965162,
+      "PredictedBounces": 5,
+      "RealBounces": 4,
+      "Pos": [
+        -1790.945,
+        -1047.8143,
+        51.331726
+      ],
+      "Vel": [
+        114.603226,
+        106.76345,
+        128.35078
+      ],
+      "PredictedRest": [
+        -1671.6667,
+        -921.72235,
+        -8.607481
+      ],
+      "RealRest": [
+        -1672.7307,
+        -922.03375,
+        -8.9837265
+      ],
+      "Detonated": true,
+      "ErrPredicted": 1.170706,
+      "ErrTarget": 3.2286057,
+      "DivergenceTick": -1,
+      "DivergenceClass": "TRACKED"
+    },
+    {
+      "Index": 73,
+      "Type": "Crouch",
+      "Strength": 0,
+      "Stability": 1,
+      "Feet": [
+        -1607.75,
+        -1008,
+        -7.645914
+      ],
+      "Yaw": 99.61575,
+      "Pitch": -53,
+      "RunDeg": 0,
+      "PerturbU": 0.25,
+      "Scatter": 0.2187151,
+      "PredictedBounces": 5,
+      "RealBounces": 3,
+      "Pos": [
+        -1609.2013,
+        -999.4339,
+        51.829693
+      ],
+      "Vel": [
+        -18.36768,
+        108.41494,
+        170.04437
+      ],
+      "PredictedRest": [
+        -1714.2274,
+        -865.2197,
+        -10.3200245
+      ],
+      "RealRest": [
+        -1713.1093,
+        -863.1197,
+        -10.050749
+      ],
+      "Detonated": true,
+      "ErrPredicted": 2.3943589,
+      "ErrTarget": 73.54731,
+      "DivergenceTick": -1,
+      "DivergenceClass": "TRACKED"
+    },
+    {
+      "Index": 74,
+      "Type": "Crouch",
+      "Strength": 0,
+      "Stability": 1,
+      "Feet": [
+        -1608.25,
+        -1008,
+        -7.7394123
+      ],
+      "Yaw": 99.61575,
+      "Pitch": -53,
+      "RunDeg": 0,
+      "PerturbU": 0.25,
+      "Scatter": 0.2187151,
+      "PredictedBounces": 5,
+      "RealBounces": 3,
+      "Pos": [
+        -1609.7013,
+        -999.4339,
+        51.736195
+      ],
+      "Vel": [
+        -18.36768,
+        108.41494,
+        170.04437
+      ],
+      "PredictedRest": [
+        -1714.6239,
+        -865.165,
+        -10.351298
+      ],
+      "RealRest": [
+        -1713.3235,
+        -863.3508,
+        -10.08876
+      ],
+      "Detonated": true,
+      "ErrPredicted": 2.2474737,
+      "ErrTarget": 73.48877,
+      "DivergenceTick": -1,
+      "DivergenceClass": "TRACKED"
+    },
+    {
+      "Index": 75,
+      "Type": "Crouch",
+      "Strength": 0,
+      "Stability": 1,
+      "Feet": [
+        -1608,
+        -1007.75,
+        -7.6543064
+      ],
+      "Yaw": 99.61575,
+      "Pitch": -53,
+      "RunDeg": 0,
+      "PerturbU": 0.25,
+      "Scatter": 0.2187151,
+      "PredictedBounces": 5,
+      "RealBounces": 3,
+      "Pos": [
+        -1609.4513,
+        -999.1839,
+        51.8213
+      ],
+      "Vel": [
+        -18.36768,
+        108.41494,
+        170.04437
+      ],
+      "PredictedRest": [
+        -1714.366,
+        -865.0956,
+        -10.331572
+      ],
+      "RealRest": [
+        -1713.1738,
+        -864.86017,
+        -10.208806
+      ],
+      "Detonated": true,
+      "ErrPredicted": 1.2213455,
+      "ErrTarget": 72.19188,
+      "DivergenceTick": -1,
+      "DivergenceClass": "TRACKED"
+    },
+    {
+      "Index": 76,
+      "Type": "Crouch",
+      "Strength": 0,
+      "Stability": 1,
+      "Feet": [
+        -1608,
+        -1008.25,
+        -7.731016
+      ],
+      "Yaw": 99.61575,
+      "Pitch": -53,
+      "RunDeg": 0,
+      "PerturbU": 0.25,
+      "Scatter": 0.2187151,
+      "PredictedBounces": 5,
+      "RealBounces": 3,
+      "Pos": [
+        -1609.4513,
+        -999.6839,
+        51.744587
+      ],
+      "Vel": [
+        -18.36768,
+        108.41494,
+        170.04437
+      ],
+      "PredictedRest": [
+        -1714.3777,
+        -865.4251,
+        -10.330515
+      ],
+      "RealRest": [
+        -1713.3583,
+        -865.0848,
+        -10.221853
+      ],
+      "Detonated": true,
+      "ErrPredicted": 1.0801983,
+      "ErrTarget": 72.12509,
+      "DivergenceTick": -1,
+      "DivergenceClass": "TRACKED"
+    },
+    {
+      "Index": 77,
+      "Type": "Stand",
+      "Strength": 0,
+      "Stability": 1,
+      "Feet": [
+        -1655.75,
+        -1104,
+        -21.408691
+      ],
+      "Yaw": 66.92471,
+      "Pitch": -48,
+      "RunDeg": 0,
+      "PerturbU": 0.25,
+      "Scatter": 0.23254777,
+      "PredictedBounces": 5,
+      "RealBounces": 4,
+      "Pos": [
+        -1651.9469,
+        -1095.0731,
+        55.373238
+      ],
+      "Vel": [
+        48.132763,
+        112.9807,
+        161.01196
+      ],
+      "PredictedRest": [
+        -1653.8438,
+        -939.1389,
+        -5.7485285
+      ],
+      "RealRest": [
+        -1654.3258,
+        -938.68915,
+        -5.7833314
+      ],
+      "Detonated": true,
+      "ErrPredicted": 0.6602123,
+      "ErrTarget": 22.305996,
+      "DivergenceTick": -1,
+      "DivergenceClass": "TRACKED"
+    },
+    {
+      "Index": 78,
+      "Type": "Stand",
+      "Strength": 0,
+      "Stability": 1,
+      "Feet": [
+        -1656.25,
+        -1104,
+        -21.42278
+      ],
+      "Yaw": 66.92471,
+      "Pitch": -48,
+      "RunDeg": 0,
+      "PerturbU": 0.25,
+      "Scatter": 0.23254777,
+      "PredictedBounces": 5,
+      "RealBounces": 4,
+      "Pos": [
+        -1652.4469,
+        -1095.0731,
+        55.35915
+      ],
+      "Vel": [
+        48.132763,
+        112.9807,
+        161.01196
+      ],
+      "PredictedRest": [
+        -1654.182,
+        -939.0328,
+        -5.833231
+      ],
+      "RealRest": [
+        -1654.5505,
+        -938.9194,
+        -5.8930173
+      ],
+      "Detonated": true,
+      "ErrPredicted": 0.39019135,
+      "ErrTarget": 22.323814,
+      "DivergenceTick": -1,
+      "DivergenceClass": "TRACKED"
+    },
+    {
+      "Index": 79,
+      "Type": "Stand",
+      "Strength": 0,
+      "Stability": 1,
+      "Feet": [
+        -1656,
+        -1103.75,
+        -21.407764
+      ],
+      "Yaw": 66.92471,
+      "Pitch": -48,
+      "RunDeg": 0,
+      "PerturbU": 0.25,
+      "Scatter": 0.23254777,
+      "PredictedBounces": 5,
+      "RealBounces": 4,
+      "Pos": [
+        -1652.1969,
+        -1094.8231,
+        55.374165
+      ],
+      "Vel": [
+        48.132763,
+        112.9807,
+        161.01196
+      ],
+      "PredictedRest": [
+        -1654.0205,
+        -938.8538,
+        -5.752014
+      ],
+      "RealRest": [
+        -1654.5878,
+        -938.45,
+        -5.8210416
+      ],
+      "Detonated": true,
+      "ErrPredicted": 0.69972205,
+      "ErrTarget": 21.9525,
+      "DivergenceTick": -1,
+      "DivergenceClass": "TRACKED"
+    },
+    {
+      "Index": 80,
+      "Type": "Stand",
+      "Strength": 0,
+      "Stability": 1,
+      "Feet": [
+        -1656,
+        -1104.25,
+        -21.42371
+      ],
+      "Yaw": 66.92471,
+      "Pitch": -48,
+      "RunDeg": 0,
+      "PerturbU": 0.25,
+      "Scatter": 0.23254777,
+      "PredictedBounces": 5,
+      "RealBounces": 4,
+      "Pos": [
+        -1652.1969,
+        -1095.3231,
+        55.35822
+      ],
+      "Vel": [
+        48.132763,
+        112.9807,
+        161.01196
+      ],
+      "PredictedRest": [
+        -1654.001,
+        -939.3187,
+        -5.8286
+      ],
+      "RealRest": [
+        -1654.8105,
+        -938.67975,
+        -5.930048
+      ],
+      "Detonated": true,
+      "ErrPredicted": 1.0363337,
+      "ErrTarget": 21.971722,
+      "DivergenceTick": -1,
+      "DivergenceClass": "TRACKED"
+    },
+    {
+      "Index": 81,
+      "Type": "Crouch",
+      "Strength": 0.5,
+      "Stability": 1,
+      "Feet": [
+        -1967.75,
+        -960,
+        -31.287058
+      ],
+      "Yaw": 21.457218,
+      "Pitch": -1,
+      "RunDeg": 0,
+      "PerturbU": 0.25,
+      "Scatter": 0.18585402,
+      "PredictedBounces": 5,
+      "RealBounces": 4,
+      "Pos": [
+        -1953.1271,
+        -954.2525,
+        17.775423
+      ],
+      "Vel": [
+        400.9886,
+        157.60785,
+        82.88207
+      ],
+      "PredictedRest": [
+        -1681.955,
+        -886.1242,
+        -7.5520988
+      ],
+      "RealRest": [
+        -1679.06,
+        -890.78876,
+        -7.2384834
+      ],
+      "Detonated": true,
+      "ErrPredicted": 5.4988017,
+      "ErrTarget": 32.978584,
+      "DivergenceTick": 141,
+      "DivergenceClass": "DRIFT"
+    },
+    {
+      "Index": 82,
+      "Type": "Crouch",
+      "Strength": 0.5,
+      "Stability": 1,
+      "Feet": [
+        -1968.25,
+        -960,
+        -31.287058
+      ],
+      "Yaw": 21.457218,
+      "Pitch": -1,
+      "RunDeg": 0,
+      "PerturbU": 0.25,
+      "Scatter": 0.18585402,
+      "PredictedBounces": 5,
+      "RealBounces": 4,
+      "Pos": [
+        -1953.6271,
+        -954.2525,
+        17.775423
+      ],
+      "Vel": [
+        400.9886,
+        157.60785,
+        82.88207
+      ],
+      "PredictedRest": [
+        -1682.1356,
+        -885.95557,
+        -7.572336
+      ],
+      "RealRest": [
+        -1679.1321,
+        -890.97266,
+        -7.2519417
+      ],
+      "Detonated": true,
+      "ErrPredicted": 5.8562016,
+      "ErrTarget": 32.823616,
+      "DivergenceTick": 141,
+      "DivergenceClass": "DRIFT"
+    },
+    {
+      "Index": 83,
+      "Type": "Crouch",
+      "Strength": 0.5,
+      "Stability": 1,
+      "Feet": [
+        -1968,
+        -959.75,
+        -31.287058
+      ],
+      "Yaw": 21.457218,
+      "Pitch": -1,
+      "RunDeg": 0,
+      "PerturbU": 0.25,
+      "Scatter": 0.18585402,
+      "PredictedBounces": 5,
+      "RealBounces": 4,
+      "Pos": [
+        -1953.3771,
+        -954.0025,
+        17.775423
+      ],
+      "Vel": [
+        400.9886,
+        157.60785,
+        82.88207
+      ],
+      "PredictedRest": [
+        -1682.1755,
+        -885.91003,
+        -7.5766473
+      ],
+      "RealRest": [
+        -1681.6221,
+        -893.95215,
+        -7.644737
+      ],
+      "Detonated": true,
+      "ErrPredicted": 8.061424,
+      "ErrTarget": 30.875977,
+      "DivergenceTick": 140,
+      "DivergenceClass": "DRIFT"
+    },
+    {
+      "Index": 84,
+      "Type": "Crouch",
+      "Strength": 0.5,
+      "Stability": 1,
+      "Feet": [
+        -1968,
+        -960.25,
+        -31.287058
+      ],
+      "Yaw": 21.457218,
+      "Pitch": -1,
+      "RunDeg": 0,
+      "PerturbU": 0.25,
+      "Scatter": 0.18585402,
+      "PredictedBounces": 5,
+      "RealBounces": 4,
+      "Pos": [
+        -1953.3771,
+        -954.5025,
+        17.775423
+      ],
+      "Vel": [
+        400.9886,
+        157.60785,
+        82.88207
+      ],
+      "PredictedRest": [
+        -1681.9147,
+        -886.1707,
+        -7.5477734
+      ],
+      "RealRest": [
+        -1678.9138,
+        -891.1754,
+        -7.227468
+      ],
+      "Detonated": true,
+      "ErrPredicted": 5.844206,
+      "ErrTarget": 32.566166,
+      "DivergenceTick": 141,
+      "DivergenceClass": "DRIFT"
+    },
+    {
+      "Index": 85,
+      "Type": "Stand",
+      "Strength": 0,
+      "Stability": 1,
+      "Feet": [
+        -1703.75,
+        -1056,
+        -21.46947
+      ],
+      "Yaw": 83.41337,
+      "Pitch": -33,
+      "RunDeg": 0,
+      "PerturbU": 0.25,
+      "Scatter": 0.2340417,
+      "PredictedBounces": 5,
+      "RealBounces": 4,
+      "Pos": [
+        -1702.3304,
+        -1043.7062,
+        52.731827
+      ],
+      "Vel": [
+        17.966066,
+        155.5942,
+        128.35078
+      ],
+      "PredictedRest": [
+        -1721.625,
+        -862.23206,
+        -10.671349
+      ],
+      "RealRest": [
+        -1721.3385,
+        -861.5259,
+        -10.553024
+      ],
+      "Detonated": true,
+      "ErrPredicted": 0.771212,
+      "ErrTarget": 79.91079,
+      "DivergenceTick": -1,
+      "DivergenceClass": "TRACKED"
+    },
+    {
+      "Index": 86,
+      "Type": "Stand",
+      "Strength": 0,
+      "Stability": 1,
+      "Feet": [
+        -1704.25,
+        -1056,
+        -21.503977
+      ],
+      "Yaw": 83.41337,
+      "Pitch": -33,
+      "RunDeg": 0,
+      "PerturbU": 0.25,
+      "Scatter": 0.2340417,
+      "PredictedBounces": 5,
+      "RealBounces": 4,
+      "Pos": [
+        -1702.8304,
+        -1043.7062,
+        52.69732
+      ],
+      "Vel": [
+        17.966066,
+        155.5942,
+        128.35078
+      ],
+      "PredictedRest": [
+        -1722.0967,
+        -862.24506,
+        -10.709691
+      ],
+      "RealRest": [
+        -1721.654,
+        -853.53284,
+        -9.716298
+      ],
+      "Detonated": true,
+      "ErrPredicted": 8.779836,
+      "ErrTarget": 86.34162,
+      "DivergenceTick": 147,
+      "DivergenceClass": "DRIFT"
+    },
+    {
+      "Index": 87,
+      "Type": "Stand",
+      "Strength": 0,
+      "Stability": 1,
+      "Feet": [
+        -1704,
+        -1055.75,
+        -21.476538
+      ],
+      "Yaw": 83.41337,
+      "Pitch": -33,
+      "RunDeg": 0,
+      "PerturbU": 0.25,
+      "Scatter": 0.2340417,
+      "PredictedBounces": 5,
+      "RealBounces": 4,
+      "Pos": [
+        -1702.5804,
+        -1043.4562,
+        52.724754
+      ],
+      "Vel": [
+        17.966066,
+        155.5942,
+        128.35078
+      ],
+      "PredictedRest": [
+        -1721.8586,
+        -862.0957,
+        -10.677277
+      ],
+      "RealRest": [
+        -1721.7948,
+        -861.5913,
+        -10.594939
+      ],
+      "Detonated": true,
+      "ErrPredicted": 0.5150429,
+      "ErrTarget": 80.15783,
+      "DivergenceTick": -1,
+      "DivergenceClass": "TRACKED"
+    },
+    {
+      "Index": 88,
+      "Type": "Stand",
+      "Strength": 0,
+      "Stability": 1,
+      "Feet": [
+        -1704,
+        -1056.25,
+        -21.496908
+      ],
+      "Yaw": 83.41337,
+      "Pitch": -33,
+      "RunDeg": 0,
+      "PerturbU": 0.25,
+      "Scatter": 0.2340417,
+      "PredictedBounces": 5,
+      "RealBounces": 4,
+      "Pos": [
+        -1702.5804,
+        -1043.9562,
+        52.704384
+      ],
+      "Vel": [
+        17.966066,
+        155.5942,
+        128.35078
+      ],
+      "PredictedRest": [
+        -1721.8636,
+        -862.38245,
+        -10.703904
+      ],
+      "RealRest": [
+        -1721.5674,
+        -861.7225,
+        -10.589029
+      ],
+      "Detonated": true,
+      "ErrPredicted": 0.7324845,
+      "ErrTarget": 79.91013,
+      "DivergenceTick": -1,
+      "DivergenceClass": "TRACKED"
+    },
+    {
+      "Index": 89,
+      "Type": "Stand",
+      "Strength": 0,
+      "Stability": 1,
+      "Feet": [
+        -1775.75,
+        -888,
+        -19.504738
+      ],
+      "Yaw": -15.074303,
+      "Pitch": -45,
+      "RunDeg": 0,
+      "PerturbU": 0.25,
+      "Scatter": 40.56599,
+      "PredictedBounces": 5,
+      "RealBounces": 4,
+      "Pos": [
+        -1765.8193,
+        -890.67474,
+        56.81197
+      ],
+      "Vel": [
+        125.68546,
+        -33.852074,
+        155.12401
+      ],
+      "PredictedRest": [
+        -1645.8969,
+        -1000.54755,
+        -11.925619
+      ],
+      "RealRest": [
+        -1645.3717,
+        -1000.28467,
+        -11.808485
+      ],
+      "Detonated": true,
+      "ErrPredicted": 0.59883577,
+      "ErrTarget": 81.583145,
+      "DivergenceTick": -1,
+      "DivergenceClass": "TRACKED"
+    },
+    {
+      "Index": 90,
+      "Type": "Stand",
+      "Strength": 0,
+      "Stability": 1,
+      "Feet": [
+        -1776.25,
+        -888,
+        -19.576946
+      ],
+      "Yaw": -15.074303,
+      "Pitch": -45,
+      "RunDeg": 0,
+      "PerturbU": 0.25,
+      "Scatter": 40.56599,
+      "PredictedBounces": 5,
+      "RealBounces": 4,
+      "Pos": [
+        -1766.3193,
+        -890.67474,
+        56.73976
+      ],
+      "Vel": [
+        125.68546,
+        -33.852074,
+        155.12401
+      ],
+      "PredictedRest": [
+        -1646.3167,
+        -1000.5039,
+        -11.995148
+      ],
+      "RealRest": [
+        -1643.4425,
+        -959.8264,
+        -5.407648
+      ],
+      "Detonated": true,
+      "ErrPredicted": 41.307556,
+      "ErrTarget": 45.64996,
+      "DivergenceTick": 87,
+      "DivergenceClass": "DRIFT"
+    },
+    {
+      "Index": 91,
+      "Type": "Stand",
+      "Strength": 0,
+      "Stability": 1,
+      "Feet": [
+        -1776,
+        -887.75,
+        -19.476513
+      ],
+      "Yaw": -15.074303,
+      "Pitch": -45,
+      "RunDeg": 0,
+      "PerturbU": 0.25,
+      "Scatter": 40.56599,
+      "PredictedBounces": 5,
+      "RealBounces": 4,
+      "Pos": [
+        -1766.0693,
+        -890.42474,
+        56.840195
+      ],
+      "Vel": [
+        125.68546,
+        -33.852074,
+        155.12401
+      ],
+      "PredictedRest": [
+        -1644.7313,
+        -960.4311,
+        -5.8770723
+      ],
+      "RealRest": [
+        -1645.8412,
+        -1000.26807,
+        -11.885769
+      ],
+      "Detonated": true,
+      "ErrPredicted": 40.302864,
+      "ErrTarget": 81.429535,
+      "DivergenceTick": 88,
+      "DivergenceClass": "DRIFT"
+    },
+    {
+      "Index": 92,
+      "Type": "Stand",
+      "Strength": 0,
+      "Stability": 1,
+      "Feet": [
+        -1776,
+        -888.25,
+        -19.605171
+      ],
+      "Yaw": -15.074303,
+      "Pitch": -45,
+      "RunDeg": 0,
+      "PerturbU": 0.25,
+      "Scatter": 40.56599,
+      "PredictedBounces": 5,
+      "RealBounces": 4,
+      "Pos": [
+        -1766.0693,
+        -890.92474,
+        56.711536
+      ],
+      "Vel": [
+        125.68546,
+        -33.852074,
+        155.12401
+      ],
+      "PredictedRest": [
+        -1646.0892,
+        -1000.7417,
+        -11.956863
+      ],
+      "RealRest": [
+        -1645.6204,
+        -1000.52106,
+        -11.848539
+      ],
+      "Detonated": true,
+      "ErrPredicted": 0.52939403,
+      "ErrTarget": 81.73592,
+      "DivergenceTick": -1,
+      "DivergenceClass": "TRACKED"
+    },
+    {
+      "Index": 93,
+      "Type": "Stand",
+      "Strength": 0.5,
+      "Stability": 1,
+      "Feet": [
+        -1398.2223,
+        -1609.8894,
+        -29.829226
+      ],
+      "Yaw": 112.05259,
+      "Pitch": -14,
+      "RunDeg": 0,
+      "PerturbU": 0.25,
+      "Scatter": 1.6660393,
+      "PredictedBounces": 5,
+      "RealBounces": 4,
+      "Pos": [
+        -1403.7745,
+        -1596.1833,
+        40.339375
+      ],
+      "Vel": [
+        -152.2535,
+        375.8471,
+        167.50923
+      ],
+      "PredictedRest": [
+        -1689.6528,
+        -962.39056,
+        -15.670334
+      ],
+      "RealRest": [
+        -1690.1178,
+        -962.18085,
+        -15.631909
+      ],
+      "Detonated": true,
+      "ErrPredicted": 0.5115181,
+      "ErrTarget": 44.83629,
+      "DivergenceTick": -1,
+      "DivergenceClass": "TRACKED"
+    },
+    {
+      "Index": 94,
+      "Type": "Stand",
+      "Strength": 0.5,
+      "Stability": 1,
+      "Feet": [
+        -1398.7223,
+        -1609.8894,
+        -29.8537
+      ],
+      "Yaw": 112.05259,
+      "Pitch": -14,
+      "RunDeg": 0,
+      "PerturbU": 0.25,
+      "Scatter": 1.6660393,
+      "PredictedBounces": 5,
+      "RealBounces": 4,
+      "Pos": [
+        -1404.2745,
+        -1596.1833,
+        40.3149
+      ],
+      "Vel": [
+        -152.2535,
+        375.8471,
+        167.50923
+      ],
+      "PredictedRest": [
+        -1691.4836,
+        -961.9224,
+        -15.670416
+      ],
+      "RealRest": [
+        -1690.3398,
+        -962.396,
+        -15.653874
+      ],
+      "Detonated": true,
+      "ErrPredicted": 1.2380708,
+      "ErrTarget": 45.12951,
+      "DivergenceTick": -1,
+      "DivergenceClass": "TRACKED"
+    },
+    {
+      "Index": 95,
+      "Type": "Stand",
+      "Strength": 0.5,
+      "Stability": 1,
+      "Feet": [
+        -1398.4723,
+        -1609.6394,
+        -29.859179
+      ],
+      "Yaw": 112.05259,
+      "Pitch": -14,
+      "RunDeg": 0,
+      "PerturbU": 0.25,
+      "Scatter": 1.6660393,
+      "PredictedBounces": 5,
+      "RealBounces": 4,
+      "Pos": [
+        -1404.0245,
+        -1595.9333,
+        40.30942
+      ],
+      "Vel": [
+        -152.2535,
+        375.8471,
+        167.50923
+      ],
+      "PredictedRest": [
+        -1689.88,
+        -962.18176,
+        -15.65817
+      ],
+      "RealRest": [
+        -1690.7124,
+        -961.9393,
+        -15.624705
+      ],
+      "Detonated": true,
+      "ErrPredicted": 0.86764514,
+      "ErrTarget": 44.89945,
+      "DivergenceTick": -1,
+      "DivergenceClass": "TRACKED"
+    },
+    {
+      "Index": 96,
+      "Type": "Stand",
+      "Strength": 0.5,
+      "Stability": 1,
+      "Feet": [
+        -1398.4723,
+        -1610.1394,
+        -29.823744
+      ],
+      "Yaw": 112.05259,
+      "Pitch": -14,
+      "RunDeg": 0,
+      "PerturbU": 0.25,
+      "Scatter": 1.6660393,
+      "PredictedBounces": 5,
+      "RealBounces": 4,
+      "Pos": [
+        -1404.0245,
+        -1596.4333,
+        40.344852
+      ],
+      "Vel": [
+        -152.2535,
+        375.8471,
+        167.50923
+      ],
+      "PredictedRest": [
+        -1691.2559,
+        -962.1324,
+        -15.682655
+      ],
+      "RealRest": [
+        -1690.1118,
+        -962.62787,
+        -15.667879
+      ],
+      "Detonated": true,
+      "ErrPredicted": 1.2468185,
+      "ErrTarget": 45.23108,
+      "DivergenceTick": -1,
+      "DivergenceClass": "TRACKED"
+    },
+    {
+      "Index": 97,
+      "Type": "Stand",
+      "Strength": 0,
+      "Stability": 1,
+      "Feet": [
+        -1751.75,
+        -1008,
+        -23.160822
+      ],
+      "Yaw": 28.561928,
+      "Pitch": -49,
+      "RunDeg": 0,
+      "PerturbU": 0.25,
+      "Scatter": 0.23752359,
+      "PredictedBounces": 5,
+      "RealBounces": 4,
+      "Pos": [
+        -1743.402,
+        -1003.45575,
+        53.77011
+      ],
+      "Vel": [
+        105.654076,
+        57.513435,
+        162.89775
+      ],
+      "PredictedRest": [
+        -1663.5864,
+        -964.38324,
+        -11.632438
+      ],
+      "RealRest": [
+        -1663.8606,
+        -964.28546,
+        -11.638623
+      ],
+      "Detonated": true,
+      "ErrPredicted": 0.29114947,
+      "ErrTarget": 42.308647,
+      "DivergenceTick": -1,
+      "DivergenceClass": "TRACKED"
+    },
+    {
+      "Index": 98,
+      "Type": "Stand",
+      "Strength": 0,
+      "Stability": 1,
+      "Feet": [
+        -1752.25,
+        -1008,
+        -23.174768
+      ],
+      "Yaw": 28.561928,
+      "Pitch": -49,
+      "RunDeg": 0,
+      "PerturbU": 0.25,
+      "Scatter": 0.23752359,
+      "PredictedBounces": 5,
+      "RealBounces": 4,
+      "Pos": [
+        -1743.902,
+        -1003.45575,
+        53.756165
+      ],
+      "Vel": [
+        105.654076,
+        57.513435,
+        162.89775
+      ],
+      "PredictedRest": [
+        -1663.8794,
+        -964.2848,
+        -11.674018
+      ],
+      "RealRest": [
+        -1664.0492,
+        -964.49554,
+        -11.704656
+      ],
+      "Detonated": true,
+      "ErrPredicted": 0.27237484,
+      "ErrTarget": 42.492165,
+      "DivergenceTick": -1,
+      "DivergenceClass": "TRACKED"
+    },
+    {
+      "Index": 99,
+      "Type": "Stand",
+      "Strength": 0,
+      "Stability": 1,
+      "Feet": [
+        -1752,
+        -1007.75,
+        -23.171171
+      ],
+      "Yaw": 28.561928,
+      "Pitch": -49,
+      "RunDeg": 0,
+      "PerturbU": 0.25,
+      "Scatter": 0.23752359,
+      "PredictedBounces": 5,
+      "RealBounces": 4,
+      "Pos": [
+        -1743.652,
+        -1003.20575,
+        53.759758
+      ],
+      "Vel": [
+        105.654076,
+        57.513435,
+        162.89775
+      ],
+      "PredictedRest": [
+        -1663.7432,
+        -964.1019,
+        -11.621823
+      ],
+      "RealRest": [
+        -1664.1268,
+        -964.771,
+        -11.758966
+      ],
+      "Detonated": true,
+      "ErrPredicted": 0.78336436,
+      "ErrTarget": 42.755478,
+      "DivergenceTick": -1,
+      "DivergenceClass": "TRACKED"
+    },
+    {
+      "Index": 100,
+      "Type": "Stand",
+      "Strength": 0,
+      "Stability": 1,
+      "Feet": [
+        -1752,
+        -1008.25,
+        -23.164412
+      ],
+      "Yaw": 28.561928,
+      "Pitch": -49,
+      "RunDeg": 0,
+      "PerturbU": 0.25,
+      "Scatter": 0.23752359,
+      "PredictedBounces": 5,
+      "RealBounces": 4,
+      "Pos": [
+        -1743.652,
+        -1003.70575,
+        53.766518
+      ],
+      "Vel": [
+        105.654076,
+        57.513435,
+        162.89775
+      ],
+      "PredictedRest": [
+        -1663.7219,
+        -964.5664,
+        -11.684505
+      ],
+      "RealRest": [
+        -1664.3154,
+        -964.98096,
+        -11.8249655
+      ],
+      "Detonated": true,
+      "ErrPredicted": 0.7374487,
+      "ErrTarget": 42.940514,
+      "DivergenceTick": -1,
+      "DivergenceClass": "TRACKED"
+    },
+    {
+      "Index": 101,
+      "Type": "Stand",
+      "Strength": 0.5,
+      "Stability": 1,
+      "Feet": [
+        -1319.75,
+        -1560,
+        -20
+      ],
+      "Yaw": 120.79047,
+      "Pitch": -11,
+      "RunDeg": 0,
+      "PerturbU": 0.25,
+      "Scatter": 0.26348817,
+      "PredictedBounces": 5,
+      "RealBounces": 4,
+      "Pos": [
+        -1327.4573,
+        -1547.066,
+        49.473965
+      ],
+      "Vel": [
+        -211.34769,
+        354.6731,
+        148.46115
+      ],
+      "PredictedRest": [
+        -1717.2063,
+        -972.6214,
+        -18.155724
+      ],
+      "RealRest": [
+        -1717.9252,
+        -971.5577,
+        -18.134499
+      ],
+      "Detonated": true,
+      "ErrPredicted": 1.2840285,
+      "ErrTarget": 69.02137,
+      "DivergenceTick": -1,
+      "DivergenceClass": "TRACKED"
+    },
+    {
+      "Index": 102,
+      "Type": "Stand",
+      "Strength": 0.5,
+      "Stability": 1,
+      "Feet": [
+        -1320.25,
+        -1560,
+        -20
+      ],
+      "Yaw": 120.79047,
+      "Pitch": -11,
+      "RunDeg": 0,
+      "PerturbU": 0.25,
+      "Scatter": 0.26348817,
+      "PredictedBounces": 5,
+      "RealBounces": 4,
+      "Pos": [
+        -1327.9573,
+        -1547.066,
+        49.473965
+      ],
+      "Vel": [
+        -211.34769,
+        354.6731,
+        148.46115
+      ],
+      "PredictedRest": [
+        -1717.7277,
+        -972.56934,
+        -18.19823
+      ],
+      "RealRest": [
+        -1717.8116,
+        -971.4958,
+        -18.121653
+      ],
+      "Detonated": true,
+      "ErrPredicted": 1.0795469,
+      "ErrTarget": 68.897644,
+      "DivergenceTick": -1,
+      "DivergenceClass": "TRACKED"
+    },
+    {
+      "Index": 103,
+      "Type": "Stand",
+      "Strength": 0.5,
+      "Stability": 1,
+      "Feet": [
+        -1320,
+        -1559.75,
+        -20
+      ],
+      "Yaw": 120.79047,
+      "Pitch": -11,
+      "RunDeg": 0,
+      "PerturbU": 0.25,
+      "Scatter": 0.26348817,
+      "PredictedBounces": 5,
+      "RealBounces": 4,
+      "Pos": [
+        -1327.7073,
+        -1546.816,
+        49.473965
+      ],
+      "Vel": [
+        -211.34769,
+        354.6731,
+        148.46115
+      ],
+      "PredictedRest": [
+        -1717.4617,
+        -972.3645,
+        -18.165209
+      ],
+      "RealRest": [
+        -1719.0177,
+        -971.11597,
+        -18.207273
+      ],
+      "Detonated": true,
+      "ErrPredicted": 1.9954548,
+      "ErrTarget": 69.481255,
+      "DivergenceTick": -1,
+      "DivergenceClass": "TRACKED"
+    },
+    {
+      "Index": 104,
+      "Type": "Stand",
+      "Strength": 0.5,
+      "Stability": 1,
+      "Feet": [
+        -1320,
+        -1560.25,
+        -20
+      ],
+      "Yaw": 120.79047,
+      "Pitch": -11,
+      "RunDeg": 0,
+      "PerturbU": 0.25,
+      "Scatter": 0.26348817,
+      "PredictedBounces": 5,
+      "RealBounces": 4,
+      "Pos": [
+        -1327.7073,
+        -1547.316,
+        49.473965
+      ],
+      "Vel": [
+        -211.34769,
+        354.6731,
+        148.46115
+      ],
+      "PredictedRest": [
+        -1717.4714,
+        -972.82697,
+        -18.188713
+      ],
+      "RealRest": [
+        -1718.7634,
+        -971.3705,
+        -18.19777
+      ],
+      "Detonated": true,
+      "ErrPredicted": 1.9469631,
+      "ErrTarget": 69.47965,
+      "DivergenceTick": -1,
+      "DivergenceClass": "TRACKED"
+    },
+    {
+      "Index": 105,
+      "Type": "Crouch",
+      "Strength": 0,
+      "Stability": 1,
+      "Feet": [
+        -1727.75,
+        -864,
+        -11.425188
+      ],
+      "Yaw": -28.95092,
+      "Pitch": -57,
+      "RunDeg": 0,
+      "PerturbU": 0.25,
+      "Scatter": 0.23628592,
+      "PredictedBounces": 5,
+      "RealBounces": 4,
+      "Pos": [
+        -1720.8912,
+        -867.7942,
+        48.563366
+      ],
+      "Vel": [
+        86.80578,
+        -48.02007,
+        176.53636
+      ],
+      "PredictedRest": [
+        -1655.4008,
+        -961.5924,
+        -9.401988
+      ],
+      "RealRest": [
+        -1655.4712,
+        -962.1217,
+        -9.40476
+      ],
+      "Detonated": true,
+      "ErrPredicted": 0.53396994,
+      "ErrTarget": 42.173077,
+      "DivergenceTick": -1,
+      "DivergenceClass": "TRACKED"
+    },
+    {
+      "Index": 106,
+      "Type": "Crouch",
+      "Strength": 0,
+      "Stability": 1,
+      "Feet": [
+        -1728.25,
+        -864,
+        -11.424913
+      ],
+      "Yaw": -28.95092,
+      "Pitch": -57,
+      "RunDeg": 0,
+      "PerturbU": 0.25,
+      "Scatter": 0.23628592,
+      "PredictedBounces": 5,
+      "RealBounces": 4,
+      "Pos": [
+        -1721.3912,
+        -867.7942,
+        48.56364
+      ],
+      "Vel": [
+        86.80578,
+        -48.02007,
+        176.53636
+      ],
+      "PredictedRest": [
+        -1655.7823,
+        -961.5826,
+        -9.526856
+      ],
+      "RealRest": [
+        -1655.9135,
+        -962.1398,
+        -9.550183
+      ],
+      "Detonated": true,
+      "ErrPredicted": 0.5728812,
+      "ErrTarget": 42.04493,
+      "DivergenceTick": -1,
+      "DivergenceClass": "TRACKED"
+    },
+    {
+      "Index": 107,
+      "Type": "Crouch",
+      "Strength": 0,
+      "Stability": 1,
+      "Feet": [
+        -1728,
+        -863.75,
+        -11.249746
+      ],
+      "Yaw": -28.95092,
+      "Pitch": -57,
+      "RunDeg": 0,
+      "PerturbU": 0.25,
+      "Scatter": 0.23628592,
+      "PredictedBounces": 5,
+      "RealBounces": 4,
+      "Pos": [
+        -1721.1412,
+        -867.5442,
+        48.738804
+      ],
+      "Vel": [
+        86.80578,
+        -48.02007,
+        176.53636
+      ],
+      "PredictedRest": [
+        -1655.4891,
+        -961.3469,
+        -9.42525
+      ],
+      "RealRest": [
+        -1657.0977,
+        -962.38873,
+        -9.944239
+      ],
+      "Detonated": true,
+      "ErrPredicted": 1.9854605,
+      "ErrTarget": 41.914524,
+      "DivergenceTick": -1,
+      "DivergenceClass": "TRACKED"
+    },
+    {
+      "Index": 108,
+      "Type": "Crouch",
+      "Strength": 0,
+      "Stability": 1,
+      "Feet": [
+        -1728,
+        -864.25,
+        -11.600355
+      ],
+      "Yaw": -28.95092,
+      "Pitch": -57,
+      "RunDeg": 0,
+      "PerturbU": 0.25,
+      "Scatter": 0.23628592,
+      "PredictedBounces": 5,
+      "RealBounces": 4,
+      "Pos": [
+        -1721.1412,
+        -868.0442,
+        48.388195
+      ],
+      "Vel": [
+        86.80578,
+        -48.02007,
+        176.53636
+      ],
+      "PredictedRest": [
+        -1655.6926,
+        -961.8274,
+        -9.503136
+      ],
+      "RealRest": [
+        -1653.6946,
+        -961.255,
+        -8.800967
+      ],
+      "Detonated": true,
+      "ErrPredicted": 2.193823,
+      "ErrTarget": 41.993572,
+      "DivergenceTick": -1,
+      "DivergenceClass": "TRACKED"
+    },
+    {
+      "Index": 109,
+      "Type": "Crouch",
+      "Strength": 0,
+      "Stability": 1,
+      "Feet": [
+        -1727.75,
+        -816,
+        22.233639
+      ],
+      "Yaw": -42.017235,
+      "Pitch": -54,
+      "RunDeg": 0,
+      "PerturbU": 0.25,
+      "Scatter": 0.24383822,
+      "PredictedBounces": 5,
+      "RealBounces": 4,
+      "Pos": [
+        -1721.4508,
+        -821.67523,
+        81.84241
+      ],
+      "Vel": [
+        79.72427,
+        -71.82749,
+        171.72975
+      ],
+      "PredictedRest": [
+        -1670.4387,
+        -969.889,
+        -13.725842
+      ],
+      "RealRest": [
+        -1672.3353,
+        -971.2645,
+        -14.251993
+      ],
+      "Detonated": true,
+      "ErrPredicted": 2.4012678,
+      "ErrTarget": 48.988777,
+      "DivergenceTick": -1,
+      "DivergenceClass": "TRACKED"
+    },
+    {
+      "Index": 110,
+      "Type": "Crouch",
+      "Strength": 0,
+      "Stability": 1,
+      "Feet": [
+        -1728.25,
+        -816,
+        22.233913
+      ],
+      "Yaw": -42.017235,
+      "Pitch": -54,
+      "RunDeg": 0,
+      "PerturbU": 0.25,
+      "Scatter": 0.24383822,
+      "PredictedBounces": 5,
+      "RealBounces": 4,
+      "Pos": [
+        -1721.9508,
+        -821.67523,
+        81.84268
+      ],
+      "Vel": [
+        79.72427,
+        -71.82749,
+        171.72975
+      ],
+      "PredictedRest": [
+        -1670.7986,
+        -969.8589,
+        -13.78993
+      ],
+      "RealRest": [
+        -1672.5266,
+        -971.0661,
+        -14.259856
+      ],
+      "Detonated": true,
+      "ErrPredicted": 2.1596935,
+      "ErrTarget": 48.802097,
+      "DivergenceTick": -1,
+      "DivergenceClass": "TRACKED"
+    },
+    {
+      "Index": 111,
+      "Type": "Crouch",
+      "Strength": 0,
+      "Stability": 1,
+      "Feet": [
+        -1728,
+        -815.75,
+        22.409077
+      ],
+      "Yaw": -42.017235,
+      "Pitch": -54,
+      "RunDeg": 0,
+      "PerturbU": 0.25,
+      "Scatter": 0.24383822,
+      "PredictedBounces": 5,
+      "RealBounces": 4,
+      "Pos": [
+        -1721.7008,
+        -821.42523,
+        82.01785
+      ],
+      "Vel": [
+        79.72427,
+        -71.82749,
+        171.72975
+      ],
+      "PredictedRest": [
+        -1670.5305,
+        -969.636,
+        -13.706964
+      ],
+      "RealRest": [
+        -1672.8044,
+        -971.5639,
+        -14.3841715
+      ],
+      "Detonated": true,
+      "ErrPredicted": 3.057158,
+      "ErrTarget": 49.316696,
+      "DivergenceTick": -1,
+      "DivergenceClass": "TRACKED"
+    },
+    {
+      "Index": 113,
+      "Type": "Crouch",
+      "Strength": 0.5,
+      "Stability": 1,
+      "Feet": [
+        -1367.75,
+        -1560,
+        -20
+      ],
+      "Yaw": 112.88002,
+      "Pitch": -17,
+      "RunDeg": 0,
+      "PerturbU": 0.25,
+      "Scatter": 0.84194136,
+      "PredictedBounces": 5,
+      "RealBounces": 4,
+      "Pos": [
+        -1373.3829,
+        -1546.6521,
+        32.83
+      ],
+      "Vel": [
+        -154.4644,
+        366.02444,
+        186.19453
+      ],
+      "PredictedRest": [
+        -1710.9634,
+        -932.79144,
+        -13.37593
+      ],
+      "RealRest": [
+        -1710.5415,
+        -932.46606,
+        -13.300494
+      ],
+      "Detonated": true,
+      "ErrPredicted": 0.5380894,
+      "ErrTarget": 42.250435,
+      "DivergenceTick": -1,
+      "DivergenceClass": "TRACKED"
+    },
+    {
+      "Index": 114,
+      "Type": "Crouch",
+      "Strength": 0.5,
+      "Stability": 1,
+      "Feet": [
+        -1368.25,
+        -1560,
+        -20
+      ],
+      "Yaw": 112.88002,
+      "Pitch": -17,
+      "RunDeg": 0,
+      "PerturbU": 0.25,
+      "Scatter": 0.84194136,
+      "PredictedBounces": 5,
+      "RealBounces": 4,
+      "Pos": [
+        -1373.8829,
+        -1546.6521,
+        32.83
+      ],
+      "Vel": [
+        -154.4644,
+        366.02444,
+        186.19453
+      ],
+      "PredictedRest": [
+        -1710.3204,
+        -932.78503,
+        -13.361923
+      ],
+      "RealRest": [
+        -1710.7577,
+        -932.674,
+        -13.327671
+      ],
+      "Detonated": true,
+      "ErrPredicted": 0.452429,
+      "ErrTarget": 42.510365,
+      "DivergenceTick": -1,
+      "DivergenceClass": "TRACKED"
+    },
+    {
+      "Index": 115,
+      "Type": "Crouch",
+      "Strength": 0.5,
+      "Stability": 1,
+      "Feet": [
+        -1368,
+        -1559.75,
+        -20
+      ],
+      "Yaw": 112.88002,
+      "Pitch": -17,
+      "RunDeg": 0,
+      "PerturbU": 0.25,
+      "Scatter": 0.84194136,
+      "PredictedBounces": 5,
+      "RealBounces": 4,
+      "Pos": [
+        -1373.6329,
+        -1546.4021,
+        32.83
+      ],
+      "Vel": [
+        -154.4644,
+        366.02444,
+        186.19453
+      ],
+      "PredictedRest": [
+        -1711.1658,
+        -932.56903,
+        -13.355898
+      ],
+      "RealRest": [
+        -1711.3258,
+        -932.4274,
+        -13.312632
+      ],
+      "Detonated": true,
+      "ErrPredicted": 0.21802273,
+      "ErrTarget": 43.003304,
+      "DivergenceTick": -1,
+      "DivergenceClass": "TRACKED"
+    },
+    {
+      "Index": 117,
+      "Type": "Stand",
+      "Strength": 0.5,
+      "Stability": 1,
+      "Feet": [
+        -1330.4576,
+        -1626.8308,
+        -33.567757
+      ],
+      "Yaw": 113.201805,
+      "Pitch": -17,
+      "RunDeg": 0,
+      "PerturbU": 0.25,
+      "Scatter": 0.614161,
+      "PredictedBounces": 5,
+      "RealBounces": 4,
+      "Pos": [
+        -1336.1654,
+        -1613.5148,
+        37.28224
+      ],
+      "Vel": [
+        -156.51762,
+        365.15118,
+        186.19453
+      ],
+      "PredictedRest": [
+        -1655.6763,
+        -979.76953,
+        -11.09259
+      ],
+      "RealRest": [
+        -1657.2476,
+        -978.3907,
+        -11.011179
+      ],
+      "Detonated": true,
+      "ErrPredicted": 2.0920782,
+      "ErrTarget": 57.361717,
+      "DivergenceTick": -1,
+      "DivergenceClass": "TRACKED"
+    },
+    {
+      "Index": 118,
+      "Type": "Stand",
+      "Strength": 0.5,
+      "Stability": 1,
+      "Feet": [
+        -1330.9576,
+        -1626.8308,
+        -33.572453
+      ],
+      "Yaw": 113.201805,
+      "Pitch": -17,
+      "RunDeg": 0,
+      "PerturbU": 0.25,
+      "Scatter": 0.614161,
+      "PredictedBounces": 5,
+      "RealBounces": 4,
+      "Pos": [
+        -1336.6654,
+        -1613.5148,
+        37.277546
+      ],
+      "Vel": [
+        -156.51762,
+        365.15118,
+        186.19453
+      ],
+      "PredictedRest": [
+        -1656.1644,
+        -979.6485,
+        -11.163836
+      ],
+      "RealRest": [
+        -1657.7588,
+        -978.3338,
+        -11.10544
+      ],
+      "Detonated": true,
+      "ErrPredicted": 2.0673227,
+      "ErrTarget": 57.19886,
+      "DivergenceTick": -1,
+      "DivergenceClass": "TRACKED"
+    },
+    {
+      "Index": 119,
+      "Type": "Stand",
+      "Strength": 0.5,
+      "Stability": 1,
+      "Feet": [
+        -1330.7076,
+        -1626.5808,
+        -33.590057
+      ],
+      "Yaw": 113.201805,
+      "Pitch": -17,
+      "RunDeg": 0,
+      "PerturbU": 0.25,
+      "Scatter": 0.614161,
+      "PredictedBounces": 5,
+      "RealBounces": 4,
+      "Pos": [
+        -1336.4154,
+        -1613.2648,
+        37.25994
+      ],
+      "Vel": [
+        -156.51762,
+        365.15118,
+        186.19453
+      ],
+      "PredictedRest": [
+        -1655.8811,
+        -979.54285,
+        -11.073083
+      ],
+      "RealRest": [
+        -1657.4963,
+        -978.15845,
+        -10.999599
+      ],
+      "Detonated": true,
+      "ErrPredicted": 2.1286013,
+      "ErrTarget": 57.081963,
+      "DivergenceTick": -1,
+      "DivergenceClass": "TRACKED"
+    },
+    {
+      "Index": 121,
+      "Type": "Crouch",
+      "Strength": 0,
+      "Stability": 1,
+      "Feet": [
+        -1598.7615,
+        -877.5469,
+        15.333672
+      ],
+      "Yaw": -177.07643,
+      "Pitch": -89,
+      "RunDeg": 0,
+      "PerturbU": 0.25,
+      "Scatter": 0.47265843,
+      "PredictedBounces": 5,
+      "RealBounces": 4,
+      "Pos": [
+        -1599.0094,
+        -877.5595,
+        77.37175
+      ],
+      "Vel": [
+        -3.1373408,
+        -0.16022511,
+        202.47565
+      ],
+      "PredictedRest": [
+        -1651.5028,
+        -927.9054,
+        -3.036478
+      ],
+      "RealRest": [
+        -1651.7295,
+        -928.2811,
+        -3.1397107
+      ],
+      "Detonated": true,
+      "ErrPredicted": 0.45079675,
+      "ErrTarget": 18.74939,
+      "DivergenceTick": -1,
+      "DivergenceClass": "TRACKED"
+    },
+    {
+      "Index": 122,
+      "Type": "Crouch",
+      "Strength": 0,
+      "Stability": 1,
+      "Feet": [
+        -1599.2615,
+        -877.5469,
+        15.277191
+      ],
+      "Yaw": -177.07643,
+      "Pitch": -89,
+      "RunDeg": 0,
+      "PerturbU": 0.25,
+      "Scatter": 0.47265843,
+      "PredictedBounces": 5,
+      "RealBounces": 4,
+      "Pos": [
+        -1599.5094,
+        -877.5595,
+        77.31527
+      ],
+      "Vel": [
+        -3.1373408,
+        -0.16022511,
+        202.47565
+      ],
+      "PredictedRest": [
+        -1653.0447,
+        -928.4175,
+        -3.599466
+      ],
+      "RealRest": [
+        -1651.9902,
+        -928.0474,
+        -3.1780376
+      ],
+      "Detonated": true,
+      "ErrPredicted": 1.1943175,
+      "ErrTarget": 18.428688,
+      "DivergenceTick": -1,
+      "DivergenceClass": "TRACKED"
+    },
+    {
+      "Index": 123,
+      "Type": "Crouch",
+      "Strength": 0,
+      "Stability": 1,
+      "Feet": [
+        -1599.0115,
+        -877.2969,
+        15.349091
+      ],
+      "Yaw": -177.07643,
+      "Pitch": -89,
+      "RunDeg": 0,
+      "PerturbU": 0.25,
+      "Scatter": 0.47265843,
+      "PredictedBounces": 5,
+      "RealBounces": 4,
+      "Pos": [
+        -1599.2594,
+        -877.3095,
+        77.38717
+      ],
+      "Vel": [
+        -3.1373408,
+        -0.16022511,
+        202.47565
+      ],
+      "PredictedRest": [
+        -1651.6965,
+        -927.6421,
+        -3.0489812
+      ],
+      "RealRest": [
+        -1651.72,
+        -927.77563,
+        -3.0470002
+      ],
+      "Detonated": true,
+      "ErrPredicted": 0.13560046,
+      "ErrTarget": 18.604961,
+      "DivergenceTick": -1,
+      "DivergenceClass": "TRACKED"
+    }
+  ]
+}

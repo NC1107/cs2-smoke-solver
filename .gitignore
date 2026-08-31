@@ -29,6 +29,10 @@ data/*.viewer-map.json
 # the server like the other bind-mounted data rather than committed.
 data/*.prosmokes.json
 data/*.protargets.json
+# meshdiff CLI output (physics-vs-render mismatch overlay) - regenerable, and
+# its build cache (a raw VRF render-mesh export, hundreds of MB) already
+# lives under data/cache/ below.
+data/*.meshdiff.json
 data/cache/
 data/previews/
 

@@ -1,6 +1,6 @@
 // Fetch wrappers. No DOM access here; callers own status text and overlays.
 
-import { state } from "./state.js?v=16";
+import { state } from "./state.js?v=80";
 
 // Cache-bust a data URL with the map build: re-processed radars/GLBs change
 // content without changing name, and the query string gets a fresh copy past
@@ -45,6 +45,39 @@ export async function fetchProSmokes(map) {
   return res.ok ? res.json() : null;
 }
 
+// Physics-vs-render geometry mismatches from the meshdiff CLI command:
+// { map, step, cells: [[x, y, z, kind]...], renderTris, physicsTris }. Most
+// maps have never had meshdiff run against them, so a missing file is the
+// expected default (null keeps the toggle hidden), not an error.
+//
+// A HEAD first, because the payload carries the mismatched surfaces themselves
+// and runs to megabytes: every map load would pay for a dev overlay almost
+// nobody switches on. The body is fetched when the overlay is.
+export async function meshDiffExists(map) {
+  const res = await fetch(cacheBust(`data/${encodeURIComponent(map)}.meshdiff.json`), { method: "HEAD" });
+  return res.ok;
+}
+
+export async function fetchMeshDiff(map) {
+  const res = await fetch(cacheBust(`data/${encodeURIComponent(map)}.meshdiff.json`));
+  return res.ok ? res.json() : null;
+}
+
+
+// Which walkable levels are stacked over a 2D point. A top-down click on a
+// map like de_nuke can mean the roof, the bombsite under it, or the site below
+// that, and the solver has to pick one - this is what lets the viewer ask.
+// Returns [] when the map has no nav data or the request fails: an ambiguous
+// click is worth a question, a broken request is not.
+export async function fetchLevels(map, x, y) {
+  try {
+    const res = await fetch(`/api/levels?map=${encodeURIComponent(map)}&x=${x}&y=${y}`);
+    return res.ok ? (await res.json()).levels ?? [] : [];
+  } catch {
+    return [];
+  }
+}
+
 // The /api/lineup POST. The server streams NDJSON progress lines (phase
 // markers and batches of checked origins) before the final result line;
 // each progress line is handed to `onProgress` so the map can paint the
@@ -60,7 +93,18 @@ export async function runQuery(body, signal, onProgress) {
     signal,
   });
   if (!res.ok) {
-    return { error: res.status === 503 ? "no API: serve needs --geo/--nav/--attrs" : `error ${res.status}` };
+    // The server writes a specific {error} body for every rejection ("target
+    // is outside the map bounds", ...); show that, not just the status code.
+    let message = null;
+    try {
+      message = (await res.json()).error;
+    } catch {
+      // Not JSON (a proxy error page, a cut connection) - fall through.
+    }
+    if (!message) {
+      message = res.status === 503 ? "no API: serve needs --geo/--nav/--attrs" : `error ${res.status}`;
+    }
+    return { error: message };
   }
   const reader = res.body.getReader();
   const decoder = new TextDecoder();
@@ -98,7 +142,7 @@ export async function runQuery(body, signal, onProgress) {
 // The grenade's real flight path, simulated server-side by the same exact
 // integrator that verified the lineup. Cached on the lineup by the caller, since
 // a throw's arc is fixed for a given map build.
-export async function fetchTrajectory(map, l) {
+export async function fetchTrajectory(map, l, broken) {
   const q = new URLSearchParams({
     map, x: l.feet[0], y: l.feet[1], z: l.feet[2],
     type: l.type, pitch: l.pitch, yaw: l.yaw, strength: l.strength,
@@ -106,6 +150,9 @@ export async function fetchTrajectory(map, l) {
     // arc is a different curve than the same angles thrown while holding W.
     runDeg: l.runDeg ?? 0,
   });
+  // World state the lineup was solved under (broken glass / open doors): the
+  // drawn arc must fly the same world or it shows bounces the throw lacks.
+  if (broken) { q.set("broken", broken); }
   const res = await fetch(`/api/trajectory?${q}`);
   if (!res.ok) {
     throw new Error(`trajectory HTTP ${res.status}`);
@@ -116,13 +163,14 @@ export async function fetchTrajectory(map, l) {
 // One fully-analyzed lineup from its physical spec alone: the same shape a map
 // sweep returns per lineup, plus its flight path inline. Opening a shared link
 // renders just that throw with this, instead of sweeping the whole map.
-export async function fetchLineupOne(map, target, l) {
+export async function fetchLineupOne(map, target, l, broken) {
   const q = new URLSearchParams({
     map, x: l.feet[0], y: l.feet[1], z: l.feet[2],
     type: l.type, pitch: l.pitch, yaw: l.yaw, strength: l.strength,
     runDeg: l.runDeg ?? 0,
     tx: target[0], ty: target[1], tz: target[2] ?? 0,
   });
+  if (broken) { q.set("broken", broken); }
   const res = await fetch(`/api/lineup-one?${q}`);
   if (!res.ok) {
     throw new Error(`lineup-one HTTP ${res.status}`);
@@ -133,13 +181,14 @@ export async function fetchLineupOne(map, target, l) {
 // The positional slack ring: per world direction, how far the feet can drift
 // from the lineup's exact spot before the same aim misses `within` units of
 // the target. Cached on the lineup by the caller (keyed by `within`).
-export async function fetchSlack(map, l, target, within) {
+export async function fetchSlack(map, l, target, within, broken) {
   const q = new URLSearchParams({
     map, x: l.feet[0], y: l.feet[1], z: l.feet[2],
     type: l.type, pitch: l.pitch, yaw: l.yaw, strength: l.strength,
     runDeg: l.runDeg ?? 0,
     tx: target[0], ty: target[1], tz: target[2] ?? 0, within,
   });
+  if (broken) { q.set("broken", broken); }
   const res = await fetch(`/api/slack?${q}`);
   if (!res.ok) {
     throw new Error(`slack HTTP ${res.status}`);

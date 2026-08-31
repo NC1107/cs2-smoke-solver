@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Smoke Solver</title>
 <link rel="icon" href="viewer/favicon.svg" type="image/svg+xml">
-<link rel="stylesheet" href="viewer/app.css?v=16">
+<link rel="stylesheet" href="viewer/app.css?v=80">
 </head>
 <body>
 
@@ -23,57 +23,84 @@
     <details class="card" id="card-view" open>
       <summary>actions</summary>
       <div class="card-body">
-        <div class="target-row">
-          <button id="pick" class="btn primary">Target</button>
-          <button id="copy-target" class="icon-btn" hidden title="Copy the target position (setpos)" aria-label="Copy target position">
-            <svg viewBox="0 0 20 20" aria-hidden="true"><rect x="7" y="7" width="9" height="9" rx="1.5"/><path d="M13 7V5.5A1.5 1.5 0 0 0 11.5 4H5.5A1.5 1.5 0 0 0 4 5.5v6A1.5 1.5 0 0 0 5.5 13H7"/></svg></button>
-        </div>
-        <div class="paste">
-          <input id="getpos-in" placeholder="paste getpos → target" aria-label="Paste getpos output to set target">
-          <button id="getpos-set" class="btn">set</button>
-        </div>
+        <!-- This card has no visible header to hang it off, so the reset sits
+             in the corner the other cards put theirs in. -->
+        <button type="button" class="card-reset corner-reset" id="reset-view" title="Recenter and re-fit the map (double-click does this too)" aria-label="Reset view">
+          <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M15.5 7.5a6 6 0 1 0 .8 4"/><path d="M15.9 3.4v4.3h-4.3"/></svg></button>
+        <!-- The two positions a solve is made of, each said the same way:
+             paste one from the game console, or click it on the map. The map
+             takes them in order - first left click is the target, the second
+             is where you throw from - and each button reports which of the two
+             is already answered. -->
+        <div class="place-group">
+          <span class="action-label key-subhead">target position</span>
+          <div class="place-row">
+            <input id="target-in" placeholder="paste setpos" spellcheck="false" autocomplete="off"
+                   aria-label="Target position" title="In game: press ~ for the console, type getpos, and paste the setpos line it prints here">
+            <button id="copy-target" class="place-copy" hidden title="Copy this position as a setpos command"
+                    aria-label="Copy target position"><svg viewBox="0 0 20 20" aria-hidden="true"><rect x="7" y="7" width="9" height="9" rx="1.5"/><path d="M13 7V5.5A1.5 1.5 0 0 0 11.5 4H5.5A1.5 1.5 0 0 0 4 5.5v6A1.5 1.5 0 0 0 5.5 13H7"/></svg></button>
+          </div>
+          <button id="pick" class="btn primary place-set" title="Click the map to place the smoke target">Set target</button>
 
-        <div class="action-group">
-          <span class="action-label key-subhead">search</span>
-          <button id="search-all" class="btn" hidden>Search map</button>
-          <button id="heat" class="btn" hidden>Heatmap</button>
-          <button id="prosmokes" class="btn" hidden title="Density heatmap from pro HLTV demos: where pros throw smokes from (blue) and where they land (orange)">Pro smokes</button>
-          <div id="prosmokes-side" class="seg" hidden role="group" aria-label="Filter pro smokes by team">
-            <button class="seg-btn active" data-side="all">All</button>
-            <button class="seg-btn" data-side="t" title="Attacker smokes, thrown from the T side toward the objective">T</button>
-            <button class="seg-btn" data-side="ct" title="Defender smokes, thrown from the CT side to hold angles">CT</button>
+          <span class="action-label key-subhead">throw position</span>
+          <div class="place-row">
+            <input id="origin-in" placeholder="paste setpos" spellcheck="false" autocomplete="off"
+                   aria-label="Throw position" title="Stand where you want to throw from, then ress ~ for the console, type getpos, and paste the setpos line it prints here">
+            <button id="copy-origin" class="place-copy" hidden title="Copy this position as a setpos command"
+                    aria-label="Copy throw position"><svg viewBox="0 0 20 20" aria-hidden="true"><rect x="7" y="7" width="9" height="9" rx="1.5"/><path d="M13 7V5.5A1.5 1.5 0 0 0 11.5 4H5.5A1.5 1.5 0 0 0 4 5.5v6A1.5 1.5 0 0 0 5.5 13H7"/></svg></button>
+          </div>
+          <button id="pick-origin" class="btn place-set" title="Click the map to place the throw spot - leave it unset to search every spot on the map">Set throw position</button>
+          <!-- The two answers to "where do you throw from": this spot, or all
+               of them. Both belong to the throw-position question rather than
+               a section of their own, because that is the choice being made.
+               Solving the pair needs its own button - re-picking either half
+               leaves a target and a throw spot that nothing re-solves. -->
+          <span class="action-label key-subhead" id="search-label" hidden>search</span>
+          <div class="tile-row seg-search" id="search-seg" role="group" aria-label="Where to search" hidden>
+            <button class="tile" data-search="exact" title="Only the exact position above - no nearby stand spot substituted for it. Paste your own getpos, take the angles back into the game, and throw from where you are standing">Exact</button>
+            <button class="tile" data-search="spot" title="The throw position above and the stand spots around it, including the ones a wall pins your feet against">Spot</button>
+            <button class="tile" data-search="map" title="Every spot on the map that can throw this smoke">Map</button>
+            <button class="tile" data-search="spawns" title="Only the T and CT spawn positions themselves - what you can throw standing where the round puts you">Spawns</button>
           </div>
         </div>
 
+        <!-- Three rows, three jobs: which view you are in (one at a time),
+             what is painted on top of it (any combination), and what the
+             aiming overlay shows. Square tiles rather than word buttons: at
+             sidebar width a row of labels either truncated or spilled out of
+             the card, and an icon with its name under it does neither. -->
         <div class="action-group">
           <span class="action-label key-subhead">view</span>
-          <div class="view-head">
-            <button id="view3d" class="btn">3D</button>
-            <button id="spawns" class="icon-btn" hidden title="Show T/CT spawn positions (2D and 3D) - with a target set, click a spawn to solve a smoke from it" aria-label="Spawns">
-              <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M6 3v14"/><path d="M6 3h9l-2.4 3L15 9H6z"/></svg></button>
+          <div class="tile-row" id="view-seg" role="group" aria-label="View">
+            <button class="tile active" data-view="2d" title="Top-down radar"><svg viewBox="0 0 20 20" aria-hidden="true"><rect x="3" y="4" width="14" height="12" rx="1.5"/><path d="M3 9h14M8 4v12"/></svg><span class="tile-label">2D</span></button>
+            <button class="tile" data-view="3d" title="Fly through the collision mesh the solver actually throws against"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 2.6l6.4 3.4v7.4L10 17.4 3.6 13.4V6z"/><path d="M3.8 6.2L10 9.6l6.2-3.4M10 9.6v7.6"/></svg><span class="tile-label">3D</span></button>
+            <button class="tile" data-view="textured" title="Fly through the map with its real textures (one-time load, size varies by map)"><svg viewBox="0 0 20 20" aria-hidden="true"><rect x="3" y="4.5" width="14" height="11" rx="1.5"/><circle cx="7.5" cy="8.5" r="1.3"/><path d="M4 14l4-4 3 3 2.5-2.5L16 13"/></svg><span class="tile-label">Textured</span></button>
           </div>
-          <div class="icon-row" id="view-icons" hidden>
-            <button id="textured3d" class="icon-btn" title="Real map textures (one-time load, size varies by map)" aria-label="Textured">
-              <svg viewBox="0 0 20 20" aria-hidden="true"><rect x="3" y="4.5" width="14" height="11" rx="1.5"/><circle cx="7.5" cy="8.5" r="1.3"/><path d="M4 14l4-4 3 3 2.5-2.5L16 13"/></svg></button>
-            <button id="collision3d" class="icon-btn active" title="Collision boxes: the invisible grenade-clips and glass that stop smokes (magenta)" aria-label="Collision boxes">
-              <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 2.6l6.4 3.4v7.4L10 17.4 3.6 13.4V6z"/><path d="M3.8 6.2L10 9.6l6.2-3.4M10 9.6v7.6"/></svg></button>
-            <button id="topdown" class="icon-btn" title="Look straight down at the whole map" aria-label="Top-down">
-              <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 2.5v7M7 6.5l3 3 3-3"/><rect x="4" y="12" width="12" height="5" rx="1"/></svg></button>
-            <button id="crosshair3d" class="icon-btn" title="Show or hide the center crosshair" aria-label="Crosshair">
-              <svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="5.5"/><path d="M10 1.5v4M10 14.5v4M1.5 10h4M14.5 10h4"/></svg></button>
-            <button id="reticle3d" class="icon-btn" title="Lineup crosshair: a full-screen + reticle with numbered tick marks, to line grenades up by tick" aria-label="Lineup crosshair">
-              <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 1.5v17M1.5 10h17M6.5 8v4M13.5 8v4M8 6.5h4M8 13.5h4"/></svg></button>
+
+          <span class="action-label key-subhead">overlays</span>
+          <div class="tile-row" id="overlay-seg" role="group" aria-label="Overlays">
+            <button class="tile" data-overlay="spawns" hidden title="T/CT spawn positions - click one to throw from it"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M6 3v14"/><path d="M6 3h9l-2.4 3L15 9H6z"/></svg><span class="tile-label">Spawns</span></button>
+            <button class="tile" data-overlay="collision" title="Invisible collision: the grenade-clips, physics-clips and glass that stop smokes (magenta). 3D only"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 2.6l6.4 3.4v7.4L10 17.4 3.6 13.4V6z"/><path d="M6.6 8v4.2L10 14"/></svg><span class="tile-label">Collision</span></button>
+            <button class="tile" data-overlay="topdown" title="Look straight down at the whole map. 3D only"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 2.5v7M7 6.5l3 3 3-3"/><rect x="4" y="12" width="12" height="5" rx="1"/></svg><span class="tile-label">Top-down</span></button>
+            <button class="tile" data-overlay="meshdiff" hidden title="Physics-vs-render mismatches: red = grenades fly through this surface, orange = grenades phantom-bounce off it"><svg viewBox="0 0 20 20" aria-hidden="true"><rect x="2.5" y="2.5" width="7" height="7" rx="1"/><rect x="10.5" y="10.5" width="7" height="7" rx="1"/><path d="M9.3 9.3l1.4-1.4"/></svg><span class="tile-label">Mesh diff</span></button>
+          </div>
+
+          <span class="action-label key-subhead" data-for="reticle-seg">aim overlay</span>
+          <div class="tile-row" id="reticle-seg" role="group" aria-label="Aiming overlay">
+            <button class="tile" data-reticle="off" title="No aiming overlay"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 4l12 12M16 4L4 16"/></svg><span class="tile-label">Off</span></button>
+            <button class="tile" data-reticle="cross" title="Centre crosshair"><svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="4.5"/><path d="M10 2v3.5M10 14.5v3.5M2 10h3.5M14.5 10h3.5"/></svg><span class="tile-label">Crosshair</span></button>
+            <button class="tile" data-reticle="smoke" title="Numbered lineup ruler, for lining grenades up by tick"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 2v16M2 10h16M6.5 8.5v3M13.5 8.5v3M8.5 6.5h3M8.5 13.5h3"/></svg><span class="tile-label">Ruler</span></button>
           </div>
         </div>
 
         <div class="action-group action-utility">
-          <button id="reset-view" class="btn" title="Recenter and re-fit the map (double-click does this too)">Reset</button>
-          <button id="clear" class="btn" hidden>Clear</button>
+          <button id="clear" title="Clear the target and results" class="btn" hidden>Clear</button>
         </div>
       </div>
     </details>
     <details class="card" id="card-filters">
-      <summary>filters <span class="filter-count" id="filter-count"></span></summary>
+      <summary>filters <span class="filter-count" id="filter-count"></span><button type="button" class="card-reset" id="filters-reset" title="Reset filters to defaults" aria-label="Reset filters">
+        <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M15.5 7.5a6 6 0 1 0 .8 4"/><path d="M15.9 3.4v4.3h-4.3"/></svg></button></summary>
       <div class="card-body" id="filter-body">
         <select id="f-type" aria-label="Movement type"
                 data-label="Movement" data-desc="Your throw style: standing, crouching, jumping, etc.">
@@ -112,10 +139,16 @@
           <option value="0.8">≥80% stable</option>
           <option value="1">100% stable</option>
         </select>
+        <select id="f-pin" aria-label="Only spots geometry places your feet in"
+                data-label="Stand spot" data-desc="A wall or corner spot puts your feet in exactly the same place every round - you walk into it instead of measuring. Only the aim is left to get right.">
+          <option value="">any stand spot</option>
+          <option value="pinned">wall or corner only</option>
+          <option value="corner">corner only</option>
+        </select>
         <select id="f-precision" aria-label="Landing precision, distance from target"
-                data-label="Precision" data-desc="How close the smoke lands to the target position you picked. For perfect exact smokes choose 1u, but most less precise smokes still work well under 32u.">
+                data-default="32" data-label="Precision" data-desc="How close the smoke lands to the target position you picked. For perfect exact smokes choose 1u, but most less precise smokes still work well under 32u.">
           <option value="">any precision</option>
-          <option value="32">≤32u</option>
+          <option value="32" selected>≤32u</option>
           <option value="16">≤16u</option>
           <option value="8">≤8u</option>
           <option value="4">≤4u</option>
@@ -131,7 +164,8 @@
       </div>
     </details>
     <details class="card" id="card-advanced">
-      <summary>advanced <span class="filter-count" id="advanced-count"></span></summary>
+      <summary>advanced <span class="filter-count" id="advanced-count"></span><button type="button" class="card-reset" id="advanced-reset" title="Reset advanced settings to defaults" aria-label="Reset advanced settings">
+        <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M15.5 7.5a6 6 0 1 0 .8 4"/><path d="M15.9 3.4v4.3h-4.3"/></svg></button></summary>
       <div class="card-body" id="advanced-body">
         <div class="filter-row">
           <label class="filter-head" for="a-tolerance"><b class="filter-info" tabindex="0" role="button" aria-label="What does Solve tolerance do?">Solve tolerance:</b><span class="filter-slot">
@@ -142,17 +176,18 @@
               <option value="48">48u</option>
               <option value="128">128u (loose)</option>
             </select></span></label>
-          <p class="filter-desc" hidden>How close to the target a throw must land for the solver to keep it at all. Unlike the Precision display filter, this changes what gets computed.</p>
+          <p class="filter-desc" hidden>How close to the target (horizontally) a throw must land for the solver to keep it at all - enforced against each throw's exact simulated landing. Unlike the Precision display filter, this changes what gets computed.</p>
         </div>
         <div class="filter-row">
           <label class="filter-head" for="a-reach"><b class="filter-info" tabindex="0" role="button" aria-label="What does Search radius do?">Search radius:</b><span class="filter-slot">
             <select id="a-reach" aria-label="Origin search radius around a clicked throw spot">
               <option value="">300u (recommended)</option>
-              <option value="50">50u (this exact spot)</option>
+              <option value="exact">exact spot (deep search)</option>
+              <option value="50">50u</option>
               <option value="150">150u</option>
               <option value="600">600u (wide)</option>
             </select></span></label>
-          <p class="filter-desc" hidden>How far around a clicked throw spot to look for stand positions. Small = only lineups from right where you clicked.</p>
+          <p class="filter-desc" hidden>How far around a clicked throw spot to look for stand positions. "Exact spot" searches only where you clicked, with the fine angle scan and the verify gate opened up, so it finds a throw from that precise position even when it is an awkward one - use it when you know where you want to stand.</p>
         </div>
         <div class="filter-row">
           <label class="filter-head" for="a-stability"><b class="filter-info" tabindex="0" role="button" aria-label="What does Verify gate do?">Verify gate:</b><span class="filter-slot">
@@ -171,6 +206,30 @@
             </select></span></label>
           <p class="filter-desc" hidden>Halves the aim-angle step the sweep samples (0.5° near a click). Finds lineups whose working angle window the normal scan steps over. Roughly 3x solve time.</p>
         </div>
+        <div class="filter-row">
+          <label class="filter-head" for="a-world"><b class="filter-info" tabindex="0" role="button" aria-label="What does World state do?">World state:</b><span class="filter-slot">
+            <select id="a-world" aria-label="Breakable glass and door state the solver assumes">
+              <option value="">round start (intact)</option>
+              <option value="glass">glass broken</option>
+              <option value="doors">doors open</option>
+              <option value="glass,doors">glass broken + doors open</option>
+            </select></span></label>
+          <p class="filter-desc" hidden>Whether smokes may fly through breakable glass (e.g. Nuke's roof panes over Heaven) and open doorways. Round start assumes everything intact and closed - pick a broken state for mid-round lineups that only exist once the glass is shot out or the door stands open.</p>
+        </div>
+        <div class="filter-row">
+          <label class="filter-check" for="a-pro">
+            <input type="checkbox" id="a-pro" checked>
+            <span>count pro usage in ranking</span></label>
+          <p class="filter-desc" hidden>Gives a lineup credit for being thrown from a spot pros use in real matches. Maps with thousands of demo points can otherwise crowd out spots that are simply better throws, so turn this off to rank on the throw alone.</p>
+        </div>
+        <details class="setup">
+          <summary>practice setup</summary>
+          <div class="cmd" id="cmd-setup">sv_cheats 1; mp_warmup_end; mp_roundtime_defuse 60;
+mp_freezetime 0; mp_restartgame 1;
+sv_infinite_ammo 1; sv_grenade_trajectory 1;
+sv_autobunnyhopping 1; sv_enablebunnyhopping 1;
+give weapon_smokegrenade<button data-copy="cmd-setup" class="btn">copy</button></div>
+        </details>
         <p class="filter-desc" id="advanced-note">These change how the solver searches - they apply to your next Search / spot click.</p>
       </div>
     </details>
@@ -179,8 +238,18 @@
   <div id="stage3d" style="position:absolute; inset:0; display:none"></div>
   <div id="lineup-ruler" class="lineup-ruler" hidden aria-hidden="true"></div>
   <div id="tip"></div>
+  <!-- Only appears when a click lands on stacked floors, which is the one case
+       where the top-down view cannot express what was meant. It takes over the
+       screen on purpose: solving the wrong floor wastes a minute and returns
+       answers for a place the user did not ask about. -->
+  <div id="level-backdrop" hidden>
+    <div id="level-choice" role="dialog" aria-modal="true" aria-labelledby="level-title"></div>
+  </div>
+  <!-- Bottom-left, where a map keeps the things that describe the map:
+       what the symbols mean, and which layer is painted under them. -->
+  <div class="bottom-bar">
   <details class="key" id="key-dots" hidden>
-    <summary>legend <span id="key-count"></span></summary>
+    <summary>legend</summary>
     <div class="key-body">
       <div class="key-group" id="key-markers">
         <div class="key-row"><span class="key-label">click</span><span><span class="dot left"></span> left</span><span><span class="dot mid"></span> mid (L+R)</span><span><span class="dot right"></span> right</span></div>
@@ -201,44 +270,70 @@
           <div class="key-row"><span class="swatch ok dim"></span> open ground, verified lineup</div>
         </div>
       </div>
+      <!-- Populated by main.js (overlayLegendRows) with only the overlays
+           actually switched on right now, in plain player language. -->
+      <div class="key-group" id="key-overlays" hidden></div>
     </div>
   </details>
+  <!-- Map layers, where a map puts them: bottom-left beside the legend, the
+       way satellite/terrain sit under a map rather than in the tool panel.
+       These paint the map itself; nothing in the sidebar does. -->
+  <div class="map-layers" id="map-layers">
+    <button id="heat" class="layer-btn" hidden title="Heatmap of where throws are possible">Heatmap</button>
+    <button id="prosmokes" class="layer-btn" hidden title="Density heatmap from pro HLTV demos: where pros throw smokes from (blue) and where they land (orange)">Pro smokes</button>
+    <div id="prosmokes-side" class="seg" hidden role="group" aria-label="Filter pro smokes by team">
+      <button class="seg-btn active" data-side="all">All</button>
+      <button class="seg-btn" data-side="t" title="Attacker smokes, thrown from the T side toward the objective">T</button>
+      <button class="seg-btn" data-side="ct" title="Defender smokes, thrown from the CT side to hold angles">CT</button>
+    </div>
+  </div>
+  </div>
   <details class="key help3d" id="key-3d" hidden>
     <summary>3D view</summary>
     <div class="key-body">
       <div class="key-subhead">controls</div>
-      <div class="key-row"><span class="key-label">move</span><span>WASD fly · Space up · Ctrl down · Shift fast</span></div>
-      <div class="key-row"><span class="key-label">camera</span><span>drag look · right-drag pan · scroll dolly</span></div>
-      <div class="key-row"><span class="key-label">target</span><span>right-click / long-press sets it · click terrain solves from there</span></div>
-      <div class="key-row"><span class="key-label">touch</span><span>1 finger look · 2 fingers pan + pinch zoom</span></div>
-      <div class="key-subhead">legend</div>
-      <div class="key-row"><span class="swatch phantom"></span><span>invisible blockers the solver bounces smokes off - grenade-clips, physics-clips, glass</span></div>
+      <!-- Pointer-specific rows: a desktop reader has no use for the pinch
+           gestures and a phone reader has no keyboard, so each device is shown
+           only the controls it actually has. -->
+      <div class="key-row fine-only"><span class="key-label">move</span><span>WASD fly · Space up · Ctrl down · Shift fast</span></div>
+      <div class="key-row fine-only"><span class="key-label">camera</span><span>drag look · right-drag pan · scroll dolly</span></div>
+      <div class="key-row fine-only"><span class="key-label">target</span><span>right-click sets it · click terrain solves from there</span></div>
+      <div class="key-row coarse-only"><span class="key-label">move</span><span>drag to look · two fingers pan · pinch to zoom</span></div>
+      <div class="key-row coarse-only"><span class="key-label">target</span><span>long-press sets it · tap terrain solves from there</span></div>
+      <!-- Same renderer as #key-overlays above (main.js), filtered to the
+           overlays this view actually draws (no pro-smoke heat in 3D). -->
+      <div class="key-group" id="key-overlays-3d" hidden></div>
     </div>
   </details>
   <div class="panel" id="panel" hidden>
     <div class="panel-resize" id="panel-resize" title="Drag to resize (or focus and use arrow keys)" role="separator" aria-orientation="vertical" aria-label="Resize panel" tabindex="0"></div>
-    <button id="panel-collapse" class="panel-collapse" title="Hide results" aria-label="Hide results" aria-expanded="true">
-      <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M8 5l5 5-5 5"/></svg></button>
+    <!-- One results header: collapse, how the list is cut, how it is sorted,
+         and where you are in it. These were three separate strips before, one
+         of them floating over the preview image. -->
+    <div class="panel-head">
+      <button id="panel-collapse" class="panel-collapse" title="Hide results" aria-label="Hide results" aria-expanded="true">
+        <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M8 5l5 5-5 5"/></svg></button>
+      <span class="head-count" id="head-count"></span>
+      <select id="sort-by" class="head-sort" title="Order the results" aria-label="Sort results by">
+        <option value="score">best score</option>
+        <option value="precision">closest to target</option>
+        <option value="stability">most reliable</option>
+        <option value="bounces">fewest bounces</option>
+        <option value="flight">fastest</option>
+      </select>
+      <button id="row-detail" class="btn head-toggle" title="Show the raw numbers on each result" aria-pressed="false">detailed</button>
+      <span class="list-pager" id="list-pager" hidden>
+        <button class="pager-arrow" id="pager-prev" aria-label="Previous page">
+          <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M12 5l-5 5 5 5"/></svg></button>
+        <span class="pager-label" id="pager-label">1/1</span>
+        <button class="pager-arrow" id="pager-next" aria-label="Next page">
+          <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M8 5l5 5-5 5"/></svg></button>
+      </span>
+    </div>
     <div id="preview-pane" hidden>
       <div class="preview-thumb" id="preview-thumb"></div>
     </div>
-    <div class="list-pager" id="list-pager" hidden>
-      <button class="pager-arrow" id="pager-prev" aria-label="Previous page">
-        <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M12 5l-5 5 5 5"/></svg></button>
-      <span class="pager-label" id="pager-label">page <b>1</b> of <b>1</b></span>
-      <button class="pager-arrow" id="pager-next" aria-label="Next page">
-        <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M8 5l5 5-5 5"/></svg></button>
-      <span class="pager-count" id="pager-count">0 results</span>
-    </div>
     <div id="lineup-list"></div>
-    <details class="setup">
-      <summary>practice setup</summary>
-      <div class="cmd" id="cmd-setup">sv_cheats 1; mp_warmup_end; mp_roundtime_defuse 60;
-mp_freezetime 0; mp_restartgame 1;
-sv_infinite_ammo 1; sv_grenade_trajectory 1;
-sv_autobunnyhopping 1; sv_enablebunnyhopping 1;
-give weapon_smokegrenade<button data-copy="cmd-setup" class="btn">copy</button></div>
-    </details>
   </div>
 </div>
 
@@ -273,6 +368,6 @@ give weapon_smokegrenade<button data-copy="cmd-setup" class="btn">copy</button><
      4h, so bumping ?v= here is what busts that cache. Bump on any change to a
      directly-referenced asset. (The permanent cure is CF Browser Cache TTL ->
      "Respect Existing Headers", after which this is belt-and-suspenders.) -->
-<script type="module" src="viewer/js/main.js?v=16"></script>
+<script type="module" src="viewer/js/main.js?v=80"></script>
 </body>
 </html>

@@ -64,6 +64,17 @@ public static partial class LineupSolver
     static readonly float[] RunYawOffsets = [0f, 45f, -45f, 90f, -90f];
     static readonly float[] NoRunOffset = [0f];
 
+    // The free-space path is a lower bound on flight distance, but a real arc
+    // curves and bounces over it, so the budget is scaled generously before
+    // anything is discarded: this prune exists to remove the impossible, not
+    // to trim the difficult.
+    const float FreeSpaceBudgetScale = 1.6f;
+
+    // Slack on the vertical-reach prune above: the envelope is derived from
+    // drag-free flight off a point launch, while the real throw releases 16u
+    // ahead of the eye and the zone is a volume rather than its centre.
+    const float VerticalReachMargin = 128f;
+
     // A throw that ran out the full flight budget never came to rest - its
     // "rest point" is wherever the integrator gave up. The 0.01s slack absorbs
     // float accumulation in the per-tick time sum. Shared by the coarse sweep
@@ -79,6 +90,27 @@ public static partial class LineupSolver
         ThrowType.JumpThrow or ThrowType.CrouchJumpThrow => 2700f,
         _ => 3100f,
     };
+
+    // The first open cell at or above a point, or null when the column is
+    // solid for the whole search. Three cells is a body's worth of headroom -
+    // past that the point was not standing anywhere.
+    static int? FreeCellNear(VoxelGrid grid, Vector3 point)
+    {
+        var (x, y, z) = grid.CellOf(point);
+        for (var dz = 0; dz <= 3; dz++)
+        {
+            if (!grid.InBounds(x, y, z + dz))
+            {
+                break;
+            }
+            var index = grid.Index(x, y, z + dz);
+            if (!grid.IsSolid(index))
+            {
+                return index;
+            }
+        }
+        return null;
+    }
 
     public static List<Lineup> Solve(
         VoxelGrid grid,
@@ -101,7 +133,15 @@ public static partial class LineupSolver
         ThrowConstants? constants = null,
         ConcurrentDictionary<(int X, int Y), int>? coverage = null,
         Action<Vector3, int>? onOrigin = null,
-        TriangleCollider? collider = null)
+        TriangleCollider? collider = null,
+        // The exact point the user asked for, when there is one. Only used to
+        // break ties between candidates in the same origin bucket (see
+        // Better); the zone still decides what counts as a hit.
+        Vector3? target = null,
+        // Extra places the sweep should also grow outward from - in practice
+        // the two team spawns. Ordering only; every reachable origin is swept
+        // either way.
+        IReadOnlyList<Vector3>? extraFronts = null)
     {
         if (zoneCrossings.Count == 0)
         {
@@ -125,12 +165,93 @@ public static partial class LineupSolver
         origins ??= FindStandableOrigins(grid, originMin, originMax, collider);
         var best = new ConcurrentDictionary<(int, int), Lineup>();
 
-        Parallel.ForEach(origins, Cpu.Bound, feet =>
+        // How far every part of the map is from the zone through open air. A
+        // throw spot whose shortest free-space path is longer than any throw
+        // can travel cannot reach the zone by any angle or bounce, however
+        // close it looks in a straight line - lower tunnels sit right under a
+        // bombsite, and a lobby is a short line but a long journey from the
+        // roof above it. Budgeted at the longest range any type can manage
+        // plus a margin, since the flight path is always at least as long as
+        // this lower bound.
+        var reachBudget = MaxRange(ThrowType.RunJumpThrow) * FreeSpaceBudgetScale;
+        var reach = FreeSpaceReach.Build(grid, zoneCrossings.Keys, reachBudget);
+
+        // Drop the hopeless origins before the sweep rather than inside it.
+        // Doing it here means the reported progress counts spots that can
+        // actually produce a throw, instead of walking tens of thousands of
+        // positions the grenade could never leave - the count was honest about
+        // the loop and misleading about the work.
+        var pathDistances = new Dictionary<Vector3, float>();
+        var reachable = new List<Vector3>(origins.Count);
+        foreach (var feet in origins)
+        {
+            var release = feet + new Vector3(0, 0, GrenadeTrajectory.CrouchEyeHeight);
+            if ((reach.DistanceFrom(release) ?? reach.DistanceFrom(feet)) is not { } pathDistance)
+            {
+                coverage?[((int)MathF.Round(feet.X), (int)MathF.Round(feet.Y))] = 0;
+                continue;
+            }
+            pathDistances[feet] = pathDistance;
+            reachable.Add(feet);
+        }
+
+        // A second and third front, grown from the places a round actually
+        // starts. A map-wide sweep watched from the target alone reaches the
+        // spots a player is standing on last, which is the wrong end to watch
+        // when the question is "what can I throw on the way out of spawn".
+        // These only reorder the sweep - what prunes an origin is still its
+        // distance from the zone, which is the only one of the three that
+        // bounds a throw.
+        var orderKeys = new Dictionary<Vector3, float>(pathDistances);
+        foreach (var front in extraFronts ?? [])
+        {
+            // A spawn entity sits at the player's feet, which usually quantises
+            // into the solid floor cell underneath; seeding that would flood
+            // nothing at all. Lifted to eye height, then upward a cell at a
+            // time until the seed is actually in open air.
+            if (FreeCellNear(grid, front + new Vector3(0, 0, GrenadeTrajectory.CrouchEyeHeight)) is not { } seed)
+            {
+                continue;
+            }
+            var field = FreeSpaceReach.Build(grid, [seed], reachBudget);
+            foreach (var feet in reachable)
+            {
+                var release = feet + new Vector3(0, 0, GrenadeTrajectory.CrouchEyeHeight);
+                if ((field.DistanceFrom(release) ?? field.DistanceFrom(feet)) is { } d && d < orderKeys[feet])
+                {
+                    orderKeys[feet] = d;
+                }
+            }
+        }
+        // Swept nearest-first, measured through open air rather than in a
+        // straight line, so the search grows outward from the target the way
+        // it is watched: the spots most likely to produce a throw resolve
+        // first, and the live view fills from the smoke outwards instead of
+        // in whatever order the stand spots happen to be stored. Ordering
+        // changes nothing about the result - every reachable origin is still
+        // swept - only when each one is reported.
+        reachable.Sort((a, b) => orderKeys[a].CompareTo(orderKeys[b]));
+        origins = reachable;
+
+        // NoBuffering makes the workers pull the next origin one at a time
+        // instead of each taking a static slice of the list up front. With the
+        // list ordered nearest-first that is what turns the sweep into an
+        // actual expanding front: range partitioning had eight workers running
+        // eight different radii at once, which is why the live view filled in
+        // diagonal stripes rather than growing out of the target. Each item is
+        // a whole set of simulations, so per-item hand-out costs nothing next
+        // to the work it hands out.
+        Parallel.ForEach(Partitioner.Create(origins, EnumerablePartitionerOptions.NoBuffering), Cpu.Bound, feet =>
         {
             var toZone = zoneCentroid - feet;
             var distance = new Vector2(toZone.X, toZone.Y).Length();
+            // Measured from the release point, not the feet, so a crouch throw
+            // is not credited with a standing eye height.
+            var zoneRise = toZone.Z - GrenadeTrajectory.CrouchEyeHeight;
             var yawCenter = MathF.Atan2(toZone.Y, toZone.X) * 180f / MathF.PI;
             var hits = 0;
+
+            var pathDistance = pathDistances[feet];
 
             // Returns how far the rest point missed the zone centroid (squared), or
             // 0 for an in-zone hit, or MaxValue for a lost/expired throw. Hits are
@@ -150,7 +271,7 @@ public static partial class LineupSolver
                 hits++;
                 var lineup = new Lineup(feet, Normalize(yaw), pitch, type, result.RestPoint, result.Bounces, result.FlightTime, crossings, Strength: strength, RunYawOffsetDeg: runOffset);
                 var key = ((int)MathF.Floor(feet.X / dedupeBucketSize), (int)MathF.Floor(feet.Y / dedupeBucketSize));
-                best.AddOrUpdate(key, lineup, (_, current) => Better(lineup, current) ? lineup : current);
+                best.AddOrUpdate(key, lineup, (_, current) => Better(lineup, current, target) ? lineup : current);
                 return 0f;
             }
 
@@ -167,6 +288,36 @@ public static partial class LineupSolver
                         if (distance > MaxRange(type) * speedFactor * speedFactor)
                         {
                             continue;
+                        }
+                        // Same range test against the honest distance: the path
+                        // the grenade must actually travel, not the line the
+                        // wall is in the way of.
+                        if (pathDistance > MaxRange(type) * speedFactor * speedFactor * FreeSpaceBudgetScale)
+                        {
+                            continue;
+                        }
+                        // Vertical reach. A projectile launched at speed v
+                        // cannot pass above the parabola of safety
+                        // v^2/2g - g*d^2/2v^2 at horizontal distance d, and a
+                        // bounce only ever removes energy, so a zone above that
+                        // envelope cannot be reached from here at this power by
+                        // any angle or any number of bounces. The launch speed
+                        // is overstated on purpose (jump and run velocity added
+                        // outright, plus a margin) so the test only ever
+                        // discards throws that are impossible, never ones that
+                        // are merely hard - it is a prune, not a filter.
+                        if (zoneRise > 0f)
+                        {
+                            var launchSpeed = k.ThrowSpeed * speedFactor
+                                + (type is ThrowType.JumpThrow or ThrowType.CrouchJumpThrow or ThrowType.RunJumpThrow ? k.JumpVelocity : 0f)
+                                + (type is ThrowType.RunJumpThrow ? k.RunSpeed : 0f);
+                            var gravity = GrenadeTrajectory.BaseGravity * k.GravityScale;
+                            var apex = launchSpeed * launchSpeed / (2f * gravity);
+                            var reachAtDistance = apex - gravity * distance * distance / (2f * launchSpeed * launchSpeed);
+                            if (zoneRise > reachAtDistance + VerticalReachMargin)
+                            {
+                                continue;
+                            }
                         }
                         // A near miss is one coarse step's worth of landing displacement
                         // (roughly distance * step in radians) from the zone edge.
@@ -266,7 +417,15 @@ public static partial class LineupSolver
         // coarse sweep nominated (which lands anywhere in the tolerance zone).
         // This is what makes the precision filter able to surface sub-unit
         // lineups. Null keeps the original stability-first behaviour (CLI, tests).
-        Vector3? aimTarget = null)
+        Vector3? aimTarget = null,
+        // When set together with aimTarget, acceptance is the EXACT rest
+        // point's distance to the target, not membership in the voxel zone.
+        // The voxel zone accepts anywhere inside 16u cells inflated by a
+        // voxel, which stretched a "16u" promise to a ~58u envelope - the
+        // measured reason solved lineups landed outside the radius the user
+        // asked for. The coarse zone stays as the sweep's recall filter; this
+        // is the precision gate. Null keeps zone-membership acceptance.
+        float? tolerance = null)
     {
         // One perturbation step; also the re-aim lattice pitch, so the rescue
         // search and the stability probes share simulations.
@@ -298,6 +457,15 @@ public static partial class LineupSolver
                 return result;
             }
 
+            // The precision gate when the caller supplied one, the voxel zone
+            // otherwise. Every acceptance decision below - stability scoring,
+            // the aim-window search, the final settle check - goes through
+            // this one predicate, so "stable" and "in tolerance" mean the same
+            // radius the user was promised.
+            bool Accepts(Vector3 restPoint) =>
+                aimTarget is { } g && tolerance is { } tol
+                    ? WithinTolerance(restPoint, g, tol, grid.VoxelSize)
+                    : InZone(grid, zoneCrossings, restPoint);
 
             float StabilityAround(int cYaw, int cPitch)
             {
@@ -305,7 +473,7 @@ public static partial class LineupSolver
                 foreach (var (dYaw, dPitch) in offsets)
                 {
                     var result = SimAt(cYaw + dYaw, cPitch + dPitch);
-                    if (Settled(result) && InZone(grid, zoneCrossings, result.RestPoint))
+                    if (Settled(result) && Accepts(result.RestPoint))
                     {
                         hits++;
                     }
@@ -331,7 +499,7 @@ public static partial class LineupSolver
                     for (var dPitch = -AimReach; dPitch <= AimReach; dPitch++)
                     {
                         var result = SimAt(dYaw, dPitch);
-                        if (!Settled(result) || !InZone(grid, zoneCrossings, result.RestPoint))
+                        if (!Settled(result) || !Accepts(result.RestPoint))
                         {
                             continue;
                         }
@@ -373,7 +541,7 @@ public static partial class LineupSolver
                         for (var dPitch = -AimReach; dPitch <= AimReach; dPitch++)
                         {
                             var result = SimAt(dYaw, dPitch);
-                            if (!Settled(result) || !InZone(grid, zoneCrossings, result.RestPoint))
+                            if (!Settled(result) || !Accepts(result.RestPoint))
                             {
                                 continue;
                             }
@@ -405,7 +573,7 @@ public static partial class LineupSolver
             // actually describes takes 5 and 4.6s - visible now that the viewer
             // draws the real path, and quietly wrong before that, because the
             // bounce and flight-time filters were sifting on the approximation.
-            var settled = Settled(best) && InZone(grid, zoneCrossings, best.RestPoint);
+            var settled = Settled(best) && Accepts(best.RestPoint);
             // Position-chaos probe: the aim-window stability above misses
             // throws that are stable in ANGLE but explode when the FEET move
             // one movement tick (a bounce boundary inside 0.25u). In-game
@@ -448,6 +616,26 @@ public static partial class LineupSolver
         ];
     }
 
+    // The promise the tolerance knob makes, applied to the EXACT rest point:
+    // within `tolerance` of the target in XY (the plane the user clicks and the
+    // viewer's precision filter measures). The vertical band is deliberately
+    // looser - a couple of voxels below for the grenade settling onto the
+    // surface the target Z was resolved from, and tolerance plus that slack
+    // above for crates and steps near the click - because target Z comes from
+    // nav data that is itself only voxel-accurate; it mirrors the asymmetric
+    // vertical extent the old cell zone had, without its 30-45u of XY slop.
+    public static bool WithinTolerance(Vector3 restPoint, Vector3 target, float tolerance, float voxelSize)
+    {
+        var dx = restPoint.X - target.X;
+        var dy = restPoint.Y - target.Y;
+        if (dx * dx + dy * dy > tolerance * tolerance)
+        {
+            return false;
+        }
+        var dz = restPoint.Z - target.Z;
+        return dz >= -(2f * voxelSize) && dz <= tolerance + 2f * voxelSize;
+    }
+
     static bool InZone(VoxelGrid grid, IReadOnlyDictionary<int, int> zoneCrossings, Vector3 restPoint)
     {
         var (x, y, z) = grid.CellOf(restPoint);
@@ -477,11 +665,26 @@ public static partial class LineupSolver
         return -MathF.Atan2(k.RunSpeed * MathF.Sin(offset), horizontal + k.RunSpeed * MathF.Cos(offset)) * 180f / MathF.PI;
     }
 
-    static bool Better(Lineup a, Lineup b)
+    static bool Better(Lineup a, Lineup b, Vector3? target)
     {
         if (a.Bounces != b.Bounces)
         {
             return a.Bounces < b.Bounces;
+        }
+        // Between equal-bounce candidates at the same origin, prefer the one
+        // whose (voxel-sim) rest sits closer to the target: the old
+        // bounce-only pick routinely nominated a candidate on the far side of
+        // the acceptance zone, and VerifyExact's +/-1.2 degree re-aim window
+        // cannot walk a coarse-lattice-sized miss back to the click. The 1u
+        // dead band keeps voxel-sim noise from overriding the real tiebreaks.
+        if (target is { } t)
+        {
+            var da = Vector3.DistanceSquared(a.RestPoint, t);
+            var db = Vector3.DistanceSquared(b.RestPoint, t);
+            if (MathF.Abs(da - db) > 1f)
+            {
+                return da < db;
+            }
         }
         if (a.RestCrossings != b.RestCrossings)
         {

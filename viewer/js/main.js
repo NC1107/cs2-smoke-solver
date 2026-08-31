@@ -2,18 +2,18 @@
 // import the feature modules; they call back into the orchestrators defined
 // here (setTarget, select, runQuery) via the init*/set*Callbacks hooks.
 
-import { state, filtered, esc, lowMemoryDevice } from "./state.js?v=16";
-import { loadMapList, loadMapData, runQuery as postLineupQuery, fetchTrajectory, fetchLineupOne, fetchSlack, fetchSpawns, fetchProSmokes } from "./api.js?v=16";
-import { loadRadar, readColors, recolorRadar, draw, scheduleDraw, resize, resetView, initMap2d } from "./map2d.js?v=16";
-import { ensure3d, resetEnsure3d, teardown3d, current3d, sync3d, syncProgress3d, set3dCallbacks, applyTheme3d } from "./view3d.js?v=16";
-import { resetEnsureTexturedScene } from "./textured-scene.js?v=16";
-import { capturePreview } from "./preview.js?v=16";
+import { state, filtered, esc, lowMemoryDevice, loadFavorites, setFavorite, isFavorite, DEFAULT_EYE_HEIGHT, EYE_HEIGHT_BY_TYPE } from "./state.js?v=80";
+import { loadMapList, loadMapData, runQuery as postLineupQuery, fetchTrajectory, fetchLineupOne, fetchSlack, fetchSpawns, fetchProSmokes, fetchMeshDiff, meshDiffExists, fetchLevels } from "./api.js?v=80";
+import { loadRadar, readColors, recolorRadar, draw, scheduleDraw, resize, resetView, initMap2d, screenOf } from "./map2d.js?v=80";
+import { ensure3d, resetEnsure3d, teardown3d, current3d, sync3d, syncProgress3d, syncMeshDiff3d, set3dCallbacks, applyTheme3d, verticalFovFromDesired } from "./view3d.js?v=80";
+import { resetEnsureTexturedScene } from "./textured-scene.js?v=80";
+import { capturePreview } from "./preview.js?v=80";
 // Every local import across viewer/js carries the SAME ?v= token, bumped
 // together on any change. The HTML is served no-cache, so a fresh load pulls
 // main.js?v=N, which pulls every module at ?v=N - the whole graph refreshes as
 // one consistent set past Cloudflare's 4h JS cache, with no duplicate module
 // instances (which a partial versioning would cause). Bump the token everywhere.
-import { renderLineups, initPanel, revealSelected, resultStatusText } from "./panel.js?v=16";
+import { renderLineups, initPanel, revealSelected, resultStatusText } from "./panel.js?v=80";
 
 (async () => {
   // Map switching means a failed load is no longer necessarily terminal (the
@@ -34,24 +34,49 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
     document.body.appendChild(box);
   }
 
+  // Which pointer the person is actually using, so the 3D help shows WASD and
+  // right-drag on a desktop and gestures on a phone. Starts from what the
+  // browser reports, then trusts the first real event over that: a hybrid
+  // laptop reports touch capability while being driven by a mouse, and some
+  // automation browsers report no hover at all.
+  function setPointerKind(coarse) {
+    document.documentElement.classList.toggle("pointer-coarse", coarse);
+    document.documentElement.classList.toggle("pointer-fine", !coarse);
+  }
+  setPointerKind(matchMedia("(pointer: coarse)").matches && navigator.maxTouchPoints > 0);
+  addEventListener("touchstart", () => setPointerKind(true), { once: true, passive: true });
+  addEventListener("mousemove", e => {
+    // A touch also emits a synthetic mousemove; a real mouse moves without one.
+    if (e.sourceCapabilities?.firesTouchEvents !== true) {
+      setPointerKind(false);
+    }
+  }, { once: true });
+
   const canvas = state.canvas;
   const stage3d = state.stage3d;
   const statusEl = state.statusEl;
   const pickBtn = document.getElementById("pick");
-  const searchBtn = document.getElementById("search-all");
+  const searchSeg = document.getElementById("search-seg");
+  const searchLabel = document.getElementById("search-label");
+  const searchBtnFor = where => searchSeg.querySelector(`[data-search="${where}"]`);
   const heatBtn = document.getElementById("heat");
-  const view3dBtn = document.getElementById("view3d");
+  const viewSeg = document.getElementById("view-seg");
+  const overlaySeg = document.getElementById("overlay-seg");
+  const viewBtn = mode => viewSeg.querySelector(`[data-view="${mode}"]`);
+  const overlayBtn = name => overlaySeg.querySelector(`[data-overlay="${name}"]`);
+  const pickOriginBtn = document.getElementById("pick-origin");
+  const targetIn = document.getElementById("target-in");
+  const originIn = document.getElementById("origin-in");
   const resetViewBtn = document.getElementById("reset-view");
   const copyTargetBtn = document.getElementById("copy-target");
-  const spawnsBtn = document.getElementById("spawns");
+  const copyOriginBtn = document.getElementById("copy-origin");
+  const spawnsBtn = overlayBtn("spawns");
   const proSmokesBtn = document.getElementById("prosmokes");
   const proSideSeg = document.getElementById("prosmokes-side");
-  const texturedBtn = document.getElementById("textured3d");
-  const topDownBtn = document.getElementById("topdown");
-  const crosshairBtn = document.getElementById("crosshair3d");
-  const collisionBtn = document.getElementById("collision3d");
-  const reticleBtn = document.getElementById("reticle3d");
-  const viewIcons = document.getElementById("view-icons");
+  const topDownBtn = overlayBtn("topdown");
+  const reticleBtns = [...document.querySelectorAll("#reticle-seg .tile")];
+  const collisionBtn = overlayBtn("collision");
+  const meshdiffBtn = overlayBtn("meshdiff");
   const rulerEl = document.getElementById("lineup-ruler");
   const clearBtn = document.getElementById("clear");
   const panelEl = document.getElementById("panel");
@@ -60,37 +85,108 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
   const mapSelect = document.getElementById("map-select");
   const cancelBtn = document.getElementById("solve-cancel");
   let solveController = null;
-  cancelBtn.addEventListener("click", () => solveController?.abort());
 
-  // The 3D crosshair is a preference, not per-session state: someone who
-  // hides it to take clean screenshots wants it to stay hidden next visit.
-  state.crosshairOn = localStorage.getItem("smokesolver.crosshair3d") !== "0";
-  crosshairBtn.addEventListener("click", () => {
-    state.crosshairOn = !state.crosshairOn;
-    localStorage.setItem("smokesolver.crosshair3d", state.crosshairOn ? "1" : "0");
-    syncControls();
-    current3d()?.focusStage();
-  });
+  cancelBtn.addEventListener("click", () => solveController?.abort());
+  // Dev handle: lets a browser console (or an automated check) fly the camera
+  // to a coordinate to inspect rendering at a specific spot.
+  window.__view3d = current3d;
+  window.__state = state;
+  window.__map2d = { screenOf };
+
+  // One control, three exclusive aiming overlays: none, the centre crosshair,
+  // or the full-screen lineup ruler. They were two independent toggles, which
+  // let both draw at once - two crosshairs over each other, neither of them
+  // the one being aimed with. The choice is a preference, so it persists.
+  const RETICLE_MODES = ["off", "cross", "smoke"];
+  const savedMode = localStorage.getItem("smokesolver.reticleMode");
+  state.reticleMode = RETICLE_MODES.includes(savedMode)
+    ? savedMode
+    // Migrates the old two-toggle preference: a hidden crosshair stays hidden.
+    : (localStorage.getItem("smokesolver.crosshair3d") === "0" ? "off" : "cross");
+  applyReticleMode();
+  for (const b of reticleBtns) {
+    b.addEventListener("click", () => {
+      state.reticleMode = b.dataset.reticle;
+      localStorage.setItem("smokesolver.reticleMode", state.reticleMode);
+      applyReticleMode();
+      buildRuler(rulerEl);
+      syncControls();
+      current3d()?.focusStage();
+    });
+  }
+  // The two booleans the drawing code already reads, derived from the mode so
+  // "exactly one overlay" is guaranteed by construction rather than by two
+  // handlers agreeing with each other.
+  function applyReticleMode() {
+    state.crosshairOn = state.reticleMode === "cross";
+    state.reticleOn = state.reticleMode === "smoke";
+  }
   collisionBtn.addEventListener("click", () => {
     state.collisionOn = !state.collisionOn;
     current3d()?.setCollisionOverlay(state.collisionOn);
     syncControls();
     current3d()?.focusStage();
   });
-  reticleBtn.addEventListener("click", () => {
-    state.reticleOn = !state.reticleOn;
-    buildRuler(rulerEl);
+  meshdiffBtn.addEventListener("click", async () => {
+    const turningOn = !state.meshdiffOn;
+    if (turningOn && !state.meshdiff) {
+      meshdiffBtn.disabled = true;
+      statusEl.textContent = "loading the mesh diff (one-time, several MB)…";
+      try {
+        state.meshdiff = await fetchMeshDiff(state.currentMap);
+      } catch (err) {
+        statusEl.textContent = `mesh diff unavailable: ${err.message}`;
+        meshdiffBtn.disabled = false;
+        return;
+      }
+      meshdiffBtn.disabled = false;
+      statusEl.textContent = "";
+      if (!state.meshdiff) {
+        state.meshdiffAvailable = false;
+        syncControls();
+        return;
+      }
+    }
+    state.meshdiffOn = turningOn;
     syncControls();
+    syncMeshDiff3d();
+    draw();
     current3d()?.focusStage();
   });
-
   // The full-screen "+" lineup crosshair: a numbered tick ruler (-5..5) on both
   // axes, so a grenade lines up by tick like CS2's grenade crosshair. Built once
   // as percentage-positioned ticks so it scales with the viewport, no resize
   // handler needed.
+  // The aiming ruler, in real degrees off the aim axis, with CS2's own
+  // grenade-crosshair marks called out.
+  //
+  // It used to place a tick every 8% of the viewport and label them 1..5. At
+  // this camera (73.74 deg vertical, CS2's own Hor+ value for fov 90) that is
+  // 6.84 degrees per division, so the tick labelled "2" sat 13.7 degrees below
+  // the crosshair - and anyone comparing it against the game found the ruler
+  // and the world disagreeing by most of a window.
+  //
+  // The long marks are the game's. Measured off a 1920x1080 in-game capture of
+  // the grenade overlay, every one of its ticks sits within 0.12 degrees of a
+  // multiple of ten - 1x is 10 degrees, 2x is 20, and so on - so "2y up" reads
+  // the same here as it does in the game. (That measurement also confirms the
+  // camera: the angles only come out round if the projection matches CS2's.)
+  //
+  // A tick's distance from the centre is tan(angle) over the tangent of the
+  // half-FOV, so the whole thing has to be rebuilt whenever the viewport
+  // changes shape: the vertical scale follows the fixed vertical FOV, and the
+  // horizontal one widens with the aspect exactly as the game's does.
+  const RULER_FINE = [1, 2, 3, 4, 5];
+  const RULER_GAME = [10, 20, 30, 40, 50];
   function buildRuler(el) {
-    if (el.dataset.built) { return; }
-    el.dataset.built = "1";
+    const t3 = current3d();
+    const fovY = t3 ? t3.camera.fov : verticalFovFromDesired(90);
+    const aspect = t3 ? t3.camera.aspect : (stage3d.clientWidth || 16) / (stage3d.clientHeight || 9);
+    const tanHalfY = Math.tan(fovY * Math.PI / 360);
+    const tanHalfX = tanHalfY * aspect;
+    // Rebuilt in place: the ruler is one element that outlives every camera.
+    el.replaceChildren();
+    el.dataset.fov = `${fovY.toFixed(2)}x${aspect.toFixed(3)}`;
     const frag = document.createDocumentFragment();
     frag.append(
       Object.assign(document.createElement("div"), { className: "rl-h" }),
@@ -102,15 +198,29 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
       if (text !== undefined) { d.textContent = text; }
       return d;
     };
-    const UNIT = 8, LEN = 10; // percent per division; tick length in px
-    for (let i = -5; i <= 5; i++) {
-      if (i === 0) { continue; }
-      const x = 50 + i * UNIT, y = 50 - i * UNIT; // right and up are positive
-      frag.append(
-        rl("rl-tick", `left:${x}%;top:calc(50% - ${LEN / 2}px);width:2px;height:${LEN}px;transform:translateX(-50%)`),
-        rl("rl-num", `left:${x}%;top:calc(50% + ${LEN / 2 + 3}px);transform:translateX(-50%)`, String(i)),
-        rl("rl-tick", `top:${y}%;left:calc(50% - ${LEN / 2}px);height:2px;width:${LEN}px;transform:translateY(-50%)`),
-        rl("rl-num", `top:${y}%;left:calc(50% + ${LEN / 2 + 5}px);transform:translateY(-50%)`, String(i)));
+    const pctY = deg => 50 - 100 * Math.tan(deg * Math.PI / 180) / (2 * tanHalfY);
+    const pctX = deg => 50 + 100 * Math.tan(deg * Math.PI / 180) / (2 * tanHalfX);
+    for (const [angles, len, game] of [[RULER_FINE, 8, false], [RULER_GAME, 16, true]]) {
+      for (const a of angles) {
+        for (const deg of [a, -a]) {
+          // The game names its marks by count and axis (1x across, 1y up); the
+          // fine marks in between are plain degrees.
+          const n = deg / 10;
+          const labelX = game ? `${n}x` : String(deg);
+          const labelY = game ? `${n}y` : String(deg);
+          const cls = game ? "rl-tick rl-game" : "rl-tick";
+          const numCls = game ? "rl-num rl-game" : "rl-num";
+          const x = pctX(deg), y = pctY(deg);
+          if (x > 1 && x < 99) {
+            frag.append(rl(cls, `left:${x}%;top:calc(50% - ${len / 2}px);width:2px;height:${len}px;transform:translateX(-50%)`));
+            frag.append(rl(numCls, `left:${x}%;top:calc(50% + ${len / 2 + 3}px);transform:translateX(-50%)`, labelX));
+          }
+          if (y > 1 && y < 99) {
+            frag.append(rl(cls, `top:${y}%;left:calc(50% - ${len / 2}px);height:2px;width:${len}px;transform:translateY(-50%)`));
+            frag.append(rl(numCls, `top:${y}%;left:calc(50% + ${len / 2 + 5}px);transform:translateY(-50%)`, labelY));
+          }
+        }
+      }
     }
     el.append(frag);
   }
@@ -124,7 +234,7 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
       return;
     }
     try {
-      l._path = (await fetchTrajectory(state.currentMap, l)).points;
+      l._path = (await fetchTrajectory(state.currentMap, l, brokenParam())).points;
     } catch {
       l._pathFailed = true;
       return;
@@ -147,6 +257,47 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
     sync3d();
   }
 
+  // ONE legend renderer feeds both key chips (#key-overlays in 2D, #key-overlays-3d
+  // in 3D) so an overlay reads the same plain-language color explanation
+  // wherever it is visible, instead of two hand-maintained copies drifting
+  // apart. `view` is the chip being painted; rows are withheld unless that
+  // chip also belongs to the currently active view - both chips exist in the
+  // DOM at once (the 2D marker legend stays up in 3D too, see keyEl below),
+  // so without this a mesh-diff pair painted on the 3D scene would also show
+  // up in the 2D chip sitting behind it, explaining a radar the user isn't
+  // even looking at.
+  function overlayLegendRows(view, in3d) {
+    if ((view === "3d") !== in3d) {
+      return [];
+    }
+    const rows = [];
+    if (state.meshdiffOn && state.meshdiff?.cells.length) {
+      rows.push(
+        `<div class="key-row"><span class="swatch meshdiff-render"></span> real surface the solver can't see - your smoke flies through it</div>`,
+        `<div class="key-row"><span class="swatch meshdiff-physics"></span> phantom surface only the solver has - your smoke bounces off nothing</div>`);
+    }
+    if (view === "3d" && state.collisionOn) {
+      rows.push(`<div class="key-row"><span class="swatch phantom"></span> invisible collision - grenade-clips, physics-clips, glass that stop smokes</div>`);
+    }
+    if (state.spawnsOn && state.spawns) {
+      rows.push(`<div class="key-row"><span class="key-label">spawns</span><span><span class="dot spawn-t"></span> T</span><span><span class="dot spawn-ct"></span> CT</span></div>`);
+    }
+    if (view === "2d" && state.prosmokesOn && state.prosmokes) {
+      rows.push(`<div class="key-row"><span class="key-label">pro smokes</span><span><span class="dot prosmoke-throw"></span> thrown from</span><span><span class="dot prosmoke-land"></span> lands</span></div>`);
+    }
+    return rows;
+  }
+
+  // Paints one overlay-legend chip and reports whether it ended up with
+  // anything in it, so the caller can fold that into the chip's own hidden
+  // state (a target-less map can still have spawns or mesh diff switched on).
+  function paintOverlayGroup(el, view, in3d) {
+    const rows = overlayLegendRows(view, in3d);
+    el.innerHTML = rows.length ? `<div class="key-subhead">overlays</div>${rows.join("")}` : "";
+    el.hidden = rows.length === 0;
+    return rows;
+  }
+
   // Every control's state is a pure function of what the user has actually done,
   // so it is derived in one place rather than patched from each handler - which
   // is how "Target" ended up looking permanently pressed. A control that cannot
@@ -158,15 +309,55 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
     // Exactly one control is ever the filled primary: whatever the next step in
     // the sequence is. Pick a target, then search from it, then the tool has
     // nothing to urge and everything goes quiet.
-    pickBtn.textContent = state.picking ? "Click the map…" : hasTarget ? "Re-target" : "Target";
+    // Each button reports the state of its own half of the question: waiting
+    // to be answered, listening for a map click, or answered with a tick that
+    // still re-arms if clicked again.
+    pickBtn.textContent = state.picking ? "Click the map…" : hasTarget ? "Target set" : "Set target";
     pickBtn.classList.toggle("armed", state.picking);
+    pickBtn.classList.toggle("done", hasTarget && !state.picking);
     pickBtn.classList.toggle("primary", !state.picking && !hasTarget);
-    // The copy-target button only means anything once there is a target to copy.
-    copyTargetBtn.hidden = !hasTarget;
+    pickBtn.title = hasTarget ? "Target is set - click to pick a different one" : "Click the map to place the smoke target";
 
-    searchBtn.hidden = !hasTarget;
-    searchBtn.disabled = state.busy;
-    searchBtn.classList.toggle("primary", hasTarget && !state.result && !state.busy);
+    const throwSpot = state.pendingOrigin ?? state.lastOrigin;
+    pickOriginBtn.textContent = state.pickingOrigin ? "Click the map…"
+      : throwSpot ? "Throw position set" : "Set throw position";
+    pickOriginBtn.classList.toggle("armed", state.pickingOrigin);
+    pickOriginBtn.classList.toggle("done", !!throwSpot && !state.pickingOrigin);
+    pickOriginBtn.title = throwSpot
+      ? "Throwing from this spot - click to pick a different one"
+      : "Click the map to place the throw spot - leave it unset to search every spot on the map";
+
+    // The boxes mirror whatever is set, so the same field reads a position out
+    // as pastes one in. Never while it is being typed into.
+    if (document.activeElement !== targetIn) {
+      targetIn.value = state.target ? setposOf(state.target, state.result?.target?.[2]) : "";
+    }
+    if (document.activeElement !== originIn) {
+      originIn.value = throwSpot ? setposOf(throwSpot, state.result?.lineups?.[0]?.feet?.[2]) : "";
+    }
+    copyTargetBtn.hidden = !hasTarget;
+    copyOriginBtn.hidden = !throwSpot;
+
+    // One control, three answers to "where do I look": the spot above, the
+    // whole map, or just the spawns. Solving the pair needs to be reachable at
+    // all - re-picking either half used to leave a target and a throw spot on
+    // screen with nothing that would put them together again.
+    searchSeg.hidden = !hasTarget;
+    searchLabel.hidden = !hasTarget;
+    // Recomputed from scratch every pass, never OR'd onto what the button
+    // already was: `disabled = disabled || busy` is a latch, so the first solve
+    // (or floor chooser) turned Map and Spawns off for the rest of the session.
+    // A search started before the floor is settled would sweep the wrong one,
+    // and both spot searches need a spot to search from.
+    for (const b of searchSeg.children) {
+      const needsSpot = b.dataset.search === "exact" || b.dataset.search === "spot";
+      b.disabled = (needsSpot && !throwSpot) || state.busy || state.awaitingLevel;
+      // The likely next step reads as the action: the spot when one is set,
+      // the map when the target is still on its own.
+      b.classList.toggle("primary", !state.busy &&
+        (throwSpot ? b.dataset.search === "spot" : b.dataset.search === "map" && !state.result));
+    }
+    searchBtnFor("spawns").hidden = !(state.spawns && (state.spawns.t.length || state.spawns.ct.length));
     clearBtn.hidden = !hasTarget;
 
     heatBtn.hidden = !state.result?.coverage;
@@ -177,27 +368,57 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
     document.getElementById("key-heat-cover").hidden = state.heatSpots;
     document.getElementById("key-heat-spots").hidden = !state.heatSpots;
 
-    view3dBtn.classList.toggle("active", in3d);
+    // Exactly one view is current: 2D, the collision mesh, or the textured map.
+    const currentView = !in3d ? "2d" : current3d()?.isTextured ? "textured" : "3d";
+    for (const b of viewSeg.children) {
+      const on = b.dataset.view === currentView;
+      b.classList.toggle("active", on);
+      b.setAttribute("aria-pressed", String(on));
+    }
     spawnsBtn.hidden = !(state.spawns && (state.spawns.t.length || state.spawns.ct.length));
     spawnsBtn.classList.toggle("active", state.spawnsOn);
-    proSmokesBtn.hidden = !(state.prosmokes && (state.prosmokes.throws.length || state.prosmokes.lands.length));
+    // 2D only: the pro-demo density heatmap is painted on the radar canvas and
+    // has no 3D representation, so offering it in the 3D view would promise
+    // something that cannot appear there.
+    proSmokesBtn.hidden = in3d || !(state.prosmokes && (state.prosmokes.throws.length || state.prosmokes.lands.length));
     proSmokesBtn.classList.toggle("active", state.prosmokesOn);
     // The T/CT filter only makes sense while the heatmap is on.
     proSideSeg.hidden = proSmokesBtn.hidden || !state.prosmokesOn;
     for (const b of proSideSeg.children) {
       b.classList.toggle("active", b.dataset.side === state.proSide);
     }
-    // 2D's "recenter" is Reset view; the 3D view controls are an icon strip.
+    // 2D's "recenter" is Reset view.
     resetViewBtn.hidden = in3d;
-    viewIcons.hidden = !in3d;
-    crosshairBtn.classList.toggle("active", state.crosshairOn);
-    collisionBtn.classList.toggle("active", state.collisionOn);
-    reticleBtn.classList.toggle("active", state.reticleOn);
+    // Collision and Top-down only mean something inside a 3D view; the aiming
+    // overlay draws over it too. Disabled rather than hidden so the row keeps
+    // its shape and the reason is one hover away.
+    for (const b of [collisionBtn, topDownBtn]) {
+      b.disabled = !in3d;
+    }
+    document.getElementById("reticle-seg").hidden = !in3d;
+    document.querySelector('.action-label[data-for="reticle-seg"]').hidden = !in3d;
+    for (const b of reticleBtns) {
+      const on = b.dataset.reticle === state.reticleMode;
+      b.classList.toggle("active", on);
+      b.setAttribute("aria-pressed", String(on));
+    }
+    collisionBtn.classList.toggle("active", in3d && state.collisionOn);
+    topDownBtn.classList.toggle("active", state.topDownOn);
+    meshdiffBtn.hidden = !(state.meshdiffAvailable || state.meshdiff?.cells.length);
+    meshdiffBtn.classList.toggle("active", state.meshdiffOn);
     document.body.classList.toggle("crosshair-3d", in3d && state.crosshairOn);
     rulerEl.hidden = !(in3d && state.reticleOn);
 
-    // Nothing to explain until there are markers on the map to explain.
-    keyEl.hidden = !hasTarget;
+    // The overlay legend: same rows in both chips, only the overlays actually
+    // switched on right now.
+    const overlayRows2d = paintOverlayGroup(document.getElementById("key-overlays"), "2d", in3d);
+    paintOverlayGroup(document.getElementById("key-overlays-3d"), "3d", in3d);
+
+    // The marker/click/movement legend only means anything once there is a
+    // result to explain; the overlay legend above has no such requirement, so
+    // the chip as a whole stays visible for either reason on its own.
+    document.getElementById("key-markers").hidden = !hasTarget;
+    keyEl.hidden = !hasTarget && overlayRows2d.length === 0;
     keyEl.classList.toggle("heat", state.heatOn);
 
     // The 3D controls chip lives on the stage, not in the ephemeral status
@@ -267,12 +488,16 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
     teardown3d();
     stage3d.style.display = "none";
     canvas.style.display = "block";
-    texturedBtn.classList.remove("active");
     state.currentMap = name;
     state.spawns = null;
+    state.pendingOrigin = null;
     state.spawnsOn = false;
+    state.topDownOn = false;
     state.prosmokes = null;
     state.prosmokesOn = false;
+    state.meshdiff = null;
+    state.meshdiffAvailable = false;
+    state.meshdiffOn = false;
     localStorage.setItem("smokesolver.lastMap", name);
     resetSearch();
     syncUrl();
@@ -298,9 +523,17 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
       if (state.result?.lineups) { tagSpawnLineups(state.result.lineups); renderLineups(); }
       syncControls();
     }).catch(e => console.warn("spawns unavailable for", name, e));
+    loadFavorites(name);
     fetchProSmokes(name).then(d => {
       if (state.mapGeneration === gen) { state.prosmokes = d; syncControls(); }
     }).catch(e => console.warn("pro smokes unavailable for", name, e));
+    // Dev overlay: absent on most maps (only meshdiff CLI runs produce it), so
+    // a 404 is the expected default, not a failure worth logging. Only its
+    // existence is checked here; the payload carries every mismatched surface
+    // and is fetched when someone actually switches the overlay on.
+    meshDiffExists(name).then(has => {
+      if (state.mapGeneration === gen) { state.meshdiffAvailable = has; syncControls(); }
+    }).catch(() => {});
     try {
       await loadRadar();
     } catch {
@@ -555,11 +788,93 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
     const tol = document.getElementById("a-tolerance").value;
     if (tol) { p.tolerance = Number.parseFloat(tol); }
     const reach = document.getElementById("a-reach").value;
-    if (reach) { p.originReach = Number.parseFloat(reach); }
+    if (reach === "exact") {
+      // Only the clicked spot and its wall pins: the smallest reach the API
+      // accepts, with the fine angle lattice and the verify gate opened to its
+      // floor, so an awkward-but-real throw from that exact position is found
+      // rather than ranked away. This is the "I know where I want to stand"
+      // search, and it is deliberately slower per spot.
+      p.originReach = 16;
+      p.fineScan = true;
+      p.minStability = 0.05;
+    } else if (reach) {
+      p.originReach = Number.parseFloat(reach);
+    }
     const stab = document.getElementById("a-stability").value;
     if (stab) { p.minStability = Number.parseFloat(stab); }
     if (document.getElementById("a-scan").value === "fine") { p.fineScan = true; }
+    const world = document.getElementById("a-world").value;
+    if (world) { p.broken = world.split(","); }
     return p;
+  }
+
+  // Reset to defaults. The defaults are whatever the markup declares (the
+  // `selected` option, the `checked` box), so this restores from the document
+  // instead of keeping a second list of defaults that can drift from it.
+  function resetCard(root) {
+    for (const sel of root.querySelectorAll("select")) {
+      // data-default is the value the filter counter treats as "untouched", so
+      // it is what reset has to restore; fall back to the markup's selected
+      // option, then to the first one.
+      const fallback = [...sel.options].find(o => o.defaultSelected) ?? sel.options[0];
+      sel.value = sel.dataset.default ?? fallback.value;
+      sel.dispatchEvent(new Event("change", { bubbles: true }));
+    }
+    for (const box of root.querySelectorAll("input[type=checkbox]")) {
+      box.checked = box.defaultChecked;
+      box.dispatchEvent(new Event("change", { bubbles: true }));
+    }
+  }
+  document.getElementById("filters-reset").addEventListener("click", e => {
+    // The summary is a toggle; resetting should not also collapse the card.
+    e.preventDefault();
+    e.stopPropagation();
+    resetCard(document.getElementById("filter-body"));
+    renderLineups();
+    draw();
+    statusEl.textContent = "filters reset";
+  });
+  document.getElementById("advanced-reset").addEventListener("click", e => {
+    e.preventDefault();
+    e.stopPropagation();
+    resetCard(document.getElementById("advanced-body"));
+    statusEl.textContent = "advanced settings reset - they apply to your next search";
+  });
+
+  // Simple by default. The row answers the four questions a lineup guide
+  // answers; whoever wants bounce counts and miss distances on every line can
+  // say so once and have it remembered.
+  const rowDetailBtn = document.getElementById("row-detail");
+  rowDetailBtn.classList.toggle("active", state.expertRows);
+  rowDetailBtn.setAttribute("aria-pressed", String(state.expertRows));
+  rowDetailBtn.addEventListener("click", () => {
+    state.expertRows = !state.expertRows;
+    try { localStorage.setItem("smoke.expertRows", state.expertRows ? "1" : "0"); } catch { /* private mode */ }
+    rowDetailBtn.classList.toggle("active", state.expertRows);
+    rowDetailBtn.setAttribute("aria-pressed", String(state.expertRows));
+    renderLineups();
+  });
+
+  document.getElementById("sort-by").addEventListener("change", () => renderLineups());
+
+  document.getElementById("a-pro").addEventListener("change", e => {
+    // Ranking-only: it changes the order and the score, never which lineups
+    // the solver found, so nothing needs re-solving.
+    state.proWeighting = e.target.checked;
+    renderLineups();
+  });
+
+  document.getElementById("a-world").addEventListener("change", () => {
+    current3d()?.setWorldState(brokenParam());
+    syncControls();
+  });
+
+  // The world state a lineup was solved under must follow it into every later
+  // fetch: an arc drawn against intact glass for a broken-glass lineup would
+  // show a bounce the throw does not have.
+  function brokenParam() {
+    const world = document.getElementById("a-world").value;
+    return world || undefined;
   }
 
   // Rough solve-cost multiplier of the current advanced settings: fine scan
@@ -595,16 +910,32 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
   }
 
   async function runQuery(body) {
+    // The spot a one-spot probe solved from, kept so it can be copied back out
+    // - otherwise a position you found by clicking is impossible to quote.
+    state.lastOrigin = body.origin ?? null;
+    // The sidebar's throw-position box reads from this, so it has to be told
+    // now rather than when the solve finishes half a minute later.
+    state.pendingOrigin = null;
+    syncControls();
+    // A second dispatch (rapid 3D taps outrun the busy flag) must supersede
+    // the first, not orphan it: abort it so it cannot finish later and paint
+    // a stale result, and remember which map this solve belongs to.
+    solveController?.abort();
+    const gen = state.mapGeneration;
+    const controller = new AbortController();
     state.busy = true;
     state.progress = { phase: "sweep", total: 0, candidates: 0, checked: [], verified: [] };
     const cost = advancedCostFactor();
     statusEl.textContent = cost >= 2 ? `solving… (advanced settings ≈ ${Math.round(cost)}x slower)` : "solving…";
-    solveController = new AbortController();
+    solveController = controller;
     cancelBtn.hidden = false;
     try {
       const scope = solveScopeParams();
       state.solveScope = Object.keys(scope).length ? scope : null;
-      const { error, data } = await postLineupQuery({ ...advancedParams(), ...scope, ...body, map: state.currentMap }, solveController.signal, onSolveProgress);
+      const { error, data } = await postLineupQuery({ ...advancedParams(), ...scope, ...body, map: state.currentMap }, controller.signal, onSolveProgress);
+      if (state.mapGeneration !== gen || solveController !== controller) {
+        return;
+      }
       if (error) {
         statusEl.textContent = error;
         return;
@@ -614,11 +945,11 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
         // A single-origin probe checked one spot, not the map; saying "any of
         // N stand spots" for it would wrongly read as an exhaustive sweep.
         statusEl.textContent = body.origin
-          ? `no throw from that spot reaches the target - "Search map" sweeps every spot that can`
+          ? `no throw from that spot reaches the target - "Search the whole map" sweeps every spot that can`
           : `no throw reaches there from any of the ${next.origins} stand spots in range - try another target`;
         return;
       }
-      next.lineups.forEach((l, i) => { l._idx = i; });
+      next.lineups.forEach((l, i) => { l._idx = i; l._favorite = isFavorite(l); });
       tagSpawnLineups(next.lineups);
       state.result = next;
       // Adopt the server's resolved target, which carries the ground Z it snapped
@@ -632,15 +963,20 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
       renderLineups();
       sync3d();
     } catch (err) {
-      statusEl.textContent = err.name === "AbortError" ? "cancelled" : `error: ${err.message}`;
+      if (solveController === controller) {
+        statusEl.textContent = err.name === "AbortError" ? "cancelled" : `error: ${err.message}`;
+      }
     } finally {
-      state.busy = false;
-      state.progress = null;
-      solveController = null;
-      cancelBtn.hidden = true;
-      syncControls();
-      draw();
-      syncProgress3d();
+      // A superseded solve must not tear down the state its replacement owns.
+      if (solveController === controller) {
+        state.busy = false;
+        state.progress = null;
+        solveController = null;
+        cancelBtn.hidden = true;
+        syncControls();
+        draw();
+        syncProgress3d();
+      }
     }
   }
 
@@ -692,7 +1028,7 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
   // Landing on a shared link: set the target, then render the ONE throw the
   // link fully describes - no sweeping the map for other spots the sharer did
   // not point at. A target-only link (no `l`) just lands on the target with
-  // "Search map" queued up.
+  // "Search the whole map" queued up.
   async function applyPermalink(params) {
     const t = params.get("t")?.split(",").map(Number);
     if (!t || t.length < 2 || t.some(v => !Number.isFinite(v))) {
@@ -721,45 +1057,287 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
     statusEl.textContent = "loading the shared lineup…";
     syncControls();
     try {
-      const { points, lineup } = await fetchLineupOne(state.currentMap, state.target, spec);
+      const { points, lineup } = await fetchLineupOne(state.currentMap, state.target, spec, brokenParam());
       lineup._idx = 0;
       lineup._path = points; // pre-set so select() draws without a second fetch
       state.result = { target: [...state.target], origins: 0, coverage: null, lineups: [lineup], single: true };
       state.selected = -1;
       select(0);
-      statusEl.textContent = `showing the shared lineup · "Search map" finds other spots for this target`;
+      statusEl.textContent = `showing the shared lineup · "Search the whole map" finds other spots for this target`;
     } catch (err) {
       statusEl.textContent = err.name === "AbortError"
         ? "cancelled"
-        : `could not load the shared lineup (${err.message}) - "Search map" to solve the target`;
+        : `could not load the shared lineup (${err.message}) - "Search the whole map" to solve the target`;
     } finally {
       state.busy = false;
       syncControls();
     }
   }
 
-  function setTarget(t, note) {
-    state.target = t;
-    resetSearch({ keepTarget: true });
-    syncUrl();
-    // Lead with the action most users want next (the full sweep); the
-    // narrower solve-one-spot click is the refinement, not the default.
-    statusEl.textContent = `${note} - "Search map" finds every throw spot · or click one spot to solve just it · right-click/long-press moves the target`;
-    syncControls();
-    renderLineups();
+  // A spawn clicked before any target is a stated intention - "throw from
+  // here" - so it is held rather than discarded, and spent the moment the
+  // target it was waiting for arrives.
+  function usePendingOrigin() {
+    const origin = state.pendingOrigin;
+    if (!origin || !state.target) {
+      return;
+    }
+    state.pendingOrigin = null;
+    runQuery({ target: state.target, origin });
+  }
+
+  function pickOrigin(origin, team) {
+    state.pendingOrigin = origin;
+    statusEl.textContent =
+      `throwing from ${team} spawn - now click the spot you want to smoke`;
     draw();
     sync3d();
   }
 
-  pickBtn.addEventListener("click", () => {
-    state.picking = !state.picking;
-    canvas.classList.toggle("picking", state.picking);
-    statusEl.textContent = state.picking ? "click the map to place your smoke target (Esc cancels)" : "";
+  function setTarget(t, note) {
+    state.target = t;
+    resetSearch({ keepTarget: true });
+    syncUrl();
+    // A 2D click names a column, not a point: where a map stacks floors (nuke's
+    // A site over B, vertigo's levels) the solver resolves to the LOWEST
+    // walkable height, which is rarely the one being pointed at. Ask instead.
+    if (t.length < 3) {
+      offerLevelChoice(t);
+    }
+    // Lead with the action most users want next (the full sweep); the
+    // narrower solve-one-spot click is the refinement, not the default.
+    statusEl.textContent = `${note} - now set a throw position, or "Search the whole map" to find every spot that can`;
     syncControls();
+    renderLineups();
+    draw();
+    sync3d();
+    // A 2-length target still has a floor to choose; the held spawn is spent
+    // once that answer comes back through this same function.
+    if (t.length >= 3) {
+      usePendingOrigin();
+    }
+  }
+
+  // The level chooser: one chip per stacked floor under the clicked column,
+  // highest first (the way the map is read from above). Picking one pins the
+  // target's Z so every later solve, arc and preview uses that floor.
+  async function offerLevelChoice(t) {
+    const backdrop = document.getElementById("level-backdrop");
+    const holder = document.getElementById("level-choice");
+    backdrop.hidden = true;
+    holder.innerHTML = "";
+    const levels = await fetchLevels(state.currentMap, t[0], t[1]);
+    // Still the same click? A second target may have landed while this was in
+    // flight, and the chooser belongs to the newest one.
+    if (state.target !== t || levels.length < 2) {
+      state.awaitingLevel = false;
+      // One floor is not a question, but it is still an answer: a click from
+      // above carries no height, and without this the target kept none - the
+      // box then showed "setpos x y 0", which teleports whoever pastes it to
+      // the bottom of the world.
+      if (state.target === t && levels.length === 1) {
+        setTarget([t[0], t[1], levels[0].z], `target ${t[0].toFixed(0)}, ${t[1].toFixed(0)}`);
+        return;
+      }
+      syncControls();
+      usePendingOrigin();
+      return;
+    }
+    // Nothing else can proceed until this is answered: solving the wrong floor
+    // costs a full sweep and answers a question nobody asked.
+    state.awaitingLevel = true;
+    syncControls();
+
+    const title = document.createElement("div");
+    title.className = "level-title";
+    title.id = "level-title";
+    title.textContent = `${levels.length} floors are stacked here`;
+    const sub = document.createElement("div");
+    sub.className = "level-sub";
+    // Says which way to lean, because most of the time there is one: a click
+    // lands on what you can see from above, and what you can see from above is
+    // the highest floor in the column.
+    sub.textContent = "A click from above cannot say which one you meant. "
+      + "If you did not mean something underneath, pick the highest.";
+    const list = document.createElement("div");
+    list.className = "level-list";
+
+    // Two floors can sit under one callout (nuke's vents and ramp both answer
+    // to Hut), so a repeated name keeps its height to stay distinguishable.
+    const nameCounts = {};
+    for (const { name } of levels) {
+      nameCounts[name] = (nameCounts[name] ?? 0) + 1;
+    }
+    // Highest first, the way a map is read from above.
+    for (const { z, name } of [...levels].reverse()) {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = "btn";
+      b.textContent = !name ? `height ${z.toFixed(0)}`
+        : nameCounts[name] > 1 ? `${name} (height ${z.toFixed(0)})`
+        : name;
+      b.addEventListener("click", () => {
+        backdrop.hidden = true;
+        state.awaitingLevel = false;
+        // +1 keeps the target just clear of the floor plane it names, the same
+        // way a 3D pick lands on the surface rather than inside it.
+        setTarget([t[0], t[1], z + 1], `target ${name || ""} ${t[0].toFixed(0)}, ${t[1].toFixed(0)}, ${z.toFixed(0)}`.trim());
+      });
+      list.append(b);
+    }
+
+    const cancel = document.createElement("button");
+    cancel.type = "button";
+    cancel.className = "level-cancel";
+    cancel.textContent = "cancel and pick a different spot";
+    cancel.addEventListener("click", () => {
+      backdrop.hidden = true;
+      state.awaitingLevel = false;
+      resetSearch();
+      syncUrl();
+      statusEl.textContent = "target cleared - pick a spot";
+      syncControls();
+      renderLineups();
+      draw();
+    });
+
+    holder.append(title, sub, list, cancel);
+    backdrop.hidden = false;
+    list.querySelector(".btn")?.focus();
+    statusEl.textContent = `that spot has ${levels.length} floors stacked - pick which one you meant`;
+  }
+
+  // A position as the game says it, so what the box shows is what the console
+  // takes and what the console prints is what the box accepts.
+  //
+  // Two decimals, not whole units: rounding to integers moved a pasted
+  // position by up to half a unit per axis, and this tool answers questions at
+  // 1u. Trailing zeros are trimmed so a position that really is round still
+  // reads as one.
+  //
+  // A 2D click carries no height, so each box names the height that belongs to
+  // its own half: the resolved floor for the target, the throw spot's own feet
+  // for the origin. Naming the target's floor for a throw spot on another level
+  // would hand out a setpos that puts the player through it.
+  const coord = v => Number.parseFloat(v.toFixed(2)).toString();
+  // setpos places the player's ORIGIN, and the engine keeps the origin a hair
+  // above the floor (Valve's 0.03125). Handing out the floor height itself puts
+  // that hair's width of the player inside the world; adding the gap back is
+  // the difference between "the floor" and "where a player standing on it is".
+  const FEET_ABOVE_FLOOR = 0.03125;
+  function setposOf(p, fallbackZ) {
+    const z = (p[2] ?? fallbackZ ?? 0) + FEET_ABOVE_FLOOR;
+    return `setpos ${coord(p[0])} ${coord(p[1])} ${coord(z)}`;
+  }
+  // `getpos` prints "setpos x y z;setang p y r" and its position is the EYE,
+  // not the feet - the long-standing Source quirk. A bare "setpos x y z" is
+  // what `setpos` itself takes, which is the feet, and is also what this tool
+  // copies out.
+  //
+  // So the `setang` half is the tell for which of the two a paste is, and
+  // without it a position copied out of this tool and pasted back in dropped
+  // another eye height every time it made the round trip.
+  function parseSetpos(text) {
+    const m = text.match(/(-?[\d.]+)\s+(-?[\d.]+)\s+(-?[\d.]+)/);
+    if (!m) {
+      return null;
+    }
+    const feetZ = Number.parseFloat(m[3]) - (/setang/i.test(text) ? DEFAULT_EYE_HEIGHT : 0);
+    return [Number.parseFloat(m[1]), Number.parseFloat(m[2]), feetZ];
+  }
+
+  function armPick(which) {
+    state.picking = which === "target";
+    state.pickingOrigin = which === "origin";
+    canvas.classList.toggle("picking", state.picking || state.pickingOrigin);
+    statusEl.textContent = which === "target"
+      ? "click the map to place your smoke target (Esc cancels)"
+      : "click the map to place the spot you throw from (Esc cancels)";
+    syncControls();
+  }
+
+  pickBtn.addEventListener("click", () => {
+    const typed = parseSetpos(targetIn.value);
+    if (typed && (!state.target || setposOf(state.target, state.result?.target?.[2]) !== targetIn.value.trim())) {
+      setTarget(typed, `target ${typed[0].toFixed(0)}, ${typed[1].toFixed(0)}`);
+      return;
+    }
+    if (state.picking) {
+      state.picking = false;
+      canvas.classList.remove("picking");
+      statusEl.textContent = "";
+      syncControls();
+      return;
+    }
+    armPick("target");
   });
+
+  pickOriginBtn.addEventListener("click", () => {
+    const typed = parseSetpos(originIn.value);
+    const current = state.pendingOrigin ?? state.lastOrigin;
+    if (typed && (!current || setposOf(current, state.result?.lineups?.[0]?.feet?.[2]) !== originIn.value.trim())) {
+      useThrowSpot(typed);
+      return;
+    }
+    if (state.pickingOrigin) {
+      state.pickingOrigin = false;
+      canvas.classList.remove("picking");
+      statusEl.textContent = "";
+      syncControls();
+      return;
+    }
+    armPick("origin");
+  });
+
+  for (const [input, button] of [[targetIn, pickBtn], [originIn, pickOriginBtn]]) {
+    input.addEventListener("keydown", e => {
+      if (e.key === "Enter") {
+        button.click();
+      }
+    });
+  }
+
+  // A throw spot with a target already set is a solve from that spot; without
+  // one it waits, the same way a clicked spawn does.
+  async function useThrowSpot(origin) {
+    state.pickingOrigin = false;
+    canvas.classList.remove("picking");
+    // A 2D click names a column, not a point. Resolve its floor before the
+    // spot goes anywhere near a setpos box, for the same reason the target
+    // does: the height it lacks is the one that decides where you land.
+    if (origin.length < 3) {
+      const levels = await fetchLevels(state.currentMap, origin[0], origin[1]);
+      if (levels.length) {
+        origin = [origin[0], origin[1], levels[levels.length - 1].z];
+      }
+    }
+    if (state.target) {
+      runQuery({ target: state.target, origin });
+    } else {
+      state.pendingOrigin = origin;
+      statusEl.textContent = "throwing from there - now set the target you want to smoke";
+      syncControls();
+      draw();
+      sync3d();
+    }
+  }
   // Copy the target as a setpos command: pasteable back into the getpos box or
   // the game console. A 2D-picked target carries no Z; fall back to the searched
   // target's Z (the solve resolves it) so the copied command still round-trips.
+  copyOriginBtn.addEventListener("click", () => {
+    const o = state.lastOrigin;
+    if (!o) { return; }
+    // Ground height comes from the solve when it resolved one; a raw 2D click
+    // carries none, and setpos drops the player onto the floor anyway.
+    const z = o[2] ?? state.result?.lineups?.[0]?.feet?.[2] ?? state.result?.target?.[2] ?? 0;
+    const cmd = `setpos ${Math.round(o[0])} ${Math.round(o[1])} ${Math.round(z)}`;
+    navigator.clipboard.writeText(cmd).then(() => {
+      copyOriginBtn.classList.add("copied");
+      statusEl.textContent = `copied throw spot: ${cmd}`;
+      setTimeout(() => copyOriginBtn.classList.remove("copied"), 1200);
+    }).catch(() => { statusEl.textContent = `throw spot: ${cmd}`; });
+  });
+
   copyTargetBtn.addEventListener("click", () => {
     if (!state.target) { return; }
     const [x, y] = state.target;
@@ -771,20 +1349,41 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
       statusEl.textContent = `copied target position: ${cmd}`;
       setTimeout(() => {
         copyTargetBtn.classList.remove("copied");
-        copyTargetBtn.title = "Copy the target position (setpos)";
+        copyTargetBtn.title = "Copy this position as a setpos command";
       }, 1200);
     }, () => {
       statusEl.textContent = "copy failed - clipboard blocked (is the tab focused?)";
     });
   });
   document.addEventListener("keydown", e => {
-    if (e.key === "Escape" && state.picking) {
+    if (e.key === "Escape" && (state.picking || state.pickingOrigin)) {
       state.picking = false;
+      state.pickingOrigin = false;
       canvas.classList.remove("picking");
       statusEl.textContent = "";
       syncControls();
     }
   });
+  for (const b of searchSeg.children) {
+    b.addEventListener("click", () => {
+      if (!state.target) {
+        return;
+      }
+      const where = b.dataset.search;
+      if (where === "spot" || where === "exact") {
+        const origin = state.pendingOrigin ?? state.lastOrigin;
+        if (origin) {
+          runQuery(where === "exact"
+            ? { target: state.target, origin, scope: "exact" }
+            : { target: state.target, origin });
+        }
+        return;
+      }
+      runQuery(where === "spawns"
+        ? { target: state.target, scope: "spawns" }
+        : { target: state.target });
+    });
+  }
   resetViewBtn.addEventListener("click", resetView);
   spawnsBtn.addEventListener("click", () => {
     state.spawnsOn = !state.spawnsOn;
@@ -813,12 +1412,6 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
     state.proSide = btn.dataset.side;
     syncControls();
     draw();
-  });
-  searchBtn.addEventListener("click", () => {
-    if (state.target && !state.busy) {
-      statusEl.textContent = "searching map…";
-      runQuery({ target: state.target });
-    }
   });
   clearBtn.addEventListener("click", () => {
     resetSearch();
@@ -942,7 +1535,9 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
   }
 
   function toggleFavorite(l) {
-    l._favorite = !l._favorite;
+    // Persisted per map, keyed by the throw itself, so a saved lineup survives
+    // a re-solve, a filter change and a reload.
+    setFavorite(state.currentMap, l, !l._favorite);
     renderLineups();
   }
 
@@ -975,6 +1570,9 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
       t3.start();
       sync3d();
       syncProgress3d();
+      syncMeshDiff3d();
+      // A 3D view opened after a world state was chosen must start in that state.
+      t3.setWorldState(brokenParam());
       t3.focusStage();
       return t3;
     } catch {
@@ -1004,14 +1602,20 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
       closeModal(previewModal);
     }
     t3.flyTo({ feet: l.feet, type: l.type, pitchDeg: l.pitch, yawDeg: l.yaw });
-    statusEl.textContent = "dropped into this lineup's throw spot - drag to look, WASD to move";
+    // Naming the stance matters for anyone lining this up against the game:
+    // the camera sits at the eye height this throw is aimed from, and standing
+    // in game to compare a crouched lineup puts the view 18u higher, which
+    // moves every reference on screen.
+    const stance = EYE_HEIGHT_BY_TYPE[l.type] ? "crouched" : "standing";
+    statusEl.textContent =
+      `dropped into this lineup's throw spot, at ${stance} eye height - drag to look, WASD to move`;
     // The accuracy ring: how far the feet can drift before this exact aim
     // stops landing within the precision in play. Fetched lazily and cached
     // on the lineup; a failure only costs the ring, never the Go to itself.
     try {
       const within = slackWithin();
       if (l._slack?.within !== within) {
-        l._slack = await fetchSlack(state.currentMap, l, state.target, within);
+        l._slack = await fetchSlack(state.currentMap, l, state.target, within, brokenParam());
       }
       draw();
       sync3d();
@@ -1031,8 +1635,8 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
     onGoTo: goToLineup, onFavorite: toggleFavorite, onRemove: removeLineup,
     onShare: shareLineup,
   });
-  initMap2d({ onSetTarget: setTarget, onSelect: select, onRunQuery: runQuery });
-  set3dCallbacks({ onSetTarget: setTarget, onSelect: select, onRunQuery: runQuery });
+  initMap2d({ onSetTarget: setTarget, onSelect: select, onRunQuery: runQuery, onPickOrigin: pickOrigin, onPickThrowSpot: useThrowSpot });
+  set3dCallbacks({ onSetTarget: setTarget, onSelect: select, onRunQuery: runQuery, onPickOrigin: pickOrigin, onPickThrowSpot: useThrowSpot });
 
   // Derived, not constant: "click terrain" means set-target only until a
   // target exists, then it means solve-from-here - a static string was
@@ -1046,56 +1650,81 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
     : "3D: WASD fly (Space/Ctrl up/down, Shift fast) · drag look · right-drag pan · scroll dolly · " +
       (state.target ? "click terrain = solve from that spot · right-click = move target" : "click terrain = set target");
 
+  // A latch, not a jump: the row it sits in is a set of things that are either
+  // on or off, so leaving it lets the camera go back where it was rather than
+  // stranding the view overhead.
+  let cameraBeforeTopDown = null;
   topDownBtn.addEventListener("click", () => {
     const t3 = current3d();
     if (!t3) {
       return;
     }
-    t3.topDown();
+    if (state.topDownOn) {
+      state.topDownOn = false;
+      if (cameraBeforeTopDown) {
+        t3.camera.position.fromArray(cameraBeforeTopDown.pos);
+        t3.camera.quaternion.fromArray(cameraBeforeTopDown.quat);
+        t3.requestRender();
+      }
+      statusEl.textContent = hint3d();
+    } else {
+      cameraBeforeTopDown = { pos: t3.camera.position.toArray(), quat: t3.camera.quaternion.toArray() };
+      state.topDownOn = true;
+      t3.topDown();
+      statusEl.textContent = "looking straight down at the map";
+    }
+    syncControls();
     // Otherwise focus stays on the button, and the fly keys - which ignore
     // anything typed at a button - stay dead until the view is clicked.
     t3.focusStage();
-    statusEl.textContent = "looking straight down at the map";
   });
 
-  view3dBtn.addEventListener("click", async () => {
-    if (stage3d.style.display !== "none") {
-      current3d()?.stop();
-      stage3d.style.display = "none";
-      canvas.style.display = "block";
+  // One handler for the whole View row: leaving 3D, entering it, and switching
+  // the map's skin are the same decision, so they are the same control.
+  async function selectView(mode) {
+    const in3d = stage3d.style.display !== "none";
+    if (mode === "2d") {
+      if (in3d) {
+        current3d()?.stop();
+        stage3d.style.display = "none";
+        canvas.style.display = "block";
+        state.topDownOn = false;
+        draw();
+        // The 3D "WASD fly…" hint is meaningless in 2D; restore the 2D status
+        // (result summary if a solve is up, otherwise clear it).
+        statusEl.textContent = state.result && !state.heatOn ? resultStatusText(filtered().length) : "";
+      }
       syncControls();
-      draw();
-      // The 3D "WASD fly…" hint is meaningless in 2D; restore the 2D status
-      // (result summary if a solve is up, otherwise clear it).
-      statusEl.textContent = state.result && !state.heatOn ? resultStatusText(filtered().length) : "";
       return;
     }
-    const t3 = await openView3d();
-    if (t3) {
-      statusEl.textContent = hint3d();
-    }
-  });
-
-  texturedBtn.addEventListener("click", async () => {
-    const t3 = current3d();
+    const t3 = in3d ? current3d() : await openView3d();
     if (!t3) {
       return;
     }
-    const wantOn = !t3.isTextured;
-    texturedBtn.disabled = true;
-    statusEl.textContent = wantOn ? "loading real map textures (one-time, size varies by map)…" : "";
-    try {
-      await t3.setTextured(wantOn);
-      texturedBtn.classList.toggle("active", wantOn);
-      statusEl.textContent = hint3d();
-    } catch (err) {
-      resetEnsureTexturedScene();
-      statusEl.textContent = `failed to load textures: ${err.message}`;
-    } finally {
-      texturedBtn.disabled = false;
-      t3.focusStage();
+    const wantTextures = mode === "textured";
+    if (t3.isTextured !== wantTextures) {
+      for (const b of viewSeg.children) { b.disabled = true; }
+      statusEl.textContent = wantTextures
+        ? "loading real map textures (one-time, size varies by map)…" : "";
+      try {
+        await t3.setTextured(wantTextures);
+      } catch (err) {
+        resetEnsureTexturedScene();
+        statusEl.textContent = `failed to load textures: ${err.message}`;
+        syncControls();
+        return;
+      } finally {
+        for (const b of viewSeg.children) { b.disabled = false; }
+      }
     }
-  });
+    statusEl.textContent = hint3d();
+    if (state.reticleOn) { buildRuler(rulerEl); }
+    syncControls();
+    t3.focusStage();
+  }
+  for (const b of viewSeg.children) {
+    b.addEventListener("click", () => selectView(b.dataset.view));
+  }
 
   matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => {
     readColors();
@@ -1119,7 +1748,13 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
   window.addEventListener("resize", () => {
     if (resizeQueued) { return; }
     resizeQueued = true;
-    requestAnimationFrame(() => { resizeQueued = false; resize(); });
+    requestAnimationFrame(() => {
+      resizeQueued = false;
+      resize();
+      // The ruler's tick positions are angles projected onto this viewport, so
+      // a reshaped window moves the horizontal ones.
+      if (state.reticleOn) { buildRuler(rulerEl); }
+    });
   });
 
   // Below the breakpoint the actions card collapses to a <details>; CSS cannot

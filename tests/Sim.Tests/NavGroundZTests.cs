@@ -93,6 +93,22 @@ public class NavGroundZTests
     }
 
     [Fact]
+    public void AClickJustOffABigAreaBelongsToItNotToACloserCentroid()
+    {
+        // The distance is measured to polygon edges, not centres: a click 10u
+        // off the side of a big ground area must take that area's height, even
+        // when a small area on another level has its middle nearer the click.
+        // A regression to centroid distance flips the winner here.
+        var areas = new List<float[][]>
+        {
+            Square(0, 0, 200, 200, 10),      // big: edge 10u away, centroid 110u
+            Square(245, 95, 255, 105, 50),   // small: edge 35u away, centroid 40u
+        };
+
+        Assert.Equal(10f, LineupSolver.NavGroundZNearby(areas, 210, 100));
+    }
+
+    [Fact]
     public void AClickFarFromAnyNavAreaStillHasNoGroundHeight()
     {
         // The forgiving lookup must stay local: somewhere genuinely off the

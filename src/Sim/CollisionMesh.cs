@@ -69,8 +69,32 @@ public sealed class CollisionMesh
         return a => solid[a];
     }
 
+    /// <summary>
+    /// Per-attribute flags for the named groups, for callers that knock out a
+    /// "broken" world state (shot-out glass, opened doors) from a base filter.
+    /// </summary>
+    public bool[] GroupMask(IReadOnlyCollection<string> groupNames)
+    {
+        var mask = new bool[AttributeNames.Length];
+        for (var i = 0; i < mask.Length; i++)
+        {
+            mask[i] = groupNames.Contains(AttributeNames[i]);
+        }
+        return mask;
+    }
+
+    // Memoized: the vertex arrays are init-only, so the bounds never change,
+    // yet every API request used to pay a full O(vertices) scan for them. The
+    // unsynchronized write is benign - concurrent first callers compute the
+    // same value.
+    (Vector3 Min, Vector3 Max)? _bounds;
+
     public (Vector3 Min, Vector3 Max) ComputeBounds()
     {
+        if (_bounds is { } cached)
+        {
+            return cached;
+        }
         var min = new Vector3(float.MaxValue);
         var max = new Vector3(float.MinValue);
         for (var i = 0; i < Vertices.Length; i += 3)
@@ -79,6 +103,7 @@ public sealed class CollisionMesh
             min = Vector3.Min(min, v);
             max = Vector3.Max(max, v);
         }
+        _bounds = (min, max);
         return (min, max);
     }
 

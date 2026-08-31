@@ -28,6 +28,7 @@
     /* Darker than --heat-none: the SKY badge renders 10px text on --panel,
        where #EA580C only reaches 3.37:1 (AA needs 4.5). 4.90:1. */
     --ref-sky-ink: #C2410C;
+    --danger: #B91C1C; /* exposed badge, 10px on --panel: 6.1:1 (WCAG AA) */
     --border: 1px solid var(--line);
     --glass: color-mix(in srgb, var(--panel) 92%, transparent);
     --glass-heavy: color-mix(in srgb, var(--panel) 96%, transparent);
@@ -52,6 +53,7 @@
       --heat-ok: #60A5FA;
       --heat-none: #FB923C;
       --ref-sky-ink: var(--heat-none); /* 8:1 on the dark panel already */
+      --danger: #F87171; /* 6.5:1 on --panel (WCAG AA) */
     }
   }
   * { box-sizing: border-box; }
@@ -122,7 +124,10 @@
     display: flex;
     flex-direction: column;
     gap: 8px;
-    width: 158px;
+    /* Wide enough for a three-across control row to spell its options out.
+       At 172px "Collision" and "Top-down" both truncated to "Coll…"/"Top…",
+       which is the one thing a label on a button must not do. */
+    width: 212px;
     /* However tall the open cards get, the sidebar scrolls inside the stage
        instead of running off the bottom of a phone screen. */
     max-height: calc(100% - 20px);
@@ -175,7 +180,14 @@
     padding-top: 7px;
     border-top: var(--border);
   }
-  #controls .action-group:not(:has(.btn:not([hidden]))) { display: none; }
+  /* An empty group takes no space. Segmented rows count as content too: they
+     are made of .seg-btn, not .btn, so matching only .btn hid the whole
+     view/overlay block. */
+  /* An empty group takes no space. Every kind of control the card can hold has
+     to be listed: the rule has silently hidden a whole block twice now, once
+     when segmented buttons arrived and again for icon tiles, because both are
+     interactive elements that are not .btn. */
+  #controls .action-group:not(:has(.btn:not([hidden]))):not(:has(.seg-btn:not([hidden]))):not(:has(.tile:not([hidden]))) { display: none; }
   #controls .action-label { margin-top: 0; }
   #controls .btn-row { display: flex; gap: 6px; }
   #controls .btn-row .btn {
@@ -196,8 +208,10 @@
     color: var(--muted);
   }
   #controls .action-utility .btn:hover { color: var(--ink); }
-  /* The 3D view controls as a compact icon strip (textured / collision / top-
-     down / crosshair / lineup ruler). */
+  /* Icon-button strips: the always-visible overlay row (spawns / mesh diff)
+     and the 3D-only strip (textured / collision / top-down / crosshair /
+     lineup ruler). Both wrap freely - a labeled chip is wider than a bare
+     icon, so 2-3 per row is the compact fit at the sidebar's 158px width. */
   #controls .icon-row { display: flex; flex-wrap: wrap; gap: 5px; }
   #controls .icon-row[hidden] { display: none; }
   /* The Target button and its copy-position icon share one row. */
@@ -206,20 +220,22 @@
   #controls .target-row > #copy-target { flex: 0 0 40px; }
   /* Brief green flash when the target position lands on the clipboard. */
   #controls #copy-target.copied { border-color: var(--heat-ok); color: var(--heat-ok); }
-  /* The "3D" button and the always-available Spawns icon share one row; Spawns
-     is an icon toggle like the 3D-only strip below, but visible in 2D too. */
-  #controls .view-head { display: flex; gap: 5px; }
-  #controls .view-head > #view3d { flex: 1; }
-  #controls .view-head > #spawns { flex: 0 0 40px; }
   /* An id+class selector would otherwise beat [hidden]'s display:none. */
   #controls .icon-btn[hidden] { display: none; }
+  /* Icon on top, a short always-visible label under it - hover/focus titles
+     alone never reach a touch screen, and were the only way to tell these
+     apart before. min-height keeps the whole button >=40px, same as the text
+     buttons around it, even though the label line is short. */
   #controls .icon-btn {
-    flex: 1 1 0;
-    min-width: 32px;
+    flex: 1 1 60px;
+    min-width: 52px;
+    min-height: 40px;
     display: inline-flex;
+    flex-direction: column;
     align-items: center;
     justify-content: center;
-    padding: 6px 0;
+    gap: 2px;
+    padding: 5px 3px 4px;
     border: var(--border);
     border-radius: 5px;
     background: var(--surface);
@@ -228,13 +244,29 @@
   }
   #controls .icon-btn:hover { border-color: var(--accent); }
   #controls .icon-btn svg {
-    width: 18px; height: 18px;
+    width: 16px; height: 16px;
     fill: none; stroke: currentColor; stroke-width: 1.6;
     stroke-linecap: round; stroke-linejoin: round;
   }
+  #controls .icon-btn .icon-label {
+    font-size: 8.5px;
+    font-weight: 650;
+    line-height: 1;
+    letter-spacing: 0.01em;
+    color: var(--muted);
+    max-width: 100%;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
   #controls .icon-btn.active { border-color: var(--accent); color: var(--accent); }
+  #controls .icon-btn.active .icon-label { color: var(--accent); }
   /* Collision toggle glows the same magenta as the overlay it controls. */
   #controls #collision3d.active { border-color: #ff2fd0; color: #ff2fd0; }
+  #controls #collision3d.active .icon-label { color: #ff2fd0; }
+  /* copy-target carries no label (it sits right beside "Target," which already
+     names the step) - keep it a plain centered icon instead of an empty gap. */
+  #controls #copy-target { flex-direction: row; min-height: 0; }
 
   /* Segmented control (T/CT pro-smoke filter): one bordered pill, dividers
      between segments, the chosen segment filled in the accent. */
@@ -277,12 +309,18 @@
   .lineup-ruler[hidden] { display: none; }
   .rl-h { position: absolute; left: 0; right: 0; top: 50%; border-top: 1px solid currentColor; box-shadow: 0 0 1px #000; }
   .rl-v { position: absolute; top: 0; bottom: 0; left: 50%; border-left: 1px solid currentColor; box-shadow: 0 0 1px #000; }
-  .rl-tick { position: absolute; background: currentColor; box-shadow: 0 0 1px #000; }
+  .rl-tick { position: absolute; background: currentColor; box-shadow: 0 0 1px #000; opacity: 0.55; }
   .rl-num {
     position: absolute;
     font: 700 10px/1 ui-monospace, Menlo, monospace;
     text-shadow: 0 0 2px #000, 0 0 3px #000;
+    opacity: 0.55;
   }
+  /* The game's own grenade-crosshair marks, every 10 degrees. Full strength,
+     because these are the ones a player counts against the overlay in CS2; the
+     degree marks between them are for reading a lineup off this screen. */
+  .rl-tick.rl-game, .rl-num.rl-game { opacity: 1; }
+  .rl-num.rl-game { font-size: 11px; }
   /* The filter rows (label + description) also render inside the narrow
      sidebar card; there the label sits above its select and the description
      hugs the left edge - the intro's wide two-column metrics don't fit. */
@@ -423,6 +461,43 @@
   }
   /* The legend explains markers, so it stays out of the way until there are
      markers to explain, and then folds away again behind its own summary. */
+  /* One bottom-left cluster: the legend, then the map layers beside it. Both
+     grow upward from the same baseline, so opening the legend never shifts the
+     layer buttons. */
+  .bottom-bar {
+    position: absolute;
+    left: 10px;
+    bottom: 10px;
+    z-index: 6;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: 6px;
+    max-width: calc(100% - 20px);
+  }
+  .map-layers { display: flex; align-items: flex-end; gap: 6px; }
+  /* Inside the bar the legend is laid out by the bar, not by its own corner
+     coordinates; #key-3d keeps those, since it still floats on its own. */
+  .bottom-bar > .key { position: static; }
+  /* A layer chip, not a sidebar action: it changes what the map is painted
+     with, so it sits on the map and reads like part of it. */
+  .layer-btn {
+    font: inherit;
+    font-family: ui-sans-serif, system-ui, "Segoe UI", sans-serif;
+    font-size: 11px;
+    line-height: 1;
+    padding: 5px 10px;
+    color: var(--muted);
+    background: var(--glass);
+    border: var(--border);
+    border-radius: 6px;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .layer-btn[hidden] { display: none; }
+  .layer-btn:hover { color: var(--ink); border-color: var(--accent); }
+  .layer-btn.active { background: var(--accent); color: var(--panel); border-color: var(--accent); font-weight: 600; }
+  .bottom-bar .seg { background: var(--glass); }
   .key {
     position: absolute;
     left: 10px;
@@ -457,6 +532,15 @@
     letter-spacing: 0.05em; font-size: 9px; opacity: 0.65; margin-top: 4px; }
   .key-body > .key-subhead:first-child { margin-top: 0; }
   .key .swatch.phantom { background: #ff2fd0; }
+  /* Mesh-diff and spawn/pro-smoke swatches: fixed colors matching the exact
+     values map2d.js and view3d.js paint the overlays in (not themed accents),
+     so the legend swatch is always the true color on screen, in both themes. */
+  .key .swatch.meshdiff-render { background: #ff3b30; }
+  .key .swatch.meshdiff-physics { background: #ff9f1c; }
+  .key .dot.spawn-t { background: #d9a441; }
+  .key .dot.spawn-ct { background: #4a90d9; }
+  .key .dot.prosmoke-throw { background: #2896ff; }
+  .key .dot.prosmoke-land { background: #ff7814; }
   #key-heat { display: none; }
   .key.heat #key-markers { display: none; }
   .key.heat #key-heat { display: grid; gap: 5px; }
@@ -552,7 +636,18 @@
   /* Collapsed: the panel shrinks to just the toggle; everything else hides and
      the chevron flips to point back at the results it restores. */
   .panel.collapsed { width: auto; min-width: 0; padding: 5px; gap: 0; }
-  .panel.collapsed > *:not(#panel-collapse):not(.panel-resize) { display: none; }
+  /* ID-qualified as well as structural: #lineup-list carries its own
+     `display: grid`, and an ID beats any number of classes, so the structural
+     rule alone left the list laid out and the "collapsed" panel still 257px
+     wide - covering the map it was collapsed to reveal. */
+  .panel.collapsed > *:not(.panel-head):not(.panel-resize),
+  .panel.collapsed > #lineup-list,
+  .panel.collapsed > #preview-pane { display: none; }
+  /* Keep the header, but only the control that reopens the panel: it moved
+     inside the header, and hiding the header with it left a collapsed panel
+     with nothing to click. */
+  .panel.collapsed .panel-head > *:not(.panel-collapse) { display: none; }
+  .panel.collapsed .panel-head { padding: 0; border-bottom: none; }
   .panel.collapsed .panel-collapse { position: static; }
   .panel.collapsed .panel-collapse svg { transform: rotate(180deg); }
   #preview-pane[hidden] { display: none; }
@@ -618,16 +713,10 @@
   .lineup:hover, .lineup.selected { border-color: var(--accent); }
   .lineup .row1 {
     display: flex;
-    flex-wrap: wrap;
-    row-gap: 3px;
-    gap: 7px;
-    align-items: baseline;
-    font-family: ui-monospace, Menlo, monospace;
-    font-variant-numeric: tabular-nums;
+    flex-direction: column;
+    gap: 3px;
     font-size: 11px;
   }
-  .lineup .row1 b { font-size: 12px; font-family: ui-sans-serif, system-ui, sans-serif; }
-  .lineup .row1 .pct { margin-left: auto; color: var(--muted); }
   .lineup .cmd { margin-top: 4px; }
   .preview-thumb {
     margin-top: 6px;
@@ -781,29 +870,61 @@
   .list-pager.single-page .pager-arrow,
   .list-pager.single-page .pager-label { display: none; }
   .lineup-options { display: grid; gap: 4px; }
+  /* A result reads top to bottom, not left to right: what you press and how
+     hard it is on one line, what you aim at on the next, and a warning line
+     only when there is a warning. The old single wrapping row put thirteen
+     signals in reading order with no hierarchy between them. */
   .lineup-option {
     display: flex;
-    flex-wrap: wrap;
-    row-gap: 3px;
-    gap: 6px;
-    align-items: baseline;
+    flex-direction: column;
+    gap: 3px;
     width: 100%;
     text-align: left;
-    font-family: ui-monospace, Menlo, monospace;
-    font-variant-numeric: tabular-nums;
     font-size: 11px;
     color: var(--ink);
     background: transparent;
     border: var(--border);
     border-radius: 4px;
-    padding: 4px 7px;
+    padding: 5px 7px;
     cursor: pointer;
   }
   .lineup-option:hover, .lineup-option.selected { border-color: var(--accent); }
-  .lineup-option b { font-size: 12px; font-family: ui-sans-serif, system-ui, sans-serif; }
-  .lineup-option .pct { margin-left: auto; color: var(--muted); }
+  .lu-head {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+  }
+  .lu-head b {
+    font-size: 12.5px;
+    font-family: ui-sans-serif, system-ui, sans-serif;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+  .lu-move { color: var(--ink); white-space: nowrap; }
+  .lu-move::before { content: "· "; color: var(--muted); }
+  .lu-aim { color: var(--muted); line-height: 1.35; }
+  .lu-tags { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+  .lu-nums {
+    color: var(--muted);
+    font-family: ui-monospace, Menlo, monospace;
+    font-variant-numeric: tabular-nums;
+    font-size: 10px;
+  }
+  /* How hard this is to land, in one word, pushed to the end of the line where
+     it can be scanned down the list without reading anything else. */
+  .diff {
+    margin-left: auto;
+    font-size: 10px;
+    font-weight: 700;
+    border-radius: 3px;
+    padding: 1px 5px;
+    white-space: nowrap;
+  }
+  .diff.easy { color: var(--heat-ok); border: 1px solid var(--heat-ok); }
+  .diff.reliable { color: var(--accent); border: 1px solid var(--accent); }
+  .diff.practice { color: var(--muted); border: var(--border); }
+  .diff.tricky { color: var(--danger); border: 1px solid var(--danger); }
   .ref { font-size: 10px; border-radius: 3px; padding: 0 3px; white-space: nowrap; }
-  .lineup-option b, .lineup-option span:not(.pct) { white-space: nowrap; }
   .ref.sky { color: var(--ref-sky-ink); border: 1px solid var(--ref-sky-ink); font-weight: 700; }
   .ref.reticle { color: var(--target); border: 1px solid var(--target); }
   .ref.flat { color: var(--muted); border: var(--border); }
@@ -811,7 +932,7 @@
   .ref.pin { color: var(--click-left); border: 1px solid var(--click-left); font-weight: 600; }
   /* Warning red: the throw spot is exposed to the area it smokes. Distinct from
      the aim-ref badges (blue/orange/gold) so it reads as a caution, not a tier. */
-  .ref.exposed { color: #e5484d; border: 1px solid #e5484d; font-weight: 700; }
+  .ref.exposed { color: var(--danger); border: 1px solid var(--danger); font-weight: 700; }
   /* Filled gold pill so a spawn-throwable lineup stands out at a glance. */
   .ref.spawn { color: #1a1a1a; background: #d9a441; border: 1px solid #d9a441; font-weight: 700; }
   .ref.fav { color: var(--target); border: none; padding: 0; }
@@ -835,9 +956,19 @@
     .list-pager .pager-label { font-size: 11px; }
     /* Full-width bottom sheet on phones: no horizontal resize. */
     .panel-resize { display: none; }
+    /* Phones: the map layers and the legend move up out of the results sheet,
+       and the legend keeps the top-right corner it had before the two were
+       grouped. */
+    .bottom-bar { left: 10px; right: 10px; bottom: auto; top: 10px; justify-content: flex-end; }
+    .bottom-bar > .key { position: absolute; left: auto; right: 0; top: 32px; max-width: calc(100% - 158px); }
     .key { left: auto; right: 10px; top: 10px; bottom: auto; max-width: calc(100% - 158px); }
     /* Keep the controls chip out from under the marker legend on phones. */
     .key.help3d { top: auto; bottom: 10px; }
+    /* Both chips can be open at once (a target set while in 3D shows both),
+       and stacked top-right/bottom-right on a short phone viewport they grow
+       toward each other - cap each one's body and let IT scroll, rather than
+       the two colliding or the taller one running off screen. */
+    .key[open] > .key-body { max-height: 34vh; overflow-y: auto; }
     .panel {
       left: 0;
       right: 0;
@@ -989,3 +1120,348 @@
     .accuracy-main { padding: 0 8px 20px; }
     .run-list { max-height: 45vh; }
   }
+
+  /* Stacked-floor chooser: sits just under the toolbar, out of the map's way,
+     and only exists while an ambiguous click is unresolved. */
+  /* A question that has to be answered before anything else means anything:
+     the wrong floor spends a minute solving somewhere the user did not ask
+     about. Modal, centred, with the app blurred behind it. */
+  #level-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 40;
+    display: grid;
+    place-items: center;
+    background: color-mix(in srgb, var(--surface) 55%, transparent);
+    backdrop-filter: blur(4px);
+  }
+  #level-backdrop[hidden] { display: none; }
+  #level-choice {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 16px 18px;
+    min-width: 240px;
+    max-width: min(92vw, 420px);
+    background: var(--panel);
+    border: 1px solid var(--accent);
+    border-radius: 10px;
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
+    animation: level-appear 180ms ease-out;
+  }
+  #level-choice .level-title { font-weight: 650; font-size: 13px; }
+  #level-choice .level-sub { color: var(--muted); font-size: 11.5px; }
+  #level-choice .level-list { display: flex; flex-direction: column; gap: 6px; }
+  #level-choice .level-list .btn { width: 100%; text-align: left; --btn-pad: 7px 10px; }
+  #level-choice .level-cancel {
+    align-self: flex-start;
+    border: none;
+    background: none;
+    color: var(--muted);
+    font: inherit;
+    font-size: 11px;
+    text-decoration: underline;
+    cursor: pointer;
+    padding: 0;
+  }
+  @keyframes level-appear {
+    from { opacity: 0; transform: translateY(-6px) scale(0.98); }
+    to { opacity: 1; transform: none; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    #level-choice { animation: none; }
+  }
+
+  /* Callout search: the first control in the card, because naming the place is
+     the fastest way to a target. */
+  #controls .callout-search { display: flex; }
+  #controls .callout-search input {
+    width: 100%;
+    font: inherit;
+    font-size: var(--btn-font-size);
+    color: var(--ink);
+    background: var(--panel);
+    border: var(--border);
+    border-radius: var(--btn-radius);
+    padding: 4px 8px;
+  }
+  #controls .callout-search input::placeholder { color: var(--muted); }
+
+  /* The three control rows (view / overlays / aim overlay) share one shape:
+     full width, equal thirds. Same shape means the eye reads them as one
+     family, and the row label is what says whether they are exclusive. */
+  /* An icon over its own name, three to a row. Word-only buttons at this
+     width either truncated ("Coll…") or pushed past the edge of the card,
+     because a nowrap label is wider than its grid track and grid items do not
+     shrink below their content. A tile is square, so the row can never be
+     wider than the card. */
+  /* [hidden] has to be spelled out against the display rule below it: a grid
+     display wins over the UA's [hidden] rule, which is how the aim-overlay row
+     stayed on screen in 2D with its own label correctly hidden. */
+  .tile-row[hidden] { display: none; }
+  .tile-row {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 4px;
+    width: 100%;
+  }
+  .tile {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 3px;
+    min-width: 0;
+    padding: 6px 2px 5px;
+    font: inherit;
+    font-family: ui-sans-serif, system-ui, "Segoe UI", sans-serif;
+    font-size: 9.5px;
+    line-height: 1;
+    color: var(--muted);
+    background: var(--panel);
+    border: var(--border);
+    border-radius: var(--btn-radius);
+    cursor: pointer;
+  }
+  .tile[hidden] { display: none; }
+  .tile svg {
+    width: 16px;
+    height: 16px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.5;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+  .tile-label {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .tile:hover:not(:disabled) { color: var(--ink); border-color: var(--accent); }
+  .tile.active { background: var(--accent); color: var(--panel); border-color: var(--accent); font-weight: 600; }
+  .tile:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  /* The two positions a solve is made of. Same shape for both, so the second
+     is read as the same kind of thing as the first rather than an advanced
+     option. */
+  .place-group { display: flex; flex-direction: column; gap: 5px; }
+  .place-row { display: flex; gap: 4px; align-items: stretch; }
+  .place-row input {
+    flex: 1;
+    min-width: 0;
+    font: inherit;
+    font-family: ui-monospace, Menlo, monospace;
+    font-size: 11px;
+    padding: 5px 6px;
+    color: var(--ink);
+    background: var(--panel);
+    border: var(--border);
+    border-radius: var(--btn-radius);
+  }
+  .place-row input::placeholder { color: var(--muted); }
+  .place-copy {
+    display: grid;
+    place-items: center;
+    width: 26px;
+    padding: 0;
+    color: var(--muted);
+    background: var(--panel);
+    border: var(--border);
+    border-radius: var(--btn-radius);
+    cursor: pointer;
+  }
+  .place-copy svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; }
+  .place-copy[hidden] { display: none; }
+  .place-copy:hover { color: var(--accent); border-color: var(--accent); }
+  .place-copy.copied { color: var(--heat-ok); border-color: var(--heat-ok); }
+  /* Answered, not disabled: the tick says this half of the question is
+     settled, and the button still re-arms the map for a new pick. */
+  .place-set.done {
+    color: var(--muted);
+    background: var(--panel);
+    border-color: var(--border-color, currentColor);
+    font-weight: 400;
+  }
+  .place-set.done::before { content: "✓ "; color: var(--heat-ok); font-weight: 700; }
+
+  /* Device-specific help. The class comes from main.js rather than a media
+     query: query results alone misreport on hybrids and on some automation
+     browsers, while an actual mouse move or touch is proof of the hardware in
+     use. Both row sets ship in the markup; only the applicable one is shown,
+     so neither device reads instructions for hardware it does not have. */
+  .coarse-only { display: none; }
+  html.pointer-coarse .fine-only { display: none; }
+  html.pointer-coarse .coarse-only { display: flex; }
+
+  /* The primary target button keeps its label on one line: at "Re-target" it
+     wrapped, which doubled the row height and stretched the copy button beside
+     it into a tall slab. */
+  #controls .target-row > #pick {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  #controls .target-row { align-items: stretch; }
+  #controls .target-row > #copy-target { align-self: stretch; }
+
+  /* Tooltips are the browser's own (the title attribute). A CSS bubble was
+     tried here and had to go: the controls live in a scrolling sidebar, so an
+     absolutely positioned tooltip is clipped by that container, and it showed
+     alongside the native one rather than instead of it. */
+
+  .panel-head .head-count { white-space: nowrap; }
+  .panel-head .head-sort {
+    --btn-pad: 2px 6px;
+    --btn-font-size: 11px;
+    margin-left: auto;
+    max-width: 40%;
+  }
+  .panel-head .head-toggle { --btn-pad: 2px 8px; --btn-font-size: 11px; white-space: nowrap; }
+  .panel-head .list-pager {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    padding: 0;
+    border: none;
+  }
+  .panel-head .pager-label { font-variant-numeric: tabular-nums; min-width: 26px; text-align: center; }
+  /* Pros throw from this spot: earns the accent, unlike the neutral badges. */
+  .ref.pro {
+    color: var(--accent);
+    border: 1px solid var(--accent);
+    font-weight: 700;
+  }
+
+  /* The ranking's working, inside the opened lineup only. */
+  /* The numbers behind the ranking, offered rather than shown. */
+  .details-toggle {
+    align-self: flex-start;
+    margin-top: 5px;
+    padding: 0;
+    border: none;
+    background: none;
+    color: var(--muted);
+    font: inherit;
+    font-size: 11px;
+    cursor: pointer;
+    text-decoration: underline dotted;
+  }
+  .details-toggle:hover { color: var(--accent); }
+  .score-total { color: var(--ink); font-weight: 600; border-top: var(--border); padding-top: 2px; margin-top: 2px; }
+  .score-rows {
+    display: none;
+    margin: 4px 0 2px;
+    font-size: 11px;
+    flex-direction: column;
+    gap: 1px;
+  }
+  .lineup.show-score .score-rows { display: flex; }
+  .score-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+    color: var(--muted);
+  }
+  .score-row b { font-variant-numeric: tabular-nums; }
+  .score-row b.up { color: var(--heat-ok); }
+  .score-row b.down { color: var(--danger); }
+
+  /* Checkbox filter row: aligns with the select-based rows above it. */
+  .filter-check {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: var(--btn-font-size);
+    cursor: pointer;
+  }
+  .filter-check input { margin: 0; accent-color: var(--accent); }
+
+  /* The collapse control belongs in the header row, not floating over the
+     preview image where it covered the render it sits on. */
+  .panel-head .panel-collapse {
+    position: static;
+    flex: 0 0 auto;
+    width: 22px;
+    height: 22px;
+    display: grid;
+    place-items: center;
+  }
+  /* Target group: naming first, then click, then paste, with the read-back
+     copies on their own row so setting and reading are not interleaved. */
+  #controls .target-actions { display: flex; gap: 6px; }
+  #controls .target-actions .icon-btn { flex: 1; min-height: 34px; }
+  #controls .target-actions .icon-btn svg { width: 14px; height: 14px; }
+
+  /* Selected lineup: corners for keep/discard, one compact action row, and a
+     score that stays folded until asked for. */
+  .lineup.selected { position: relative; padding: 6px 46px 6px 24px; }
+  .lineup .card-fav,
+  .lineup .card-copy,
+  .lineup .card-remove {
+    position: absolute;
+    top: 4px;
+    width: 20px;
+    height: 20px;
+    padding: 0;
+    display: grid;
+    place-items: center;
+    border: none;
+    background: none;
+    color: var(--muted);
+    font-size: 14px;
+    line-height: 1;
+    cursor: pointer;
+    border-radius: 3px;
+  }
+  .lineup .card-fav { left: 3px; right: auto; }
+  .lineup .card-copy { right: 24px; }
+  .lineup .card-remove { right: 4px; font-size: 15px; }
+  .lineup .card-copy svg { width: 13px; height: 13px; fill: none; stroke: currentColor; stroke-width: 1.5; }
+  .lineup .card-copy:hover { color: var(--accent); background: var(--surface); }
+  .lineup .card-copy.copied { color: var(--heat-ok); }
+  .lineup .card-fav:hover { color: var(--target); background: var(--surface); }
+  .lineup .card-remove:hover { color: var(--danger); background: var(--surface); }
+  .lineup .card-fav[aria-pressed="true"] { color: var(--target); }
+  .lineup .how { margin: 4px 0 2px; }
+  .lineup .lineup-actions { display: flex; gap: 5px; margin-top: 4px; }
+  .lineup .lineup-actions .btn { --btn-pad: 2px 9px; --btn-font-size: 11px; }
+  .lineup .cmd .btn { --btn-pad: 1px 7px; --btn-font-size: 10px; }
+
+  /* Reset affordance on a card summary: quiet until wanted. */
+  .card-reset {
+    float: right;
+    display: inline-grid;
+    place-items: center;
+    width: 18px;
+    height: 18px;
+    padding: 0;
+    border: none;
+    background: none;
+    color: var(--muted);
+    cursor: pointer;
+  }
+  /* The actions card keeps its summary hidden, so its reset is placed in the
+     same corner by hand rather than floated inside a header row. */
+  #card-view { position: relative; }
+  .corner-reset { position: absolute; top: 6px; right: 6px; float: none; z-index: 1; }
+  .card-reset svg { width: 13px; height: 13px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; }
+  .card-reset:hover { color: var(--accent); }
+  .advanced-reset-btn { display: flex; align-items: center; gap: 5px; }
+  .advanced-reset-btn svg { width: 12px; height: 12px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; }
+  /* Practice setup now lives in advanced, where a one-time console paste
+     belongs, rather than under every set of results. */
+  #card-advanced .setup { margin-top: 2px; }
+  #card-advanced .setup > summary { color: var(--muted); font-size: 11.5px; cursor: pointer; }
+
+  /* The sidebar scrolls, so give it a thin, palette-matched scrollbar instead
+     of the browser's default slab, which sat against the cards as a bright
+     stripe. */
+  #controls {
+    scrollbar-width: thin;
+    scrollbar-color: var(--line) transparent;
+  }
+  #controls::-webkit-scrollbar { width: 6px; }
+  #controls::-webkit-scrollbar-track { background: transparent; }
+  #controls::-webkit-scrollbar-thumb { background: var(--line); border-radius: 3px; }
+  #controls::-webkit-scrollbar-thumb:hover { background: var(--muted); }

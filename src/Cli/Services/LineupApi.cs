@@ -6,24 +6,7 @@ using SmokeSolver.Extraction;
 using SmokeSolver.Sim;
 using SmokeSolver.Solver;
 using static SmokeSolver.Cli.CliParsing;
-using static SmokeSolver.Cli.MeshSetup;
-using static SmokeSolver.Cli.LineupApi;
 using static SmokeSolver.Cli.TargetSolver;
-using static SmokeSolver.Cli.ExtractCommand;
-using static SmokeSolver.Cli.InfoCommand;
-using static SmokeSolver.Cli.SmokeCommand;
-using static SmokeSolver.Cli.SightlineCommand;
-using static SmokeSolver.Cli.SolveCommand;
-using static SmokeSolver.Cli.GroundCommand;
-using static SmokeSolver.Cli.LineupsCommand;
-using static SmokeSolver.Cli.ViewerDataCommand;
-using static SmokeSolver.Cli.ServeCommand;
-using static SmokeSolver.Cli.ThrowCommand;
-using static SmokeSolver.Cli.CalibrateCommand;
-using static SmokeSolver.Cli.ValidateCommand;
-using static SmokeSolver.Cli.ExportGltfCommand;
-using static SmokeSolver.Cli.BestLineupCommand;
-using static SmokeSolver.Cli.PointLineupCommand;
 
 namespace SmokeSolver.Cli;
 
@@ -50,7 +33,7 @@ public static class LineupApi
     // "SM3D" little-endian; bump MeshFormatVersion whenever the byte layout below
     // changes so the parser can reject a shape it doesn't understand.
     public const uint MeshMagic = 0x44334D53;
-    public const uint MeshFormatVersion = 1;
+    public const uint MeshFormatVersion = 2;
 
     public static byte[] MeshPayloadSolid(CollisionMesh mesh)
     {
@@ -62,10 +45,27 @@ public static class LineupApi
             phantom[i] = grenadeSolid((byte)i) && (
                 layers.Any(l => l.Equals("csgo_grenadeclip", StringComparison.OrdinalIgnoreCase)) ||
                 layers.Any(l => l.Equals("window", StringComparison.OrdinalIgnoreCase)) ||
-                mesh.AttributeNames[i].Equals("EntityPhysicsClip", StringComparison.Ordinal));
+                mesh.AttributeNames[i].Equals("EntityPhysicsClip", StringComparison.Ordinal) ||
+                // Breakable entity glass joins the magenta overlay: like the
+                // world's window groups it is see-through in game yet stops
+                // smokes (until broken - the per-query toggle).
+                mesh.AttributeNames[i].Equals("EntityBreakable", StringComparison.Ordinal));
+        }
+        // Doors and breakables ride in their own groups so the viewer can take
+        // them away when a query asks for the world state where that glass is
+        // shot out or that door stands open - otherwise the picture keeps
+        // showing an intact pane the solve has already flown a smoke through.
+        var doorGroup = new bool[mesh.AttributeNames.Length];
+        var breakableGroup = new bool[mesh.AttributeNames.Length];
+        for (var i = 0; i < doorGroup.Length; i++)
+        {
+            doorGroup[i] = mesh.AttributeNames[i].Equals("EntityDoor", StringComparison.Ordinal);
+            breakableGroup[i] = mesh.AttributeNames[i].Equals("EntityBreakable", StringComparison.Ordinal);
         }
         var world = new List<int>();
         var special = new List<int>();
+        var doors = new List<int>();
+        var breakables = new List<int>();
         for (var t = 0; t < mesh.Indices.Length; t += 3)
         {
             var attr = mesh.TriangleAttributes[t / 3];
@@ -73,7 +73,10 @@ public static class LineupApi
             {
                 continue;
             }
-            var group = phantom[attr] ? special : world;
+            var group = doorGroup[attr] ? doors
+                : breakableGroup[attr] ? breakables
+                : phantom[attr] ? special
+                : world;
             group.Add(mesh.Indices[t]);
             group.Add(mesh.Indices[t + 1]);
             group.Add(mesh.Indices[t + 2]);
@@ -85,17 +88,18 @@ public static class LineupApi
         bw.Write(mesh.Vertices.Length / 3);
         bw.Write(world.Count);
         bw.Write(special.Count);
+        bw.Write(doors.Count);
+        bw.Write(breakables.Count);
         foreach (var v in mesh.Vertices)
         {
             bw.Write(v);
         }
-        foreach (var i in world)
+        foreach (var group in new[] { world, special, doors, breakables })
         {
-            bw.Write((uint)i);
-        }
-        foreach (var i in special)
-        {
-            bw.Write((uint)i);
+            foreach (var i in group)
+            {
+                bw.Write((uint)i);
+            }
         }
         bw.Flush();
         return ms.ToArray();
@@ -239,8 +243,8 @@ public static class LineupApi
     {
         const int Directions = 12;
         const float MaxProbe = 64f;
-        // sv_standable_normal: the same floor test the sim and origin snap use.
-        const float StandableNormalZ = 0.7f;
+        // The same floor test the sim and origin snap use.
+        const float StandableNormalZ = StandSpots.StandableNormalZ;
 
         bool LandsFrom(Vector3 candidateFeet)
         {
@@ -360,6 +364,21 @@ public static class LineupApi
         {
             return "origin must be [x,y] with finite numbers";
         }
+        // An unknown scope would otherwise fall through and quietly search the
+        // whole map instead of saying it did not understand the question.
+        if (query.TryGetProperty("scope", out var scopeEl))
+        {
+            if (scopeEl.ValueKind != JsonValueKind.String ||
+                scopeEl.GetString()!.ToLowerInvariant() is not ("spawns" or "exact"))
+            {
+                return "scope must be \"spawns\" or \"exact\"";
+            }
+            if (scopeEl.GetString()!.Equals("exact", StringComparison.OrdinalIgnoreCase) &&
+                !query.TryGetProperty("origin", out _))
+            {
+                return "scope \"exact\" needs an origin";
+            }
+        }
         if (query.TryGetProperty("originReach", out var reachEl) &&
             (reachEl.ValueKind != JsonValueKind.Number || !float.IsFinite(reachEl.GetSingle()) ||
              reachEl.GetSingle() is < MinOriginReach or > MaxOriginReach))
@@ -395,17 +414,40 @@ public static class LineupApi
         {
             return "strengths must be a non-empty array drawn from 0, 0.5, 1";
         }
+        if (query.TryGetProperty("broken", out var brokenEl) &&
+            (brokenEl.ValueKind != JsonValueKind.Array || brokenEl.GetArrayLength() > 2 ||
+             brokenEl.EnumerateArray().Any(e => e.ValueKind != JsonValueKind.String || e.GetString() is not ("glass" or "doors"))))
+        {
+            return "broken must be an array drawn from \"glass\", \"doors\"";
+        }
         return null;
     }
 
+    // The world-state toggle: which collision groups a query asks to treat as
+    // gone. "glass" = shot-out breakables, "doors" = opened doors. Sorted so
+    // ["doors","glass"] and ["glass","doors"] are the same state everywhere
+    // (filter, collider cache, query cache key).
+    public static List<string> BrokenGroups(JsonElement query) =>
+        query.TryGetProperty("broken", out var el) && el.ValueKind == JsonValueKind.Array
+            ? [.. el.EnumerateArray()
+                .Select(e => e.GetString() == "glass" ? "EntityBreakable" : "EntityDoor")
+                .Distinct()
+                .OrderBy(g => g, StringComparer.Ordinal)]
+            : [];
+
     public static string QueryCacheKey(CollisionMesh mesh, string meshVersion, ThrowConstants constants, JsonElement query, string attrs)
     {
+        // Keyed on the coordinates as asked, to a tenth of a unit - NOT
+        // bucketed. The old 16u/32u buckets meant two clicks up to ~22u apart
+        // replayed each other's cached answer, including the precision re-aim
+        // computed for the OTHER click. Sub-0.1u differences are below anything
+        // the UI can express, so F1 formatting only collapses true repeats.
         var targetEl = query.GetProperty("target");
-        var tx = (int)MathF.Round(targetEl[0].GetSingle() / 16f);
-        var ty = (int)MathF.Round(targetEl[1].GetSingle() / 16f);
-        var tz = targetEl.GetArrayLength() > 2 ? (int)MathF.Round(targetEl[2].GetSingle() / 16f) : int.MinValue;
+        var tx = targetEl[0].GetSingle().ToString("F1", CultureInfo.InvariantCulture);
+        var ty = targetEl[1].GetSingle().ToString("F1", CultureInfo.InvariantCulture);
+        var tz = targetEl.GetArrayLength() > 2 ? targetEl[2].GetSingle().ToString("F1", CultureInfo.InvariantCulture) : "none";
         var origin = query.TryGetProperty("origin", out var originEl)
-            ? $"{(int)MathF.Round(originEl[0].GetSingle() / 32f)},{(int)MathF.Round(originEl[1].GetSingle() / 32f)}"
+            ? $"{originEl[0].GetSingle().ToString("F1", CultureInfo.InvariantCulture)},{originEl[1].GetSingle().ToString("F1", CultureInfo.InvariantCulture)}"
             : "all";
         // Every input that changes the answer must be in the key, or two queries
         // differing only in that input replay each other's cached results.
@@ -421,11 +463,15 @@ public static class LineupApi
             : "all";
         // Bump when solver or sim behavior changes: cached answers from older code
         // must never be replayed as current results.
-        const int QueryVersion = 15;
+        const int QueryVersion = 20;
         // meshVersion is the content-hashed mesh identity (not just the game
         // build), so re-extracting a map - e.g. dropping the Retake tape - forces
         // a re-solve instead of replaying results computed against the old mesh.
-        var seed = $"v{QueryVersion}|{mesh.MapName}|{meshVersion}|{JsonSerializer.Serialize(constants)}|{tx},{ty},{tz}|{origin}|{reach:F0}|{tol:F0}|{stab:F2}|{(fine ? 1 : 0)}|{typesKey}|{strengthsKey}|{attrs}";
+        var brokenKey = string.Join(",", BrokenGroups(query)) is { Length: > 0 } bk ? bk : "none";
+        // A spawn-scoped sweep answers a different question from a map-wide one
+        // with the same target, so it needs its own key.
+        var scopeKey = ScopeOf(query) is { Length: > 0 } sc ? sc : "all";
+        var seed = $"v{QueryVersion}|{mesh.MapName}|{meshVersion}|{JsonSerializer.Serialize(constants)}|{tx},{ty},{tz}|{origin}|{reach:F0}|{tol:F0}|{stab:F2}|{(fine ? 1 : 0)}|{typesKey}|{strengthsKey}|{brokenKey}|{scopeKey}|{attrs}";
         var hash = System.Security.Cryptography.SHA256.HashData(Encoding.UTF8.GetBytes(seed));
         return Convert.ToHexString(hash)[..20].ToLowerInvariant();
     }
@@ -434,6 +480,11 @@ public static class LineupApi
     /// Interactive two-click query: land a smoke at `target`, throwing from near `origin`.
     /// Returns the best lineups from nav-walkable positions around the origin click.
     /// </summary>
+    static string ScopeOf(JsonElement query) =>
+        query.TryGetProperty("scope", out var scope) && scope.ValueKind == JsonValueKind.String
+            ? scope.GetString()!.ToLowerInvariant()
+            : "";
+
     public static string RunTargetQuery(
         CollisionMesh mesh,
         Func<byte, bool>? attributeFilter,
@@ -443,7 +494,11 @@ public static class LineupApi
         Action<string, int>? onPhase = null,
         Action<Vector3, int>? onOrigin = null,
         Action<Vector3, bool>? onCandidate = null,
-        IReadOnlyList<StandSpotOrigin>? standSpots = null)
+        IReadOnlyList<StandSpotOrigin>? standSpots = null,
+        // T and CT spawn positions, so a map-wide sweep also grows outward
+        // from where a round begins.
+        IReadOnlyList<Vector3>? spawnFronts = null,
+        IReadOnlyList<Vector3>? spawnPoints = null)
     {
         var targetEl = query.GetProperty("target");
         var target = new Vector3(targetEl[0].GetSingle(), targetEl[1].GetSingle(), 0);
@@ -454,6 +509,7 @@ public static class LineupApi
         }
         // Without an origin click, search everywhere a player can stand within throw
         // power of the target: reachability and ballistics are the only limits.
+        var scope = ScopeOf(query);
         var hasOrigin = query.TryGetProperty("origin", out var originEl);
         var originClick = hasOrigin
             ? new Vector2(originEl[0].GetSingle(), originEl[1].GetSingle())
@@ -472,8 +528,19 @@ public static class LineupApi
         var strengths = query.TryGetProperty("strengths", out var strengthsEl)
             ? strengthsEl.EnumerateArray().Select(e => e.GetSingle()).Distinct().ToList()
             : null;
+        // A "broken" query solves a different world: the named groups (shot-out
+        // glass, opened doors) stop existing for this solve's grenades.
+        var broken = BrokenGroups(query);
+        if (broken.Count > 0)
+        {
+            var baseFilter = attributeFilter ?? (_ => true);
+            var excluded = mesh.GroupMask(broken);
+            attributeFilter = a => baseFilter(a) && !excluded[a];
+        }
 
-        var solve = SolveForTarget(mesh, attributeFilter, navAreas, target, hasTargetZ, originClick, originReach, tolerance, constants, onPhase, onOrigin, onCandidate, minStability, fineScan, types, strengths, standSpots);
+        var solve = SolveForTarget(mesh, attributeFilter, navAreas, target, hasTargetZ, originClick, originReach, tolerance, constants, onPhase, onOrigin, onCandidate, minStability, fineScan, types, strengths, standSpots, broken, spawnFronts,
+            spawnPoints, 0f, spawnsOnly: scope == "spawns", exactOrigin: scope == "exact",
+            originZ: hasOrigin && originEl.GetArrayLength() > 2 ? originEl[2].GetSingle() : null);
 
         // Raw voxel-stage counts overstate throwability (many candidates die in
         // exact-sim verification), so each cell also says whether a verified

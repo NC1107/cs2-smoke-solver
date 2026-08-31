@@ -124,13 +124,13 @@ public static class GrenadeTrajectory
 
     // Source engine base gravity (sv_gravity default); scaled per-projectile
     // by the calibrated GravityScale.
-    const float BaseGravity = 800f;
+    public const float BaseGravity = 800f;
 
     // A contact normal with z at or above this is "floor" for bounce and rest
     // decisions; below it the surface is a wall/ramp.
-    // Source's slope limit (sv_standable_normal, 45.57 deg). The same physical
-    // value appears as LineupSolver.StandableNormalZ - update both together.
-    const float FloorNormalZ = 0.7f;
+    // Source's slope limit (sv_standable_normal, 45.57 deg). The solver's
+    // StandSpots.StandableNormalZ aliases this constant.
+    public const float FloorNormalZ = 0.7f;
 
     // Floor-impact angle damp, the ONE copy both integrators share. It applies
     // to floor impacts only: 122 gated wall bounces across the dust2 validation

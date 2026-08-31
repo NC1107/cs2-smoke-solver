@@ -4,9 +4,8 @@ using System.Numerics;
 using System.Text.Json;
 using SmokeSolver.Sim;
 using SmokeSolver.Solver;
-using static SmokeSolver.Cli.CliParsing;
-using static SmokeSolver.Cli.MeshSetup;
 
+using static SmokeSolver.Cli.CliParsing;
 namespace SmokeSolver.Cli;
 
 /// <summary>
@@ -67,7 +66,11 @@ public static class StandSpotsCommand
                 [MathF.Round(s.Feet.X, 2), MathF.Round(s.Feet.Y, 2), MathF.Round(s.Feet.Z, 2)],
                 s.Stance.ToString(), s.NavCovered)),
         ]);
-        File.WriteAllText(outPath, JsonSerializer.Serialize(payload));
+        // Via a temp file: this run takes long enough to be interrupted, and a
+        // truncated standspots file would otherwise greet the next server start.
+        var temp = outPath + ".tmp";
+        File.WriteAllText(temp, JsonSerializer.Serialize(payload));
+        File.Move(temp, outPath, overwrite: true);
 
         var navCovered = spots.Count(s => s.NavCovered);
         Console.WriteLine($"\r  {spots.Count} reachable stand spots in {sw.Elapsed.TotalSeconds:F1}s");

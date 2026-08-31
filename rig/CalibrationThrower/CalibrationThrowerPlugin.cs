@@ -364,8 +364,11 @@ public class CalibrationThrowerPlugin : BasePlugin
         "bot_kick", "bot_quota", "mp_", "css_plugins reload", "changelevel ",
     ];
 
+    // The console treats newlines as command separators exactly like ';', so
+    // every separator must be split on or a disallowed command could ride in
+    // behind an allowed prefix.
     static bool IsAllowedCommand(string cmd) =>
-        cmd.Split(';', StringSplitOptions.TrimEntries)
+        cmd.Split([';', '\n', '\r'], StringSplitOptions.TrimEntries)
             .All(part => part.Length == 0 ||
                          AllowedCommandPrefixes.Any(prefix => part.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)));
 

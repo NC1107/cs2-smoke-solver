@@ -18,9 +18,16 @@
     <Using Include="Xunit" />
   </ItemGroup>
 
+  <!-- The golden replay fixtures ship with the test binary so the one test that
+       measures the sim against the real game runs everywhere, CI included. -->
+  <ItemGroup>
+    <None Include="fixtures\**" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
   <ItemGroup>
     <ProjectReference Include="..\..\src\Sim\SmokeSolver.Sim.csproj" />
     <ProjectReference Include="..\..\src\Solver\SmokeSolver.Solver.csproj" />
+    <ProjectReference Include="..\..\src\Cli\SmokeSolver.Cli.csproj" />
   </ItemGroup>
 
 </Project>

@@ -5,26 +5,8 @@ using System.Text.Json;
 using SmokeSolver.Extraction;
 using SmokeSolver.Sim;
 using SmokeSolver.Solver;
-using static SmokeSolver.Cli.CliParsing;
-using static SmokeSolver.Cli.MeshSetup;
-using static SmokeSolver.Cli.LineupApi;
-using static SmokeSolver.Cli.TargetSolver;
-using static SmokeSolver.Cli.ExtractCommand;
-using static SmokeSolver.Cli.InfoCommand;
-using static SmokeSolver.Cli.SmokeCommand;
-using static SmokeSolver.Cli.SightlineCommand;
-using static SmokeSolver.Cli.SolveCommand;
-using static SmokeSolver.Cli.GroundCommand;
-using static SmokeSolver.Cli.LineupsCommand;
-using static SmokeSolver.Cli.ViewerDataCommand;
-using static SmokeSolver.Cli.ServeCommand;
-using static SmokeSolver.Cli.ThrowCommand;
-using static SmokeSolver.Cli.CalibrateCommand;
-using static SmokeSolver.Cli.ValidateCommand;
-using static SmokeSolver.Cli.ExportGltfCommand;
-using static SmokeSolver.Cli.BestLineupCommand;
-using static SmokeSolver.Cli.PointLineupCommand;
 
+using static SmokeSolver.Cli.CliParsing;
 namespace SmokeSolver.Cli;
 
 public static class MeshSetup
@@ -39,6 +21,16 @@ public static class MeshSetup
     // spelled this constructor call out.
     public static TriangleCollider BuildGrenadeCollider(CollisionMesh mesh, Vector3 min, Vector3 max) =>
         new(mesh, min, max, mesh.GrenadeSolidFilter());
+
+    // The same collider for a world where the named groups are gone: the
+    // "glass broken / doors open" states a query can ask for.
+    public static TriangleCollider BuildGrenadeColliderExcluding(
+        CollisionMesh mesh, Vector3 min, Vector3 max, IReadOnlyList<string> excludedGroups)
+    {
+        var solid = mesh.GrenadeSolidFilter();
+        var excluded = mesh.GroupMask(excludedGroups);
+        return new TriangleCollider(mesh, min, max, a => solid(a) && !excluded[a]);
+    }
 
     // What blocks the PLAYER, for pin probing and stand-spot checks; the
     // grenade collider above is wrong for that job because it drops the
@@ -60,6 +52,17 @@ public static class MeshSetup
         if (options.TryGetValue("attrs", out var attrs))
         {
             var requested = attrs.Split(',', StringSplitOptions.TrimEntries).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            // Doors and breakables used to live inside EntitySolid and were
+            // split out so a query can knock them down for a "glass broken /
+            // doors open" world. They are still solid at round start, so
+            // asking for EntitySolid asks for all of it - otherwise every
+            // deployment's --attrs (which names EntitySolid literally) would
+            // silently start throwing grenades through every door in the map.
+            if (requested.Contains("EntitySolid"))
+            {
+                requested.Add("EntityDoor");
+                requested.Add("EntityBreakable");
+            }
             var allowed = mesh.AttributeNames
                 .Select((name, i) => (name, i))
                 .Where(x => requested.Contains(x.name))

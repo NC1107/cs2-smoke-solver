@@ -11,7 +11,7 @@ Usage:
   rig/parse-demo-smokes.py --map de_mirage --out data/de_mirage.prosmokes.json <demo.dem> [demo.dem ...]
 
 Aggregates every demo whose header map matches --map into one JSON:
-  { "map": "de_mirage", "demos": N, "throws": [[x,y],...], "lands": [[x,y],...] }
+  { "map": "de_mirage", "demos": N, "throws": [[x,y,z,side],...], "lands": [[x,y,z,side],...] }
 """
 import argparse
 import json
@@ -37,7 +37,7 @@ def extract(path):
         by_id[int(r["entityid"])] = (r["x"], r["y"], r["z"], 0 if int(r["user_team_num"]) == 2 else 1)
 
     grenades = p.parse_grenades()
-    proj = grenades[grenades["grenade_type"] == "CSmokeGrenadeProjectile"].dropna(subset=["x", "y"])
+    proj = grenades[grenades["grenade_type"] == "CSmokeGrenadeProjectile"].dropna(subset=["x", "y", "z"])
     firsts = proj.sort_values("tick").groupby("grenade_entity_id").first()
 
     throws, lands = [], []
@@ -46,7 +46,10 @@ def extract(path):
         if hit is None:
             continue  # thrown but never detonated (defused round end, etc.)
         lx, ly, lz, side = hit
-        throws.append([round(row["x"]), round(row["y"]), side])
+        # Height matters: without it a stand spot on top of a truck matches a
+        # pro who threw from the ground beside it, and the viewer badged that
+        # as a pro lineup.
+        throws.append([round(row["x"]), round(row["y"]), round(row["z"]), side])
         lands.append([round(lx), round(ly), round(lz), side])  # z kept for targets
     return throws, lands
 

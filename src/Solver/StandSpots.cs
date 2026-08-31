@@ -33,7 +33,7 @@ public static class StandSpots
 
     // sv_standable_normal - the same 45.57 degree limit the grenade sim uses
     // for its floor test.
-    public const float StandableNormalZ = 0.7f;
+    public const float StandableNormalZ = GrenadeTrajectory.FloorNormalZ;
 
     // Apex of a jump, from the engine's own numbers rather than folklore
     // (published figures disagree: 64, 66 and 71 all appear). CS jump impulse
@@ -328,7 +328,9 @@ public static class StandSpots
         return [.. reachable.Select(r => columns[(r.Item1, r.Item2)][r.Item3])];
     }
 
-    static bool PointInPolygon(float[][] corners, float x, float y)
+    // Shared with LineupSolver's nav-area sampling and ground lookups: one
+    // even-odd test for every "is this 2D point inside this nav polygon" ask.
+    public static bool PointInPolygon(float[][] corners, float x, float y)
     {
         var inside = false;
         for (int i = 0, j = corners.Length - 1; i < corners.Length; j = i++)

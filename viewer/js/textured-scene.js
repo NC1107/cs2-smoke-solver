@@ -3,8 +3,8 @@
 // previews. Loading, axis conversion, and material sanitization live here;
 // the interactive view and the preview path only consume the finished scene.
 
-import { state, lowMemoryDevice } from "./state.js?v=16";
-import { cacheBust } from "./api.js?v=16";
+import { state, lowMemoryDevice } from "./state.js?v=80";
+import { cacheBust } from "./api.js?v=80";
 
 const scriptPromises = {};
 export function loadScript(src) {
@@ -71,16 +71,18 @@ export function ensureTexturedScene(url) {
     });
     // Low-memory devices load the smaller mobile tier (256-cap textures +
     // decimated geometry, ~120-200MB decoded vs 0.5-1.4GB) so the tab does not
-    // OOM. An explicitly requested url overrides the tier choice. If the mobile
-    // GLB is missing (a server that predates the tier), fall back to the full
-    // one - no worse than before this tier existed.
+    // OOM. An explicitly requested url overrides the tier choice. If the
+    // mobile GLB is missing (it is gitignored data a deploy must rsync), the
+    // device stays on the flat mesh: falling back to the full GLB traded a
+    // missing file for the very OOM tab-reload this tier exists to prevent.
     const primary = url ?? (lowMemoryDevice ? mobileUrl(map) : desktopUrl(map));
     let gltf;
     try {
       gltf = await load(primary);
     } catch (e) {
       if (url || primary === desktopUrl(map)) { throw e; }
-      gltf = await load(desktopUrl(map));
+      console.error(`mobile textured GLB missing for ${map} (${e.message}) - textured view stays off on this device; rsync data/${map}_textured.mobile.glb to the server`);
+      return null;
     }
     const root = gltf.scene;
     // VRF exports in meters with a cyclic axis permutation, not a plain
@@ -141,11 +143,18 @@ export function ensureTexturedScene(url) {
       }
       const vmat = o.material.userData?.vmat;
       const vmatName = vmat?.Name ?? "";
+      // Caustics are the rippling light water throws onto nearby surfaces. In
+      // game they are a projected, additive light effect; the exporter bakes
+      // them as ordinary opaque geometry, so de_nuke's B site wall and the
+      // reactor tower came out sheeted in solid blue water ripples. There is
+      // no lighting here to project them, so they are dropped like the other
+      // effect-only surfaces.
       if (o.material.name?.toLowerCase().startsWith("tools") ||
           vmatName.startsWith("materials/effects/") ||
           vmatName.startsWith("materials/tools/") ||
           vmatName.startsWith("materials/dev/") ||
-          vmatName.startsWith("models/ui/")) {
+          vmatName.startsWith("models/ui/") ||
+          /caustic/i.test(vmatName)) {
         toRemove.push(o);
         return;
       }
@@ -180,12 +189,30 @@ export function ensureTexturedScene(url) {
       // cutout pattern and render as solid colored quads unless the MASK
       // alphaTest GLTFLoader already computed from the glTF material is
       // carried over onto the replacement material.
+      const original = o.material;
+      // Decals (bombsite letters, wall stains, paint patches, scuffs) are
+      // overlays painted onto the surface behind them. Exported OPAQUE they
+      // read as pasted-on panels that hide that surface, so they blend with
+      // their own alpha and are pushed a hair forward to stay clear of what
+      // they sit on.
+      //
+      // Matched by path as well as by shader: most of a map's decal quads are
+      // compiled as ordinary csgo_lightmappedgeneric materials that merely
+      // happen to be alpha-blended (de_dust2's wall_stain001, the bombsite
+      // sprays, dust_panel_paint_patch), and the shader test alone caught two
+      // materials on the whole map. Without the offset those quads sit in the
+      // same plane as the wall they are painted on and z-fight with it, which
+      // is how a lineup reference someone aims at every round comes and goes
+      // with the camera angle.
+      const isDecal = (vmat?.ShaderName ?? "") === "csgo_static_overlay.vfx" ||
+        vmatName.startsWith("materials/decals/") ||
+        vmatName.startsWith("materials/overlays/");
       o.material = new THREE.MeshBasicMaterial({
-        map: o.material.map,
+        map: original.map,
         color,
-        vertexColors: !o.material.map && hasVertexColor,
+        vertexColors: !original.map && hasVertexColor,
         transparent,
-        alphaTest: o.material.alphaTest,
+        alphaTest: original.alphaTest,
         opacity,
         // Map walls are compiled one-sided (backfaces culled for in-engine
         // perf), so from the far side they vanish - a wall you can see through
@@ -193,11 +220,39 @@ export function ensureTexturedScene(url) {
         // inspector, not the engine, so render opaque surfaces from both sides.
         // Translucent water/glass keep their original side: double-siding a
         // depthWrite:false surface double-blends and sorts wrong.
-        side: transparent ? o.material.side : THREE.DoubleSide,
+        side: transparent ? original.side : THREE.DoubleSide,
+        ...(isDecal ? {
+          transparent: true,
+          depthWrite: false,
+          polygonOffset: true,
+          polygonOffsetFactor: -2,
+          polygonOffsetUnits: -2,
+        } : {}),
       });
+      // The swap orphans the GLTFLoader material (its texture lives on in the
+      // replacement); without a dispose its GPU program leaks per load.
+      original.dispose();
+    });
+    // The filtered junk meshes leave the scene graph here, so no later
+    // disposal pass will ever reach them - free their GPU buffers now, minus
+    // any geometry or texture a kept mesh still shares.
+    const removedSet = new Set(toRemove);
+    const keptGeometries = new Set();
+    const keptTextures = new Set();
+    root.traverse(o => {
+      if (!o.geometry || removedSet.has(o)) { return; }
+      keptGeometries.add(o.geometry);
+      for (const m of [o.material ?? []].flat()) {
+        if (m.map) { keptTextures.add(m.map); }
+      }
     });
     for (const o of toRemove) {
       o.parent.remove(o);
+      if (o.geometry && !keptGeometries.has(o.geometry)) { o.geometry.dispose(); }
+      for (const m of [o.material ?? []].flat()) {
+        if (m.map && !keptTextures.has(m.map)) { m.map.dispose(); }
+        m.dispose?.();
+      }
     }
 
     const scene = new THREE.Scene();

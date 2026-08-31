@@ -632,3 +632,684 @@ A startup self-test, spawn-matching meta correlation, and rename-based claims re
 
 **Tooling**: a well-conceived closed loop undermined by prototype-grade operations: no supervision, message-dropping IPC, and error handling that converts every failure into a plausible "no result".
 Systemd units, atomic renames, one shared IPC module, and a published binary convert it from a rig that rots between sessions into one that survives them.
+
+## Audit 2026-08-30
+
+An eight-pass multi-agent review (code quality, security, performance, test coverage, architecture, API, frontend, devops) found 58 issues.
+30 were fixed the same day, verified by a clean build, 147/147 tests (55 of them new), a successful Docker image build, and syntax checks on the touched JS and Python.
+Notable fixes with behavior changes: the solve cache path now respects --root; the crouch-only filter now covers pinned and exact-click origins (QueryVersion bumped 15 -> 16); on low-memory devices a missing mobile GLB no longer falls back to the OOM-sized desktop GLB (the device stays on the flat mesh with a console error); the viewer version token moved to ?v=17.
+The 28 findings below remain open; most need a design decision or coordination with deploy.
+
+### Open - critical
+
+- **A30-C1 (devops)** docker-compose.yml / deploy flow.
+  Deploy is manual with no verification that the gitignored data files (entities.json, mobile GLBs, prosmokes.json, standspots.json) actually landed on the prod host; the documented failure mode is prod silently serving degraded data.
+  Fix: a rig/deploy-app.sh that rsyncs the required data globs, pulls a pinned image tag, runs compose up, and asserts each expected file is present and non-empty plus a health probe before declaring success.
+- **A30-C2 (test-coverage)** tests/Sim.Tests/GoldenReplayTests.cs:36.
+  The golden replay test silently returns (green) when the gitignored fixtures (de_dust2.s2geo, calib captures) are missing, which is every CI run, so CI cannot catch a physics regression.
+  Fix: commit a small trimmed fixture geo plus a handful of capture lines, or make the skip loud in CI.
+
+### Open - high
+
+- **A30-H1 (api)** src/Cli/Commands/ServeCommand.cs (solve task).
+  RunTargetQuery/SolveForTarget take no CancellationToken, so an abandoned request runs its full multi-minute solve and pins one of only two SolveGate slots.
+  Fix: thread context.RequestAborted into the solver's Parallel loops; decide whether a cancelled solve should still write the cache.
+- **A30-H2 (devops)** docker-compose.yml:11.
+  The compose file defaults to the mutable :latest tag and there is no scripted pull/up/rollback, so the running git sha is unknowable.
+  Fix: pin to the sha tag CI already publishes, bumped by the deploy script from A30-C1.
+- **A30-H3 (devops/security)** Dockerfile runtime stage.
+  No USER directive, so the network-exposed process runs as root with root write access to the bind-mounted ./data.
+  Fix: USER app (the aspnet image ships uid 1654), after confirming the host-side data directory stays writable for that uid at deploy.
+- **A30-H4 (frontend)** viewer/index.html #map canvas.
+  The 2D radar has no tabindex and no keydown handling, so a keyboard-only user can never place a target or select a marker.
+  Fix: tabindex plus an arrow-key cursor with Enter/Space activation, designed to match the existing focus styles.
+- **A30-H5 (performance)** src/Cli/Services/TargetSolver.cs:132.
+  Every uncached /api/lineup solve rebuilds the grenade and player TriangleColliders per request even though MapEntry caches both for the process lifetime; the sibling endpoints reuse them.
+  Deferred because reusing the full-mesh collider changes the collision region the sim sees; needs a bit-identical (or accepted-diff) verification pass before switching.
+- **A30-H6 (test-coverage)** src/Cli/Services/TargetSolver.cs:38.
+  SolveForTarget, the single function wiring together the roof fallback, elevated origins, crouch filter, exposure flag, and pinning, has no integration test; the PR #12 nav-sliver regression is only pinned at the unit level.
+  Fix: a synthetic-mesh TargetSolverTests that clicks into a nav sliver and asserts lineups are produced near floor height.
+
+### Open - medium
+
+- **A30-M1 (api)** ServeCommand /api/trajectory, /api/lineup-one, /api/slack.
+  Required non-nullable numeric query parameters short-circuit in minimal-API binding with an empty-bodied 400, breaking the {error} contract for malformed requests.
+  Fix: nullable parameters with manual validation, or problem-details middleware.
+- **A30-M2 (api)** src/Cli/Services/LineupApi.cs QueryVersion.
+  Cache invalidation on solver changes rests on remembering to bump the constant (a known past gotcha).
+  Fix: derive the version component from the solver assembly's build id, or add a CI check that flags solver-directory diffs without a bump.
+- **A30-M3 (architecture)** src/Cli/Services/LineupApi.cs.
+  579 lines mixing four binary wire-format serializers, the query validator, cache-key derivation, and the solve orchestrator.
+  Fix: split into a payload serializer and a query/orchestration service.
+- **A30-M4 (architecture)** rig/CalibrationThrower/CalibrationThrowerPlugin.cs.
+  A single 1,036-line class mixing entity/tick/IPC plumbing with 14 chat-command handlers.
+  Fix: extract the command handlers into a router class.
+- **A30-M5 (architecture)** src/Sim/GrenadeTrajectory.cs eye heights + viewer/js/state.js.
+  The stand/crouch eye heights (64.06/46.04) are duplicated between the sim and the viewer with nothing enforcing sync.
+  Fix: serve the constants from the API (e.g. alongside /api/maps) and read them at runtime.
+- **A30-M6 (architecture)** viewer/js/validation.js.
+  714 lines with zero imports, duplicating state.js helpers, and reading PascalCase report JSON while every other module reads camelCase lineups.
+  Fix: wire it into the shared module graph and standardize the report casing.
+- **A30-M7 (devops)** Dockerfile.
+  No HEALTHCHECK (note: the aspnet image has no curl/wget, so it needs a dotnet-based or compose-level probe) and base images float on the 10.0 tag.
+  Fix: add a liveness probe tolerant of CPU-pegged solves, and pin base images to a digest bumped deliberately.
+- **A30-M8 (devops)** .github/workflows/ci.yml.
+  No lint/format gate.
+  Fix: run dotnet format --verify-no-changes locally first, fix the drift it finds, then add it as a CI step.
+- **A30-M9 (performance)** src/Sim/TriangleRaycaster.cs:42.
+  Blocked() is a linear scan over every region triangle, called once per verified lineup for the exposure flag.
+  Fix: reuse a CSR-bucketed collider path so each ray is O(cells crossed).
+- **A30-M10 (test-coverage)** src/Cli/Commands/ViewerDataCommand.cs radar z-band.
+  The PR #12 fix (nav-band-bounded radar collider) has no test pinning a high-z map.
+  Fix: extract the navZ-grid/radar-bounds computation and test it with a synthetic map at z=10000.
+- **A30-M11 (test-coverage)** src/Extraction/MapExtractor.cs.
+  The static-prop collision extraction has no tests below full re-extraction.
+  Fix: split out the pure-geometry helpers (TriangulateHull, transforms) and unit test those.
+
+### Open - low
+
+- **A30-L1 (api)** ServeCommand mid-stream NDJSON errors are indistinguishable from empty results in the viewer; consider a {"fatal":true} field.
+- **A30-L2 (architecture)** the lineup JSON contract is consumed by bare string access across 6 viewer files; a single JS constants module for field names and ThrowType strings would make renames fail loudly.
+- **A30-L3 (devops)** docker-compose.yml requires a pre-existing traefik_proxy network with no documentation or pre-flight check; belongs in the A30-C1 deploy script.
+- **A30-L4 (frontend)** viewer/js/main.js spawn/pro-smoke fetch failures are indistinguishable from maps with no data; surface a small non-blocking note on genuine failure.
+- **A30-L5 (performance)** src/Cli/Services/TargetSolver.cs nav-fallback samples the square bounding box and discards the ~21% outside the reach circle only after paying for elevated/pinned augmentation; filter earlier.
+- **A30-L6 (test-coverage)** src/Solver/StandSpots.cs wander-budget reset on nav-covered ground has no direct test; needs a crate-chain-with-walkway synthetic case.
+
+## Adversarial review 2026-08-30
+
+Six domain experts (physics, computational geometry, Source engine internals, validation methodology, solver algorithms, asset pipeline) audited the stack with a mandate to prove it wrong.
+Their recommendations were then verified before implementation, and three were falsified by measurement rather than shipped on authority.
+
+### Falsified by experiment - do not revisit without new evidence
+
+- **"MollerTrumbore loses precision at map-scale coordinates."**
+  Claimed catastrophic cancellation in `edge1 = b - a` at de_vertigo's z~15,368, with localization as the fix.
+  Measured over 20,000 randomized small triangles at real map extremes: localizing produces **bit-identical** results (max delta 0.0), and the existing float32 path is within 0.00008u of a float64 reference.
+  Subtraction of nearby floats is exact (Sterbenz), so the inherited vertex quantization is in the data, not the arithmetic. No fix needed.
+- **"Never-settling trajectories burn the full tick budget; an early-out is a double-digit-percent win."**
+  Instrumented a real de_dust2 map-wide solve: 62.4M coarse simulations, 20.55 billion ticks, of which expired trajectories are **1.8% of calls and 3.4% of tick work**.
+  Not worth an accuracy risk in the sweep's acceptance behaviour. Instrumentation was removed after measuring.
+- **"Broad-phase and narrow-phase disagree on cell boundaries, so grid-flush triangles tunnel."**
+  True in the letter (floor-based bucketing never asks the cell below a boundary-flush triangle) and harmless in practice: the cell that *contains* the triangle is always tested, and the skipped contact is exactly the shared face, which has no volume.
+  Fixing it would expand the voxelization loop for every triangle. Pinned with a test (`ATriangleFlushWithACellBoundaryOverlapsBothNeighbours`) instead, so the asymmetry is documented rather than accidental.
+- **`logic_collision_pair` entities** (suspected as a runtime-gated collision mechanism we cannot see statically): **zero instances across all 16 extracted maps**. Cleared.
+
+### Fixed 2026-08-30
+
+- **A30-C2 (golden replay silently green in CI) - CLOSED.**
+  Added a `crop` CLI command that writes a region subset of a `.s2geo`, used it to commit a 950KB de_dust2 fixture covering exactly the region these throws fly through (the same region the test's collider already queried, so the replay is identical to one against the full map) plus the two capture records.
+  The test now asserts the fixtures exist instead of returning early.
+  Verified by experiment: a 10% `GravityScale` change makes it fail, and reverting makes it pass.
+- **Validation scored undetonated throws.**
+  A grenade that never detonated has no landing to grade; the cull heuristic only excluded fast-moving (engine-deleted) captures, so wedged ones were scored and a handful dominated a map's mean/p90/max (22 rows up to 2,019u).
+  Both cases are now counted and excluded, and the report distinguishes `culled` (in flight) from `stuck` (wedged).
+- **Break-state world toggles (glass broken / doors open).**
+  Extraction routes doors (`func_door`, `func_door_rotating`, `prop_door_rotating`) to `EntityDoor` and breakables (`func_breakable`, `prop_dynamic` with health) to `EntityBreakable`; `/api/lineup` accepts `broken: ["glass","doors"]`, the GET endpoints accept `broken=<csv>`, each state gets its own collider and cache key, and the viewer exposes a World state control.
+  Both solver stages honour it: the voxel grid through the attribute filter and the exact collider through `BuildGrenadeColliderExcluding` (the exact collider is built from the interactAs-based grenade filter and would otherwise have kept bouncing throws off removed glass).
+- **`prop_dynamic` collision was never extracted.**
+  Structural props the game treats as solid (de_nuke's vent slats, shutters) had no collision at all, so the solver offered throws from inside them.
+  Now extracted with shared-VPK model lookup and per-instance scale.
+- **`--attrs` compatibility guard.**
+  Splitting doors and breakables out of `EntitySolid` would have made them non-solid for every deployment that names `EntitySolid` literally (compose, systemd, validate, bestlineup).
+  Requesting `EntitySolid` now implies the groups that were split out of it.
+- **Collision-mesh 3D view had no mobile tier.**
+  The same decoded-memory budget the mobile GLB tier protects was being blown by the debug mesh (de_inferno: 2.7M triangles) plus a synchronous `computeVertexNormals` over it.
+  Low-memory devices now skip normals and render unlit, matching the textured scene's deliberate trade.
+- **Test coverage:** break-state machinery (9 tests), `TriBoxOverlap` agreement at real map coordinates (+-12,000 XY, z to 15,500) and at boundary-flush geometry.
+
+### Open, ranked (from the same review)
+
+1. **A30-C1 deploy verification** remains the top ops item, now with more to rsync (per-map meshes, stand spots, meshdiff overlays).
+2. **Offline per-origin sweep table** - precompute each stand spot's angle-to-landing manifold per map (the `standspots` precompute pattern; ~2.7 min and ~17GB raw per map before compression) to collapse the 92%-of-solve coarse sweep into a lookup. The structural speed play; prototype on one map and check recall against the accuracy harness before committing.
+3. **Validation sampling does not match usage** - median distance from a real pro landing to the nearest tested target is 343u on the best-covered map, and 17% of pro landings are >800u from any tested target. Stratify targets by pro-demo density, add confidence intervals to the dashboard (a "100% within 8u" at n=150 is really "0-2.5% miss rate"), and lock a fixed-seed nightly regression suite; the date-seeded fuzz targets make runs non-comparable.
+4. **False-negative rate is unmeasured** - every validated lineup is one the solver already believed in. Replay pro-demo throw/landing pairs through the solver and count how many real, humanly-thrown smokes it would never have proposed. Needs no new in-game throws.
+5. **Breakable classification needs ground truth** - the health-flag heuristic finds only some panes (de_nuke's roof glass and vent slats carry no health in the entity lump). Use the rig: shoot the pane, re-throw, compare.
+6. **Stability is presented as reliability but barely predicts it** (r = -0.117 against real error, quantized to 5 samples). Either improve the estimator or stop framing it as a success probability.
+7. **`RunSpeed` is a point sample**, not an engine constant: the engine adds the player's actual velocity (capped by `sv_maxvelocity`), so run-jump lineups assume the thrower hits the calibration rig's reference speed. Label it, and consider modelling it as speed-dependent.
+8. **Plugin signature fragility** - replace the raw byte-pattern scan with CounterStrikeSharp's `VirtualFunction` (vtable + symbol) API and watch `ianlucas/cs2-signatures` as an early warning for CS2 updates.
+9. **Pipeline items** - KTX2/BasisU textures (attacks decoded GPU memory directly), per-level radars for stacked maps (nuke/vertigo), replacing the bespoke SM3D wire format with glTF + meshopt, and server-verifying the top-N lineups actually shown to a user through the rig.
+
+## Viewer session 2026-08-30 (evening)
+
+- **Collision overlay washed out to white over the textured world.**
+  The overlay used a lit material while the lights live in the flat scene and the textured scene has none, so the same mesh rendered magenta in one view and near-white in the other.
+  Now unlit, and therefore identical in both. Verified by pixel diff: overlay pixels went from 12,549 near-white / 2,007 magenta to 73 / 24,563.
+- **Spawn markers** were floating diamonds drawn with depth testing off, so they hovered at knee height and showed through the entire map, and they vanished entirely in textured mode (the spawn group was the one overlay missing from the scene re-parent list).
+  They are now rings laid on the floor at the spawn position, depth-tested so map geometry occludes them, and they follow the textured scene like every other overlay.
+- **Aiming overlays could both draw at once** (two independent toggles, two crosshairs over each other).
+  One tri-state control now cycles off / centre crosshair / numbered lineup ruler, with the old preference migrated.
+- **A 2D click could not say which floor it meant.**
+  On de_nuke a point over Bombsite A is also over B and the roof; the solver resolves such a column to the LOWEST walkable height, so a click meant for the site silently targeted the floor below it.
+  New `/api/levels` returns the stacked walkable levels for a column (128u apart to count as separate, so ramps and crates stay one level), each labelled with the callout a player standing there would be in, and the viewer offers them as a chooser whenever a click is ambiguous.
+  A single-level click is unaffected.
+
+### Still open for verticality
+
+The chooser resolves the ambiguity once a click has happened, but the 2D radar still renders stacked maps as one flattened image (the ground-height grid keeps the lowest floor where levels overlap).
+Valve ships a separate lower radar for exactly de_nuke and de_vertigo.
+A per-level radar pass plus a level selector would let the user work on one floor at a time rather than disambiguating click by click.
+
+### Mesh-diff tuning and a new render-pipeline bug (2026-08-30, later)
+
+- **The diff painted real ground orange.** Its render mesh reused the 3D viewer's junk-material filter, which drops `materials/dev/` - and de_nuke paints those placeholder/reflectivity materials on floors people walk on.
+  With no render surface under them, the map's own ground was reported as phantom physics geometry.
+  `materials/dev/` is no longer treated as junk for the diff (tools/effects/UI still are), and the scan band above nav ground came down from 320u to 192u with a 40u nav-proximity gate, so structures nobody plays on (the reactor shell, the scaffolding over B) stop generating findings.
+  de_nuke: 11,605 cells to 7,634, phantom-physics cells 4,544 to 2,405.
+- **Pro smokes** is a 2D-only overlay and no longer offers itself in the 3D view.
+- **OPEN - textured GLB assigns a water material to non-water surfaces.**
+  On de_nuke's B site, the reactor shell and surrounding walls render with the water caustic texture. This is texture assignment in the exported GLB, not the viewer's shader-tint fallback (that path produces a flat tint, not a caustic pattern), so the suspect is the export/post-process chain: VRF export, `rig/fix-prop-scale.mjs`, `rig/optimize-textured-glb.mjs`.
+  This is the second incident of this class (cs_italy's corrupted preview was a `fix-prop-scale.mjs` bug), which is the case for the pipeline review's recommendation to stop passing GLBs between separate Node scripts.
+  First diagnostic step: render the raw VRF export and the post-processed GLB side by side for the same region and see which one first shows water on the reactor; `gltf-transform` in `rig/node_modules` currently fails to open the processed GLB (`EXT_texture_webp` plus a version mismatch), so that needs pinning before the comparison.
+
+### Callout search: first slice of the UX direction (2026-08-30)
+
+`GET /api/callouts?map=<name>` returns the map's own `env_cs_place` names with a position each (volumes sharing a name are merged), and the viewer's actions card now opens with a "smoke where?" search box backed by a datalist.
+Typing a callout and committing it places the target there, so the flow reads **name to target to search** instead of hunt-the-pixel to target to search.
+Verified end to end on de_nuke: 29 callouts, "BombsiteB" placed the target, the map-wide solve returned 16 lineups, and the first card carries its distance-to-target (28.4u) from the tolerance work.
+
+Next steps on this direction, in order: an opinionated top-5 with a "matches pro usage" badge from the pro-demo data the viewer already fetches; favourites that persist; then precomputing the callout pairs people actually search so the hot path is a cache read rather than a 30s solve.
+
+### Open: water-looking surfaces on de_nuke B
+
+Investigated and **not** reproduced from the tool's side. The exported GLBs are structurally clean: desktop and mobile agree (522 materials, 236 vs 229 textures, 229 vs 222 distinct base-colour references), texture sharing is legitimate reuse of the same material across instances rather than dedup corruption, only 29 of 522 materials lack a base texture, and the map's only `csgo_water_fancy` surface is a 241x126u plane down in the vents area (hammer x -106, y -933..-692, z -899..-773), nowhere near the reactor hall.
+Flying the camera into Observation renders correctly (green walls, concrete, control desk).
+To chase this further the exact spot is needed - a `getpos` from where it looks wrong - since the effect is evidently localized and the asset data does not explain it.
+
+### Viewer round three (2026-08-30)
+
+- **The "water texture" on de_nuke B, diagnosed and fixed.**
+  A screen-centre material probe at the reported position identified the surface as `caustics_004_color_mks_*.vtex` from `materials/de_nuke/hr_nuke/caustics_001_decal.vmat`, shader `csgo_static_overlay.vfx`.
+  Caustics are the rippling light water casts onto nearby surfaces - in game a projected additive effect, but the exporter bakes them as ordinary OPAQUE geometry, so B's back wall and the reactor tower came out sheeted in solid blue ripples.
+  Caustics decals are now dropped like the other effect-only surfaces, and every remaining `csgo_static_overlay.vfx` decal (bombsite letters, scuffs, door windows) renders alpha-blended with a polygon offset so it sits on the surface behind it instead of replacing it.
+  Verified at the reported spot: the probe now returns the real ceiling material.
+- **Aiming overlay is a segmented control** (off / crosshair / lineup ruler) rather than a cycling button, so all three states are visible and the active one is obvious.
+- **World state is now visible in the 3D view.**
+  The mesh payload gained separate index groups for doors and breakables (format version 2), and the viewer draws them as their own meshes that the World state control hides.
+  Choosing "doors open" removes the door geometry from the picture, so the view matches the world the solve ran in. Verified by pixel diff at a de_nuke door: 585k pixels change.
+
+### Resolved: door pose at round start
+
+Confirmed in game - de_nuke's door is CLOSED at round start, so the compiled entity pose the extractor bakes is correct and the textured render (which shows it open) is the one that disagrees.
+No solver change needed: intact stays the default and "doors open" remains the mid-round option.
+Worth remembering when reading the mesh diff, since a door will legitimately show as a physics-only surface there.
+
+### Device-appropriate UI (2026-08-30)
+
+- The 3D help listed WASD, right-drag and pinch gestures to everyone. It now shows only the controls the device in use actually has, driven from a class main.js sets: the browser's own pointer report to start, overridden by the first real touch or mouse move, because hybrid laptops report touch capability while being driven by a mouse and some automation browsers report no hover at all.
+- "Re-target" wrapped to two lines, which doubled the row height and stretched the copy button beside it into a slab. The label stays on one line now.
+- Every explore control carries a short hover tooltip in the app's own palette, shown immediately rather than after the native title delay, and suppressed on touch where a tooltip would latch open after a tap.
+
+### Opinionated results and persistent favourites (2026-08-30)
+
+The panel used to answer "which throw do I use" with every lineup the sweep verified, paginated fifty at a time.
+It now shows the **best five** by default, with `best 5 of N` and a `show all` toggle back to the full list.
+
+Ranking (`lineupScore` in state.js) scores what decides whether a player lands a throw in a real round rather than what looks good in data: distance to the target dominates, a wall or corner pin subtracts heavily (it removes position error outright, which is worth more than any amount of simulated stability), then aim reference quality, exposure, stability and one-tick scatter, with bounces and flight time breaking ties.
+A lineup thrown from within 160u of a real pro throw origin (the existing HLTV demo data) earns a ranking bonus and a `pro` badge - the strongest "this is the normal way to do it" signal the tool has.
+
+Favourites now persist: keyed by the throw itself (feet to the unit, type, strength, angles to a tenth of a degree) in localStorage per map, so a saved lineup survives re-solving, filtering and a reload, and is always pinned into the top five.
+
+Verified end to end on de_nuke BombsiteB: 16 lineups, top pick `mid (L+R) crouch 5b 2.5s 28.4u pro wall 1.5 deg 100%`, show-all revealing all 16, and a favourite surviving a full reload and re-solve still marked and pinned.
+
+One trap worth recording: the callout block was first placed after the boot code, so `loadCallouts` ran during boot and hit its own `let callouts` in the temporal dead zone - the map loaded with zero callouts and only an "Uncaught (in promise)" with no message. Declarations used by anything the boot path awaits have to sit above it.
+
+### Spawn/target usability and the pro-lineup question (2026-08-30)
+
+- Sidebar widened to 172px so "Re-target" fits without wrapping or ellipsis.
+- **Spawn markers were unclickable in 2D.** They are drawn at a fixed on-screen size but hit-tested with the tight lineup-marker radius, so a click beside one missed and solved from the raw pixel instead - defeating the only reason to draw them. Grab room now matches what the eye sees (marker radius + 14px).
+- **3D spawn rings kept a constant world size at distance.** A clamp added with the ring rework capped the screen-space scaling, so distant spawns shrank. Removed: a spawn now reads the same size from across the map as up close.
+- **The throw spot can be copied.** A one-spot solve remembers the origin it used and offers it as a `setpos`, so a position found by clicking can be quoted back.
+- **Pro landings are clickable targets.** A landing recorded from a demo carries the height it actually landed at, which is exactly what a 2D click cannot express on a stacked map (see below).
+
+#### Answered: are pro lineups verified by the solver?
+
+No, and the distinction matters. The pro overlay is raw HLTV demo data - throw origins and landing spots parsed from real matches, never solved or verified here. Only the new `pro` badge on our own results means something stronger: that badge marks a **solver-verified lineup whose throw spot is where pros throw from**.
+
+The reported case (target `1278 -1924 -223`, nothing findable from T spawn) was not a solver failure. `/api/levels` at that XY returns three stacked floors: Tunnels (-636), Garage (-412) and Garage (-224). The pro smokes near that point land at **z=-414**, the lower Garage floor; the target given was the **-224** floor, roughly 190u above it. Asked for the floor pros actually smoke, the solver finds it immediately: from the pro origin (-710,-1329) to (1281,-1950,-414) it returns a jump-throw landing **0.73u** from the target.
+
+So the failure mode was the stacked-level ambiguity again, arriving through a path the level chooser does not cover - a pasted `setpos` carries an explicit z, so nothing asks which floor was meant. Clicking a pro landing now sets the target at the demo's own height, which sidesteps it for exactly the case where a player is trying to reproduce a pro smoke.
+
+### Explainable ranking and 3D throw types (2026-08-30)
+
+- **3D markers now carry the throw type.** Every lineup was the same sphere, so a stand throw and a run-jump were indistinguishable in 3D while the 2D map had encoded movement in marker shape all along. Shape now carries movement (ball grounded, squashed ball crouched, cone airborne, wedge run-jump) and colour keeps carrying the mouse buttons, so a lineup reads the same in both views.
+- **The ranking shows its work.** `scoreBreakdown` returns the total with the reasons that produced it, in the order they applied, and the panel renders both: a score chip on every row and an expandable breakdown inside the opened lineup, e.g. `base 100 / lands 28.4u off -43 / wall pin - walk into it +60 / 5 bounces -30 / 2.5s in the air -10 / pros throw from this spot +45 = 122`. Higher is better, so the numbers read the way a person would say them.
+- **Pro usage is now a switch, not a fixed thumb on the scale.** "count pro usage in ranking" (on by default) decides whether the +45 applies. With thousands of demo points on a map, the bonus could otherwise crowd out spots that are simply better throws, and the toggle is ranking-only - it never changes which lineups the solver found, so nothing re-solves.
+- The pager is hidden in top-picks mode, where it would only repeat the "best 5 of N" line it sits above.
+
+### Results panel rebuild and a measured (small) sweep prune (2026-08-30)
+
+- The legend summary was printing the result count (`legend 400/400`), which belongs to the results panel and not to a colour key. Removed.
+- **The panel had three competing headers**: a floating collapse button over the preview image, a pager strip, and a separate best/all bar. They are now one row - collapse, count, sort, best/all switch, and a compact `1/8` pager that only appears when the full list needs paging.
+- **Results can be sorted**: best score (the default, and the same ranking the top picks use), closest to target, most reliable, fewest bounces, fastest.
+- **The target section was rebuilt**: name a spot, click the map, or paste a getpos, in that order (naming is fastest), with the two copy-back actions on their own labelled row instead of crowded beside the primary button. Everything carries a tooltip.
+- **The stacked-floor chooser is now loud**: accent border, its own shadow, a short appear animation and a status line naming the floor count. It was easy to miss in the corner, which defeats the point of asking.
+
+#### The ballistic prune, measured
+
+A vertical-reach prune was added to the sweep: a projectile at launch speed v cannot pass above the parabola of safety `v^2/2g - g*d^2/2v^2`, and a bounce only removes energy, so a zone above that envelope is unreachable from an origin at any angle or bounce count. Launch speed is overstated (jump and run velocity added outright, plus a 128u margin) so it can only discard the impossible.
+
+Measured on de_nuke with a high target (roof, from T spawn): **331s user CPU with the prune against 342s without, about 3%**, with identical output. That is a real saving but nowhere near the hoped-for cut, and it fits the earlier profiling: the sweep is memory-bandwidth-bound and its cost is dominated by simulations the existing distance prune already gates. Kept because it is cheap, physically justified and costs no accuracy, but **the structural win is the precomputed per-origin table, not more per-origin tests.**
+
+#### Noted: candidate counts are not deterministic
+
+The same query returned 1,050 candidates on one run and 1,049 on another with identical final output. Bucket winners are decided by `Better` under `Parallel.ForEach`, and its 1u dead band makes the survivor depend on arrival order. Harmless for the answer (the ranked result was identical), but it means candidate counts cannot be used as a regression signal, and a future determinism requirement would need an order-independent tiebreak.
+
+### Panel fixes, an honest pro badge, and a prune that actually pays (2026-08-30)
+
+- **The score breakdown could not be opened.** The whole detail card carried the deselect handler, so clicking its summary (or anywhere near the console command) closed the lineup instead. Only the summary row collapses a card now, and the breakdown is labelled "why score N?" rather than a bare number.
+- **Callout search is parked** behind a `hidden` attribute rather than deleted: the flow it belongs to (name a spot, get five answers) needs precomputed results behind it to feel instant.
+- **Exact-spot search is back as its own mode.** "Search radius" now offers "exact spot (deep search)", which pins the reach to the API minimum, turns on the fine angle lattice and drops the verify gate to its floor, so a throw from precisely the clicked position is found even when it is awkward - instead of a 300u radius answering a different question.
+
+#### The pro badge was badging almost everything
+
+It matched a lineup's feet against any pro throw origin, ignoring where that pro's smoke landed. On a map with 901 recorded throws, that meant a spot near anywhere a pro ever threw anything earned the badge regardless of the target.
+
+Measured on de_nuke, 200 sampled stand spots against an arbitrary target: **158 of 200 (79%) were badged "pro" under the old rule, and 0 under the new one**, which requires a single demo pair to match at both ends - the throw started near this lineup's feet AND that smoke landed near where this lineup lands (160u and 220u).
+
+#### Free-space reachability: the prune that was worth building
+
+A grenade has to travel through open air, so the shortest free-space path from a throw spot to the landing zone is a hard lower bound on the distance that throw must cover - and unlike straight-line distance, it knows that lower tunnels sit under a bombsite rather than next to it. `FreeSpaceReach` floods the free voxels outward from the zone (six-connected, so a diagonal never squeezes between two solid cells) and every origin is checked against its own type-and-power range before a single simulation runs.
+
+Measured on de_nuke, high roof target from T spawn: **331s user CPU before, 286s after - a 13.5% saving with bit-identical output** (same lineup, same 1050 candidates). The second reference target came out identical too, at 264s. That is four times the return of the ballistic gate measured earlier, and it is the mechanism the ballistic gate could never capture: being unable to get there from inside, rather than being unable to throw that far.
+
+### Scoring audit, pro emphasis, and card cleanup (2026-08-30)
+
+**The score was audited against a real 400-lineup solve rather than tuned by feel, and it found two faults.**
+
+- `scatter` was **never applied**. The scoring read `l.restScatter`; the API field is `l.scatter`. One of the reliability signals validation showed matters most - the one-tick foot-shift chaos measure - contributed nothing. It fires on 50 of 400 lineups now.
+- The weights left **78% of results scoring negative**, with distance and flight time dominating everything that decides reproducibility. Re-weighted with caps (base 140, distance -1.2/u capped at -90, bounces -4 capped at -32, flight -2/s capped at -18, stability -70): the same set now runs min -43, median 36, p90 84, max 178, with 21% negative. Caps matter as much as weights - without them a far, bouncy throw accumulated unbounded penalty and buried the pin and aim-reference bonuses that actually decide whether a player can repeat the throw.
+
+- **Pro lineups are marked, not just scored.** A red ring around the marker in both 2D and 3D, since shape already carries movement and fill carries the mouse buttons.
+- **Tooltips were doubled.** The CSS bubble added earlier showed alongside the browser's own and was clipped by the scrolling sidebar. Removed; the native `title` is the single source.
+- **The selected lineup card was rebuilt**: keep and discard are icons in the corners, the score folds behind "why score N?", and Share / Go to are one compact row instead of four full-width buttons.
+- **Unreachable origins are dropped before the sweep**, not inside it, so the progress count reports spots that can actually produce a throw rather than tens of thousands the grenade could never leave. Result verified identical (same lineup, same 1050 candidates, 285s user).
+
+### Recovering a stylesheet I destroyed, plus sweep ordering (2026-08-30)
+
+**The whole app rendered unstyled, and the accuracy page with it.** An edit script computed `s[start:end]` where `end` preceded `start`, producing an empty string, and `str.replace("", new)` in Python inserts the replacement **between every character**. `viewer/app.css` went from 48KB to 14MB: 117 unique lines repeated 244,000 times.
+
+The original was recoverable precisely because of how that failure works - the source characters were interleaved, not deleted - so removing every occurrence of the inserted block reconstructed the file byte for byte. Restored, verified (48,555 bytes, braces balanced, both pages render styled again).
+
+**Rule for this repo: never call `replace` with a computed `old` without asserting it is non-empty**, and prefer anchored edits over index arithmetic. `git checkout` was not an option here: the file carried a session's worth of uncommitted work.
+
+Also in this round:
+
+- **Progress dots are viewport-culled in 2D.** A map-wide sweep streams tens of thousands of evaluated spots and the canvas redraws every frame while it runs; off-screen cells are skipped now, which is the difference between a smooth progress view and a stuttering one.
+- **Filters and advanced settings have reset controls.** Defaults are read from the markup (`defaultSelected` / `defaultChecked`) rather than a second hardcoded list that could drift.
+- **Practice setup moved out of the results panel** into advanced, where a one-time console paste belongs.
+- **The sweep now runs nearest-first through open air.** Origins are sorted by the free-space distance the reachability flood already computed, so the search grows outward from the target rather than in stand-spot storage order, and the spots most likely to produce a throw resolve first. Ordering only changes when each origin is reported - every reachable origin is still swept - and the reference solve is bit-identical (same lineup, same 1050 candidates).
+
+### The sweep really does flood outward now, and the floor question blocks (2026-08-30)
+
+**The "expanding search" was still painting diagonal stripes** even after origins were sorted nearest-first. Cause: `Parallel.ForEach` range-partitions a list, handing each worker a static contiguous slice, so eight workers ran eight different radii simultaneously. Measured on a de_nuke solve, the first 4,000 reported origins ranged from 82u to 2,814u from the target at any moment.
+
+Switching to `Partitioner.Create(origins, EnumerablePartitionerOptions.NoBuffering)` makes workers pull the next origin one at a time, so the front stays together. Re-measured: mean distance now climbs 153u, 303u, 391u, 526u, 602u, 685u across successive batches with tight bands, which is an actual flood outward from the target. Each item is a whole set of simulations, so per-item hand-out costs nothing next to the work it hands out.
+
+Also this round:
+
+- **The stacked-floor question is now a modal** over a blurred app, and `Search map` is disabled until it is answered. Solving the wrong floor costs a full sweep and answers a question nobody asked, so it should not be dismissable by ignoring it; a cancel link clears the target for anyone who wants out.
+- **Filters/advanced reset controls are icons**, and reset now restores each select's `data-default` - the same value the "(N) active filters" counter compares against. They disagreed before, so a reset left the card reporting "(1)" forever.
+- **The sidebar scrollbar is thin and palette-matched** instead of the browser's default slab against the cards.
+- **The selected lineup card**: favourite moved to the left, a clipboard button beside the remove ×, and the monospace console-command row deleted (the clipboard carries it). The score breakdown now hangs off the score chip itself - click the number whose meaning is in question - instead of a separate "why score N?" disclosure.
+
+### Selection paging, collapse, and an honest pro badge (2026-08-30)
+
+- **Selecting a lineup jumped to a random page.** The page was computed by finding the selection in the *unsorted* result set while the list rendered the *sorted* one, so clicking the top result scrolled to wherever that lineup sat before sorting - page 7 of 8. Both now use the ordered list.
+- **A collapsed results panel could not be reopened.** The collapse control had moved inside the panel header, and the collapse rule hid every child except the control itself - which was now a grandchild - leaving a dot with nothing to click. The header survives collapse with only that control visible (verified: 22x22 and clickable while collapsed, full header back on expand).
+- **Advanced reset is a header icon**, matching filters, instead of a full-width button at the bottom of the card.
+
+#### The pro badge on a truck roof: a data limitation, now named
+
+`rig/parse-demo-smokes.py` recorded throw origins as `[x, y, side]` - **no height**. A stand spot on top of a truck therefore matched a pro who threw from the ground beside it, which is exactly the nonsense badge reported.
+
+The parser now keeps the thrower's height (`[x, y, z, side]`), and the viewer requires it to agree within 48u when present. Existing per-map data predates that, so the matcher treats a three-element origin as area-level: the radius tightened to 120u, the badge reads "pros smoke this from around here", and the bonus drops from +45 to +25. Re-parsing a map's demos upgrades it to the strict test automatically, with no viewer change.
+
+**The rings are gone from both map views.** With hundreds of matching markers wherever a popular throwing area was on screen, per-marker circles buried the map. The results list carries the signal.
+
+#### Audit: are the clustered garage lineups real?
+
+Solved a garage target (400 lineups), sampled 8 at random, and re-simulated each one through a completely separate path - the CLI's `throw` command driving the exact integrator from the reported feet, angles, type and click.
+
+**All 8 reproduced within 0.05u of the rest point the solver reported**, landing 1.7u to 26.6u from the target, all inside the 80u tolerance asked for. The clustering is real: a garage target genuinely is reachable from a wide spread of spots, and the solver is not inventing them.
+
+#### Flood shape
+
+Measured on an open-area dust2 target: the first 100 origins average 89u from the click (min 36u, max 160u) and spread across all four quadrants (18/41/27/14). It does start at the click and grow outward. It is not a circle, and should not be - the order is distance **through open air**, so it follows doorways and stops at walls rather than expanding through them.
+
+### Round: simpler results, real diff patches, clickable spawns (2026-08-30)
+
+#### The "best 5" mode is gone
+
+The list sorts by the same ranking the mode used, so the best five were already the top of page one.
+Keeping a switch that showed a subset of what the page below it showed cost a control, a header state, and a paging special case, and taught the reader nothing.
+`topPicks`, `state.topOnly` and the `show all / show best` toggle are removed.
+
+#### Mesh diff renders as patches, not billboards
+
+The 3D overlay drew each mismatched cell as a `PointsMaterial` sprite, which turns to face the camera: a mismatch on a floor and one on a wall looked identical, and neither sat on the geometry it was reporting.
+It is now one `InstancedMesh` of flat 16u quads (the diff's own cell size) laid at the cell positions, with polygon offset so a patch sits in front of the surface it covers.
+The diff scans straight down each column, so every cell it records is a surface a vertical ray crossed - a horizontal quad is the honest shape for it.
+
+**Trap hit on the way:** the material was carried over with `vertexColors: true`, and three.js reads per-vertex colour and per-instance colour through the same varying.
+With no colour attribute on the geometry the varying stayed at zero and **every patch rendered solid black** - visible only once depth testing was switched off to prove the patches were drawing at all.
+Per-instance colour needs `instanceColor` alone; `vertexColors` must be off.
+
+#### Mesh diff ignores out-of-bounds space
+
+Being near a walkable polygon is not the same as being in play.
+The column filter admits a vertical band around each nav point, so it also admitted the inside of the wall beside it and the void under a catwalk - places the two meshes disagree constantly and where no smoke will ever land.
+
+`MeshDiffCommand.KeepReachable` now floods open air outward from the walkable surface (16u voxels, six-connected, seeded a voxel above each nav ground point) and keeps only cells with reachable air on one of their six sides.
+On de_nuke that drops **1786 of 7634 cells (23%)**, added none, and the drops cluster in the outdoor dead space behind the building (the densest dropped 256u buckets keep 0-6 cells each), which is exactly the region meant.
+No hand-tuned distance is involved: unreachable is out of bounds by construction.
+
+#### Spawn markers are clickable again
+
+The 2D handler tested `if (state.picking || !state.target) { setTargetAt(...); return; }` **before** any spawn hit test, so every click without a target was swallowed as "set the target here".
+Clicking a spawn first - the obvious way to ask "what can I throw from spawn?" - put the target on the spawn and the marker appeared inert. The 3D ring had the same hole, and silently did nothing at all.
+
+Both now test the spawn first. With a target set it solves from that spawn as before; without one the spawn is **held** (`state.pendingOrigin`) with the status line "throwing from T spawn - now click the spot you want to smoke", and spent on the solve the moment a target arrives - including after the stacked-floor chooser answers.
+
+Verified end to end in a real browser: spawn click with no target holds the origin, the next click sets a target, the floor chooser resolves it, and the solve runs from the spawn's exact coordinates.
+
+#### The result row speaks like a lineup guide
+
+Research pass over how the established resources present one lineup (csnades, csdb.gg, cs2util, NADR/Refrag, Valve's in-game Map Guides, SMOKEPRACTICE) found none of them shows a raw offset, bounce count, or reliability percentage; difficulty, where shown at all, is one word; and movement is always spelled out in full English.
+Our row carried up to thirteen signals in solver units.
+
+Simple mode (default) is now four facts in the order every tutorial teaches them: **which button · how you are standing**, a difficulty word, and **what you aim at** in plain language, plus a warning line only when there is one ("Seen while throwing", "Pro pick").
+The word comes from `difficultyWords`: pinned or steady-and-edged is Easy, steady with something to aim at is Reliable, unsteady or a sky shot is Tricky, everything else Needs practice.
+Measured over a real 400-lineup mirage solve it splits 102 / 84 / 87 / 127, so it discriminates rather than labelling everything the same.
+
+The telemetry is not lost. A `detailed` toggle in the results header (remembered per browser) puts bounces, flight time, exact miss distance, stability percent and aim degrees back on the row, and the opened card's **Show details** disclosure carries the full score working ending in "Match score" either way.
+
+#### The ordered flood costs nothing
+
+Measured on the same cold mirage map-wide solve, cache dropped before every run:
+ordered flood (free-space distance sort + `NoBuffering` partitioner) **50.3 / 46.4 / 46.2 / 44.6s**; plain range partitioning **62.0 / 49.2 / 49.1s**.
+Same 400 lineups either way. The ordering is one sort over ~24k origins and does not slow the sweep down - if anything it is slightly faster.
+
+### Round: three control rows, honest pro badges, real diff surfaces (2026-08-30)
+
+#### Two of the "still broken" reports were right, and one was a different bug
+
+**3D spawn clicks never worked.** The marker was a `RingGeometry`, and the ring's hole was also a hole in the click target: a raycast aimed at the middle of a spawn passed straight through to the floor behind and set a target there.
+Verified by dispatching a real pointer sequence at the marker's projected screen position - it returned a target 300u away rather than the spawn.
+The marker is now a filled disc plus a rim, and both carry the spawn tag so a click anywhere on it means the same thing.
+
+**2D spawn clicks worked but looked like they had not.** With no target set, the click is held (`state.pendingOrigin`) and the only feedback was a line of status text at the top of the screen.
+The held spawn is now drawn in its own colour with a ring around it, in both views.
+
+**The panel did not collapse.** `#lineup-list` carries its own `display: grid`, and an ID selector beats the four-class structural rule that was meant to hide it, so a "collapsed" panel stayed 257px wide - still covering the map it was collapsed to reveal.
+ID-qualified now: 340px open, **34px collapsed**.
+
+#### One control row per question
+
+The 3D button, two icon strips and a segmented control were scattered down the card with nothing saying which of them were exclusive.
+Now three rows that all look the same, with the row label carrying the meaning: **View** (2D / 3D / Textured, one at a time), **Overlays** (Spawns / Collision / Top-down / Mesh diff, any combination), **Aim overlay** (Off / Crosshair / Ruler).
+Top-down became a latch that remembers the camera it left, since a row of on/off controls should not contain one that only fires.
+
+Two CSS traps on the way: `#controls .action-group:not(:has(.btn:not([hidden])))` hides an empty group, and the new rows are made of `.seg-btn`, not `.btn` - so the whole block was `display: none` while every element inside it reported the right styles.
+And at 172px the labels truncated to "Coll…"/"Top…", which is the one thing a button label must not do: the card is 196px now and the rows wrap instead of clipping.
+
+#### "Pro pick" now means what it says
+
+Measured before changing anything: on the nuke target from the report, **45 of 400** lineups carried the badge; on mirage, **72 of 400**.
+The test was a 120u origin radius paired with a 220u landing radius, which on a busy map is satisfied by almost any spot near anywhere a pro once threw anything.
+
+Tightened to same spot (64u, plus height within 48u where the demo recorded it) **and** same landing, judged by the Precision filter's own value so the badge means what the list already means by "lands where I asked".
+With the default 32u that is **19 of 400** on mirage and **none at all** on the nuke target - which is the honest answer for an arbitrary spot no pro is smoking.
+
+#### The diff shows the surfaces, not squares
+
+Flat quads said "the meshes disagree in this column" and nothing about the shape of what is missing.
+`meshdiff` now also exports the mismatched triangles themselves - from the render mesh for surfaces grenades fly through, from the physics mesh for phantom bounces - and the viewer draws those.
+On de_nuke: 142,831 render-only and 4,934 physics-only triangles, 6.8MB raw / 605KB gzipped.
+
+That payload is too big to fetch on every map load for an overlay almost nobody switches on, so the viewer now does a HEAD to learn whether a diff exists and fetches the body when the overlay is switched on (which needed `/data/**` to answer HEAD as well as GET).
+Diff files with no triangles still fall back to the quads.
+
+#### The sweep grows from three places
+
+A map-wide search floods outward from the target; the spots a player is actually standing on when the round starts were reached last.
+It now also floods from the T and CT spawns and orders by whichever front reaches an origin first.
+Ordering only - what prunes an origin is still its free-space distance from the zone, the only one of the three that bounds a throw.
+
+Measured on mirage: **within the first 150 origins swept, spots 0u from T spawn and 4u from CT spawn are already done**, alongside the cluster around the target.
+Cost: 46.1 / 44.2s against a 46.3s median before the extra fronts - two more floods over the grid do not register next to the sweep.
+
+#### Row detail is behind a hover
+
+The collapsed row is down to the throw itself - which button, how you are standing, and how hard it is - with the execution (movement, aim reference) on the hover of the part of the row that names the throw.
+A player scanning a list is choosing between throws, not performing one.
+
+#### Self-inflicted: a deletion that took the scene with it
+
+Removing the per-frame spawn rescale, the edit matched backwards from the wrong comment and also deleted `let activeScene = scene;` two lines above it.
+The 3D view then failed with "3D unavailable" and an `Uncaught (in promise)` whose only clue was a stack frame in the `isTextured` getter.
+Same lesson as the earlier `git checkout`: bound a deletion by the exact text being removed, never by a search that walks backwards into its neighbours.
+
+### Round: two positions, icon tiles, corner reset (2026-08-30)
+
+#### The card asks two questions, in the order the map answers them
+
+Callout search is gone (it was already parked behind `hidden`), and the first card is now the two positions a solve is made of, each said the same way:
+
+```
+Target position   [ setpos -1200 -635 -166 ] [copy]
+                  [ ✓ Target set ]
+Throw position    [ paste setpos            ] [copy]
+                  [ Set throw position ]
+```
+
+Each box both reads a position out and takes one in: it mirrors whatever is set (never while it is being typed into), the copy button puts it on the clipboard as a `setpos`, and pasting a `getpos` line and pressing the button below sets it.
+The hover on each box says which console command produces the value.
+
+The map takes the two in order - first left click is the target, the second is where you throw from - and either button re-arms its own half out of turn (`state.picking` / `state.pickingOrigin`, Esc cancels either).
+A button whose half is answered shows a tick and goes quiet, but stays clickable: a dead control is a trap, and re-picking is the common case.
+
+Each box names the height that belongs to its own half - the resolved floor for the target, the throw spot's own feet for the origin.
+Naming the target's floor for a throw spot on another level would hand out a `setpos` that puts the player through it.
+
+#### Word buttons became icon tiles
+
+The view/overlay rows spilled out of the card: a `nowrap` label is wider than its grid track and grid items do not shrink below their content, so "Collision" and "Top-down" ran past the edge.
+They are square tiles now - a 16px icon over its own name - three to a row, which cannot be wider than the card whatever the label says. The sidebar went 196px -> 212px.
+
+**The `:has()` trap, for the third time.** `#controls .action-group:not(:has(.btn:not([hidden])))` hides an empty group, and it has now silently hidden a whole block twice: once when the rows became `.seg-btn`, again when they became `.tile`.
+Both times every element inside reported correct styles and a zero rect. The rule lists all three classes now.
+Same shape of bug in two more places this round: `.place-copy` (`display: grid`) and `.tile-row` (`display: grid`) each beat the UA's `[hidden]` rule, so a hidden copy button and the 2D-irrelevant aim row both stayed on screen. Any class that sets `display` needs its own `[hidden]` rule.
+
+#### Reset moved to the corner
+
+The actions card deliberately has no visible summary, so its reset could not sit in a header row the way the filters and advanced ones do.
+It is absolutely positioned in the card's top-right instead, same icon, same size.
+
+#### Search belongs to the throw position, layers belong to the map
+
+"Search the whole map" moved under **Throw position**: it is the other answer to the same question ("this spot, or all of them"), not a section of its own.
+
+That exposed a dead end - re-picking either half left a target and a throw spot on screen with nothing that would put them together again, because the only search on offer ignored the throw spot.
+**Search from this spot** now appears whenever both halves are answered and is the primary action; the whole-map search stays beside it and takes over as primary when there is no throw spot.
+
+Heatmap and Pro smokes moved to the bottom-left beside the legend, the way a map keeps satellite/terrain under the map rather than in the tool panel.
+Both chips and the legend share one bottom-left bar that grows upward from a common baseline, so opening the legend never shifts the layer buttons.
+`#key-3d` keeps its own corner coordinates - only the marker legend joined the bar.
+
+The opened lineup no longer repeats the how-text: the same sentence is the hover on the row above it, in the card as well as in the list.
+
+### Where de_dust2's wall damage went (2026-08-30)
+
+Reported: the wall damage marks used to line up the window and B-door smokes are missing from the textured view. Traced to two separate causes.
+
+**1. Decal quads had no polygon offset (fixed).** The viewer treated a mesh as a decal only when its shader was `csgo_static_overlay.vfx`, and on de_dust2 exactly **two materials** in 706 use it.
+The map's actual decal quads - `materials/overlays/wall_stain001`, `materials/decals/hr_decals/dust_panel_paint_patch`, `materials/decals/bombsite_x_spray` - are compiled as ordinary `csgo_lightmappedgeneric` materials that merely happen to be alpha-blended.
+Without the offset those quads sit in the same plane as the wall they are painted on and z-fight with it, so a reference someone aims at every round comes and goes with the camera angle.
+Decals are now matched by vmat path (`materials/decals/`, `materials/overlays/`) as well as by shader.
+
+**2. Two-layer blend materials lose their second layer (not fixable in glTF).** Most of dust2's wall weathering is not decals at all: it is painted with 2-layer blend materials - a clean layer 1 and a weathered layer 2, mixed by a blend-modulation mask and per-vertex weights.
+
+Measured in `data/de_dust2_textured.glb`:
+- **67 of 706 materials** carry a `g_tLayer2Color` that differs from `g_tColor`; every one of them also carries a `g_tBlendModulation` mask.
+- Those materials cover **169,866 of 4,408,276 triangles (3.9%)** - and they are the big wall and ground surfaces.
+- The glTF material for each keeps **one** `baseColorTexture`: layer 1. The second layer, the mask, and the blend weights are all absent.
+- **0 of 760 primitives carry `COLOR_0`**, so the per-vertex blend weight is not in the export either.
+
+This is a limit of the exchange format, not of our pipeline: glTF's PBR material has one base-colour texture, and VRF writes layer 1 into it.
+Nothing in the viewer can reconstruct the blend, because two of the three inputs never left the map.
+Recovering it would mean writing our own world-mesh exporter that preserves both layers plus the vertex stream, and a custom two-layer shader in the viewer.
+
+Also confirmed while looking: dust2 has **no** overlay/decal entities and **no** `m_infoOverlays` array - its single world node holds 138 scene objects and 379 aggregates, and VRF exports both. Nothing is being dropped at the node level.
+
+### Round: spawn domes and a search scope (2026-08-30)
+
+**Spawns are half-buried domes in team colours**, gold for T and blue for CT, with a ring on the floor around each. Solid geometry, so a click anywhere on one hits it.
+A dome sunk to its equator reads as an object occupying the spawn from any angle, where the flat disc it replaced vanished whenever the camera got near ground level.
+
+*Trap:* three.js builds a hemisphere around **+Y**, and this world is Z-up - unrotated, every dome pointed sideways with half of it buried edge-on, which renders as a hollow shell with its near face missing. `geometry.rotateX(Math.PI / 2)` puts the cap up. Translucent domes also sorted badly against the floor they are sunk into, so they are opaque.
+
+**Hovering a spawn on the 2D map now says what clicking it will do** ("T spawn - Select this spawn as your throw position"), and while a position is being picked the spawn wins over a lineup marker sitting on top of it: the question on screen is "which spot", and the markers answer a different one. The 3D view has no equivalent hover - it has no cursor, only a fly camera.
+
+**Search is now a scope, not a button**: `Search: Spot | Map | Spawns`.
+Spawns restricts the sweep to stand spots within 256u of any spawn point (`scope: "spawns"` on the query, validated, cache-keyed, QueryVersion 20) - the answer to "what can I throw as the round starts".
+Measured on mirage: **2,165 origins instead of 24,477, a cold solve in 6.4s instead of ~46s**, and every one of the 47 results is within 256u of a spawn.
+
+*Self-inflicted, again:* replacing `drawSpawnSet` with a block-bounded edit swallowed `nearestProLanding`, `nearestSpawn` and `SPAWN_GRAB_PX`, which sat between it and the next anchor. The only symptom was a silent `ReferenceError` inside a pointermove handler - no visible error, just a tooltip that never appeared. Third time this shape of mistake has cost a debugging round: bound the replacement by the exact text being replaced, not by "from here to the next landmark".
+
+### Round: honest difficulty, a ruler in real degrees, exact solves (2026-08-30)
+
+#### "Reliable" was being handed to moving throws with nothing to aim at
+
+Reported: a run-jump in the middle of nowhere labelled Reliable.
+The old rule was additive - stability plus a pin bonus - so a forgiving run-jump outscored a fussy standing throw, which is backwards: the run-jump asks for a direction, a jump timed against a moving body, and a release, all before the aim counts.
+
+Movement and aim reference are **ceilings** now, not bonuses:
+- no run-jump, jump or crouch-jump can be "Easy";
+- nothing aimed at a blank wall can be better than "Needs practice", and nothing aimed at open sky better than "Tricky";
+- a run-jump with no pin and no edge at the crosshair caps at "Needs practice" however forgiving the numbers are.
+
+Measured over the same 400-lineup mirage solve: run-jumps went from **26 Reliable / 0 Easy** to **14 Reliable / 0 Easy**, with the 12 demoted ones being exactly the case reported - reticle-only reference, no pin. The overall spread stays useful: 76 Easy / 70 Reliable / 167 Needs practice / 87 Tricky.
+
+#### The aim ruler was not in degrees
+
+The lineup ruler placed a tick every 8% of the viewport and labelled them 1..5. At this camera that is **6.84 degrees per division**, so the tick labelled "2" sat 13.7 degrees below the crosshair - which is why comparing it against the game put the same reference on the wrong part of a window.
+
+Ticks are now placed at `tan(angle) / (2 · tan(halfFov))`, rebuilt whenever the viewport changes shape, with fine marks every degree to 5 and coarse ones every five to 40. Verified in the browser: 1 degree lands at 1.16% of viewport height from centre, 5 at 5.83%, 10 at 11.76%.
+
+**The camera FOV was already right** and is not the cause: `verticalFovFromDesired(90)` is 73.74 degrees vertical, which is exactly CS2's Hor+ value for `fov_desired 90`, held constant while the aspect widens the horizontal.
+
+The other half of a UI-vs-game comparison is stance: the preview camera sits at the eye height the lineup is *aimed* from (crouched for crouch and crouch-jump throws), so standing in game to compare a crouched lineup puts the view 18u higher and moves every reference on screen. "Go to" now says which stance it dropped you into.
+
+#### Pasted positions kept their precision, and stopped losing an eye height
+
+A pasted `setpos -2168.963867 1042.062622 103.573364;setang ...` was displayed back as `setpos -2169 1042 40`.
+The stored value was always exact - only the box rounded - but a position copied back out was up to half a unit off per axis, which this tool answers questions at 1u.
+Boxes show two decimals now, trailing zeros trimmed.
+
+The worse half: `getpos` prints the **eye** position and `setpos` takes the **feet**, so the eye height is subtracted on paste. A position copied out of this tool is already feet, and pasting it back subtracted another 64u every round trip.
+The `setang` half of a `getpos` line is the tell for which of the two a paste is, and that is what decides now. Verified: a getpos pastes to feet once, and the value round-trips unchanged.
+
+#### Search scopes: exact, spot, map, spawns
+
+**Spawns** now means the spawn positions themselves, not the walkable ground around them: **33 origins instead of 2,165 on mirage, 0.9s**, and every result's feet are on a spawn. Asking "what can I throw from where the round puts me" should not answer with a spot a few steps away.
+
+**Exact** is new: one origin, the position given, with no lattice neighbour and no pinned variant substituted for it - what someone needs when they paste their own `getpos`, take the angles back into the game, and throw from where they are standing.
+
+Two bugs found building it, both worth remembering:
+- The exact origin was handed to the sweep raw, while every other origin goes through `SnapToGround`. Adding the snap then broke it the other way: `SnapToGround` re-derives a floor from the voxel grid, and on this spot it landed somewhere the player hull does not fit, so a position that had just produced three lineups produced none. `ExactOriginOnly` now takes the given position when a player can already stand there and only snaps input that floats.
+- The zeros persisted after the fix because the failed answers were **cached**. Same trap as ever: the result cache is keyed on the query, not on the solver, so any solver change needs the affected entries dropped (or QueryVersion bumped) before the next measurement means anything.
+
+#### Wording
+
+"Seen while throwing" is the tag no longer - it reads **Exposed**, with the full sentence on hover.
+
+#### Search buttons latched off after the first solve
+
+`b.disabled = b.disabled || state.busy || state.awaitingLevel` is a latch: nothing ever cleared it, so the first solve (or floor chooser) turned **Map and Spawns off for the rest of the session** - a target set and no way to search from it.
+Only Exact and Spot escaped, because a separate line reassigned theirs each pass.
+Reproduced by driving `state.busy` through one `syncControls` and watching the flags stay set; the whole row is recomputed from scratch now.
+
+#### The floor chooser asked an unanswerable question on top of the Xbox
+
+Two separate causes, both fixed:
+
+**It collected floors beside the click, not only under it.** `NavGroundLevels` also took any nav area within `NavGapReach` (96u) horizontally - which is right for origin generation, where that reach bridges the slivers between adjacent quads, and wrong for "what is stacked under this pixel". `/api/levels` asks strictly now, falling back to the proximity rule only when nothing contains the point at all.
+
+**And the nav mesh really does draw de_dust2's mid as one polygon that runs under the Xbox**, so a click on the crate is genuinely inside two areas: the crate top at z=36 and the floor sealed beneath it at z=-123. Nothing can be thrown into the second one. Levels with less than 64u of clear space above them (a smoke is 64u across) are dropped, unless that would leave none.
+
+Verified: the column at (-350, 1450) now offers only `Middle (36)`, while genuinely stacked columns keep both floors - `Catwalk (36) / Catwalk (-125)`, `UpperTunnel (36) / UpperTunnel (-109)`.
+
+The chooser's own wording now says which way to lean: "A click from above cannot say which one you meant. If you did not mean something underneath, pick the highest."
+
+### Heights: every position we hand out was low (2026-08-30)
+
+Reported three ways: a 2D click showing `setpos x y 0` where the 3D click showed `-29`, and a spawn-search lineup that teleported the player into the ground.
+Ground truth arrived as 15 real de_dust2 T-spawn positions read out of the game, which turned this from an argument into a measurement.
+
+**A 2D click carried no height at all.** The level chooser resolved one only when a column had two or more floors; with one floor it returned without setting anything, so the target kept a 2-element position and the box fell back to `0` - which as a `setpos` is the bottom of the world. Both the target and a 2D-picked throw spot now resolve their floor before either goes near a box.
+
+**Nav heights are not floor heights.** A nav level is the average of a polygon's corners; at de_dust2's T spawn that sits 5u under the real floor. `/api/levels` and the spawn origins now snap onto the collision surface.
+
+**A spawn entity is a marker, not a foot position.** They float - 55u above the floor at T spawn - so solving from one puts the feet in mid-air and the setpos underground. Spawn origins are dropped onto the floor and hull-checked, with the validated stand spot within 32u as a fallback (half of de_dust2's spawns sit on stepped ground where a 32u hull placed on the exact surface point straddles two heights and fails the fit test). Origins went from 14 of 30 usable to 28 of 30.
+
+**And the floor under a point is not the floor under a player.** A single downward ray answers for one point; a player is a 32x32 box resting on the highest thing beneath it. Against the 15 real positions, a centre-only drop was low by **1.18u at the median and 5.27u at worst** - enough to bury whoever pasted it. `LineupSolver.FloorUnderHull` samples the hull's four corners and its centre and takes the highest:
+
+| | centre ray | hull footprint |
+|---|---|---|
+| median error vs the game | -1.18u | **-0.03u** |
+| more than 0.5u below the floor | 9 of 15 | 3 of 15 |
+
+The residual 0.03u is Valve's own feet-above-floor gap, so the copied `setpos` now adds it back: a 2D click at T spawn S2 emits `setpos -367 -808 83.74` against the game's own `83.744965`, **0.005u apart**.
+
+(The three remaining outliers are positions where the reference value has the player standing on something - one is the raw spawn entity height, 30u up in the air.)
+
+**On `setpos_exact`**: it would not have helped. It skips any engine-side adjustment, so it is the less forgiving of the two - `setpos` was never the problem, the height we gave it was. `setpos_player <idx> x y z <drop to ground range>` is the one with an explicit ground snap, worth switching to only if a position is ever uncertain again.
+
+#### Ruler calibration: the reference pose
+
+For comparing our aiming ruler against CS2's own grenade overlay 1:1, the pose is de_dust2's T spawn S2, crouched:
+
+```
+setpos_exact -367.000000 -808.000000 83.744965
+setang_exact 0.000000 90.077942 0.000000
+```
+
+Crouched eye lands at z = 129.785 (feet + 46.04), pitch 0, yaw 90.078, vertical FOV 73.74.
+The viewer reproduces it exactly with `__view3d().flyTo({ feet: [-367, -808, 83.744965], type: "Crouch", pitchDeg: 0, yawDeg: 90.077942 })`.
+
+Compare the **vertical** ticks: those follow the vertical FOV alone and are unaffected by the browser stage not being a true 16:9. Compare fractions of viewport height rather than pixels - the stage is 1040px tall inside a 1080p window.
+
+To crouch without holding a key (which collides with the screenshot bind): type `+duck` in the console, close it, take the shot, then `-duck`.
+
+#### CS2's grenade crosshair is 10 degrees per mark - measured, and matched
+
+An in-game 1920x1080 capture of the grenade overlay settled both open questions at once.
+Finding every green tick in the image and converting its pixel offset to an angle (assuming CS2's 73.74 degree vertical FOV) gives:
+
+| mark | 1x | 2x | 3x | 4x | 5x |
+|---|---|---|---|---|---|
+| measured | 10.05 | 20.12 | 30.07 | 40.09 | 50.07 |
+
+and vertically 9.97 / 20.05 / 30.01. Every one within 0.12 degrees of a multiple of ten.
+
+Two conclusions:
+- **CS2's marks are exactly 10 degrees apart.** The ruler now draws those as its long marks, named the way the game names them (`1x`..`5x` across, `1y`..`3y` up), with the 1-5 degree marks kept between them at lower contrast for reading a lineup off this screen.
+- **Our camera projection is right.** Those angles only come out round if the projection matches CS2's; a wrong FOV would have skewed them. That is an independent confirmation of `verticalFovFromDesired(90)` = 73.74 vertical, from the game itself rather than from a spec.
+
+Verified by measuring our own render the same way, normalised for the 3D stage being 1039px tall inside a 1080px window: **1y 9.99 vs 9.94, 2y 19.99 vs 20.01, 3y 30.01 vs 29.92** - within 0.08 degrees of the game across the board.
+
+The comparison shot does not need matching camera angles, incidentally: the tick geometry depends only on the FOV, so any in-game capture of the overlay calibrates it.
+
+#### Wall and corner spots went invisible, not missing
+
+Reported as "not seeing any corner lineups anymore".
+The solver never stopped finding them: the same de_mirage target returns **28 pinned lineups of 400** (27 wall, 1 corner), exactly as before, and 12 of them rank onto page one.
+
+What went was the badge. The card redesign folded the pin into the hover with the rest of the execution detail, on the reasoning that a pin is *why* a throw is easy and belongs in prose - which lost the one class of lineup people go looking for by name.
+It is a tag again, in words rather than jargon: **Wall spot** / **Corner spot**, with the reason on hover ("walk into it and your feet are exactly right every time, with nothing to measure").
+
+A **Stand spot** filter joins the others - any / wall or corner only / corner only - because "I want the ones I can walk into" is a way people shop for a lineup, not just a property of one.
+
+(The single corner lineup on that target lands 44.5u out, so the default 32u precision filter hides it. That is the filter doing its job, not a second bug.)
+
+**Lesson worth keeping:** research about what a *new* player needs is not a licence to remove what an experienced one navigates by. The pin belonged in both places - the prose for someone learning what it means, the tag for someone hunting for it.

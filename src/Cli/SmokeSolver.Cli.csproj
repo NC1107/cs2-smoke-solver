@@ -11,6 +11,10 @@
          ValveResourceFormat expects so the transitive graph cannot drift. -->
     <PackageReference Include="SkiaSharp" Version="3.119.2" />
     <PackageReference Include="SkiaSharp.NativeAssets.Linux.NoDependencies" Version="3.119.2" />
+    <!-- Used directly by MeshDiff to read back VRF's raw GLB render-mesh
+         export (the actual GLB parser is this library, not bespoke code);
+         pinned to the version ValveResourceFormat's own exporter expects. -->
+    <PackageReference Include="SharpGLTF.Core" Version="1.0.6" />
   </ItemGroup>
 
   <PropertyGroup>

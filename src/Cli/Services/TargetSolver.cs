@@ -1,29 +1,8 @@
-using System.Globalization;
 using System.Numerics;
-using System.Text;
-using System.Text.Json;
 using SmokeSolver.Extraction;
 using SmokeSolver.Sim;
 using SmokeSolver.Solver;
-using static SmokeSolver.Cli.CliParsing;
 using static SmokeSolver.Cli.MeshSetup;
-using static SmokeSolver.Cli.LineupApi;
-using static SmokeSolver.Cli.TargetSolver;
-using static SmokeSolver.Cli.ExtractCommand;
-using static SmokeSolver.Cli.InfoCommand;
-using static SmokeSolver.Cli.SmokeCommand;
-using static SmokeSolver.Cli.SightlineCommand;
-using static SmokeSolver.Cli.SolveCommand;
-using static SmokeSolver.Cli.GroundCommand;
-using static SmokeSolver.Cli.LineupsCommand;
-using static SmokeSolver.Cli.ViewerDataCommand;
-using static SmokeSolver.Cli.ServeCommand;
-using static SmokeSolver.Cli.ThrowCommand;
-using static SmokeSolver.Cli.CalibrateCommand;
-using static SmokeSolver.Cli.ValidateCommand;
-using static SmokeSolver.Cli.ExportGltfCommand;
-using static SmokeSolver.Cli.BestLineupCommand;
-using static SmokeSolver.Cli.PointLineupCommand;
 
 namespace SmokeSolver.Cli;
 
@@ -34,6 +13,47 @@ public static class TargetSolver
     // (46) and stand (64). Lifting off the floor is what stops a landing point
     // from being occluded by its own ground.
     const float DefenderEyeHeight = 55f;
+
+    // How far under a spawn entity to look for the floor it spawns players onto.
+    const float SpawnDrop = 512f;
+
+    // A spawn entity is a marker, not a foot position: on de_dust2's T spawn it
+    // floats 55u over the floor, and solving from it puts every lineup's feet
+    // in mid-air and its setpos inside the ground. Dropped straight down onto
+    // the surface the player will land on.
+    static Vector3 DropToFloor(TriangleCollider collider, Vector3 p) =>
+        LineupSolver.FloorUnderHull(collider, p, GrenadeTrajectory.StandEyeHeight, SpawnDrop) is { } z
+            ? new Vector3(p.X, p.Y, z)
+            : p;
+
+    // How far from a spawn to accept a validated stand spot in its place.
+    const float SpawnSnap = 32f;
+
+    // The precomputed stand spot nearest a point, within a radius. That set
+    // knows about crates and ledges the nav mesh omits, and every entry has
+    // already been checked against the real player hull.
+    static StandSpotOrigin? NearestStandSpot(IReadOnlyList<StandSpotOrigin>? standSpots, Vector2 at, float radius)
+    {
+        if (standSpots is not { Count: > 0 })
+        {
+            return null;
+        }
+        StandSpotOrigin? best = null;
+        var bestD = radius;
+        foreach (var s in standSpots)
+        {
+            var d = Vector2.Distance(new Vector2(s.Feet.X, s.Feet.Y), at);
+            if (d < bestD)
+            {
+                bestD = d;
+                best = s;
+            }
+        }
+        return best;
+    }
+
+    static float? NearestStandSpotZ(IReadOnlyList<StandSpotOrigin>? standSpots, Vector2 at) =>
+        NearestStandSpot(standSpots, at, 24f)?.Feet.Z;
 
     public static TargetSolve SolveForTarget(
         CollisionMesh mesh,
@@ -52,7 +72,34 @@ public static class TargetSolver
         bool fineScan = false,
         IReadOnlyList<ThrowType>? types = null,
         IReadOnlyList<float>? strengths = null,
-        IReadOnlyList<StandSpotOrigin>? standSpots = null)
+        IReadOnlyList<StandSpotOrigin>? standSpots = null,
+        // Collision groups this solve treats as gone (shot-out glass, opened
+        // doors). The voxel grid gets this through attributeFilter; the exact
+        // collider is built from the interactAs-based grenade filter instead,
+        // so it has to be told separately or verification would keep bouncing
+        // throws off glass the sweep already flew through.
+        IReadOnlyList<string>? brokenGroups = null,
+        // Where a round starts, so a map-wide sweep grows outward from the
+        // spawns as well as from the target instead of reaching the spots a
+        // player actually stands on last.
+        IReadOnlyList<Vector3>? spawnFronts = null,
+        // Every spawn point, and how far from one a throw spot may be, when the
+        // search is scoped to spawns: the answer to "what can I throw as the
+        // round starts" rather than "what can be thrown from anywhere". Zero
+        // radius means the whole map, as before.
+        IReadOnlyList<Vector3>? spawnPoints = null,
+        float spawnScopeRadius = 0f,
+        // Only the spawn positions themselves are throwable from, rather than
+        // the walkable area around them.
+        bool spawnsOnly = false,
+        // One origin and nothing else: the exact spot the player is standing
+        // on, with no lattice neighbour and no pinned variant substituted for
+        // it. What someone gets when they paste their own getpos and expect the
+        // answer to work from where they are actually standing.
+        bool exactOrigin = false,
+        // The height the caller means, when it has one - a solved throw spot or
+        // a pasted setpos both carry their own.
+        float? originZ = null)
     {
         var hasOrigin = originClickOpt.HasValue;
         var originClick = originClickOpt ?? new Vector2(target.X, target.Y);
@@ -129,7 +176,9 @@ public static class TargetSolver
 
         // Built before the origins, not after: they are snapped onto its triangles
         // so that the spot a lineup names is the spot the player actually stands on.
-        var collider = BuildGrenadeCollider(mesh, min, max);
+        var collider = brokenGroups is { Count: > 0 }
+            ? BuildGrenadeColliderExcluding(mesh, min, max, brokenGroups)
+            : BuildGrenadeCollider(mesh, min, max);
         // Origins model where the PLAYER can be, so their ground snap and wall
         // pin probes run against player-solid geometry: the clip brushes along
         // railings and ledges are exactly what pins feet in game, and they are
@@ -156,20 +205,96 @@ public static class TargetSolver
                     collider: playerCollider)
                 .Where(o => Vector2.Distance(new Vector2(o.X, o.Y), originClick) <= originReach)
                 .ToList();
-        if (standSpots is { Count: > 0 })
+        var crouchOnlyExtras = new List<Vector3>();
+        // Spawn-scoped search. "Only" means literally the spawn positions: the
+        // question is what a player can throw from where the round puts them,
+        // standing still, so the answer must not quietly include the walkable
+        // ground around each one.
+        if (spawnsOnly && spawnPoints is { Count: > 0 })
+        {
+            // Snapped onto the collision surface and hull-checked, not dropped
+            // to the nav height. A nav level is the average of a polygon's
+            // corners and at de_dust2's T spawn it sits 5u UNDER the real floor
+            // - and that height goes out as a setpos, which teleports the
+            // player into the ground.
+            origins = [];
+            foreach (var raw in spawnPoints)
+            {
+                if (raw.Z < min.Z - SpawnDrop || raw.Z > max.Z)
+                {
+                    continue;
+                }
+                var dropped = DropToFloor(playerCollider, raw);
+                var exact = LineupSolver.ExactOriginOnly(grid, playerCollider, dropped, crouchOnlyExtras);
+                if (exact.Count > 0)
+                {
+                    origins.AddRange(exact);
+                    continue;
+                }
+                // Half of de_dust2's spawns land on stepped ground, where a
+                // 32u hull placed on the exact surface point straddles two
+                // heights and fails the fit test - the player is pushed clear
+                // of it in game, and a spawn nobody can be solved from is a
+                // worse answer than a spawn resolved to the validated stand
+                // spot beside it. The lattice is 16u, so "beside it" is a step.
+                if (NearestStandSpot(standSpots, new Vector2(dropped.X, dropped.Y), SpawnSnap) is { } spot)
+                {
+                    origins.Add(spot.Feet);
+                    if (spot.Crouched)
+                    {
+                        crouchOnlyExtras.Add(spot.Feet);
+                    }
+                }
+            }
+        }
+        else if (spawnScopeRadius > 0f && spawnPoints is { Count: > 0 })
+        {
+            origins = origins
+                .Where(o => spawnPoints.Any(p =>
+                    Vector2.Distance(new Vector2(o.X, o.Y), new Vector2(p.X, p.Y)) <= spawnScopeRadius))
+                .ToList();
+        }
+
+        // Origins added below the stand-spot lattice (pins, the exact click)
+        // report their own stance, so a wedge under a vent or soffit joins the
+        // crouch-only filter alongside the precomputed crouch-only spots.
+        // An exact solve has one origin by definition: pinned variants move the
+        // feet to a wall, and the lattice offers a neighbour up to half a step
+        // away - both of which answer a different question from "from here".
+        if (exactOrigin && hasOrigin)
+        {
+            // Height comes from the caller when it has one, then from the
+            // precomputed stand spots, and only then from the nav mesh. The nav
+            // mesh is bot-pathing data that omits crates and ledges, so asking
+            // it about a spot on top of one answers with the floor below and
+            // the "exact" solve is run from the wrong height entirely - which
+            // is how a spot that had just produced three lineups returned none.
+            var exactZ = originZ
+                ?? NearestStandSpotZ(standSpots, originClick)
+                ?? LineupSolver.NavGroundZ(corners, originClick.X, originClick.Y)
+                ?? target.Z;
+            // Snapped and hull-checked exactly as every other origin is. Handing
+            // the sweep a raw point that floats a unit off the floor releases
+            // the grenade from the wrong height, and every throw from it fails
+            // verification - a spot that had just produced three lineups
+            // returned none.
+            origins = LineupSolver.ExactOriginOnly(
+                grid, playerCollider, new Vector3(originClick.X, originClick.Y, exactZ), crouchOnlyExtras);
+        }
+        else if (standSpots is { Count: > 0 } && !spawnsOnly)
         {
             // Walking into a wall is still the most reproducible way to place
             // feet exactly, and the lattice never lands on those spots.
-            LineupSolver.AddPinnedOriginsTo(grid, playerCollider, origins);
+            LineupSolver.AddPinnedOriginsTo(grid, playerCollider, origins, crouchOnlyExtras);
         }
-        if (hasOrigin)
+        if (hasOrigin && !exactOrigin)
         {
             // The click names the player's exact intended stand spot. Test it
             // literally (and its pinned variants) - the lattice's nearest sample
             // can sit half a grid step away, and for a tight known lineup that
             // is the difference between finding it and not.
             var clickZ = LineupSolver.NavGroundZ(corners, originClick.X, originClick.Y) ?? target.Z;
-            origins.AddRange(LineupSolver.ExactOriginWithPins(grid, playerCollider, new Vector3(originClick.X, originClick.Y, clickZ)));
+            origins.AddRange(LineupSolver.ExactOriginWithPins(grid, playerCollider, new Vector3(originClick.X, originClick.Y, clickZ), crouchOnlyExtras));
         }
 
         // Map-wide searches use a coarser angle grid to stay interactive; a near-click
@@ -193,9 +318,15 @@ public static class TargetSolver
             // of collapsing them into one 64u representative.
             dedupeBucketSize: hasOrigin ? 8f : 64f,
             origins: origins, strengths: strengths, constants: constants, coverage: coverage, onOrigin: onOrigin,
-            collider: collider);
+            collider: collider, target: target,
+            // Ordering only, and only for a map-wide sweep: a one-spot probe
+            // has a single origin, so there is no order to grow.
+            extraFronts: hasOrigin ? null : spawnFronts);
         onPhase?.Invoke("verify", candidates.Count);
-        var verified = LineupSolver.VerifyExact(grid, collider, zoneCrossings, candidates, minStability: minStability, constants: constants, onCandidate: onCandidate, aimTarget: target);
+        // The cell zone above is the sweep's recall filter; the promise the
+        // user actually made ("within `tolerance` of this point") is enforced
+        // here, against each candidate's exact rest point.
+        var verified = LineupSolver.VerifyExact(grid, collider, zoneCrossings, candidates, minStability: minStability, constants: constants, onCandidate: onCandidate, aimTarget: target, tolerance: tolerance);
 
         // Some stand spots only fit the player crouched - under a vent, a stair
         // soffit, a low balcony. A standing or run-jump throw from one of those
@@ -203,11 +334,14 @@ public static class TargetSolver
         // standing eye height, 18u above where the grenade would really leave
         // the hand. Keep only the crouched variants there. 0.5% of spots
         // overall, but 4% on cs_office, which is full of them.
-        if (standSpots is { Count: > 0 })
         {
             static (int, int, int) Key(Vector3 v) =>
                 ((int)MathF.Round(v.X), (int)MathF.Round(v.Y), (int)MathF.Round(v.Z));
-            var crouchOnly = standSpots.Where(s => s.Crouched).Select(s => Key(s.Feet)).ToHashSet();
+            var crouchOnly = crouchOnlyExtras.Select(Key).ToHashSet();
+            if (standSpots is { Count: > 0 })
+            {
+                crouchOnly.UnionWith(standSpots.Where(s => s.Crouched).Select(s => Key(s.Feet)));
+            }
             if (crouchOnly.Count > 0)
             {
                 verified = [.. verified.Where(l =>
