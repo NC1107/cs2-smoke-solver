@@ -1508,3 +1508,20 @@ Phase split for the record: prepare 0.40s, sweep 17.76s, verify 0.86s - consiste
 ### New finding, not in the original 38
 
 `viewer/validation.html` loaded the SAME `app.css` as `index.html` under a different cache token (`?v=56` against `?v=81`) and its own script at `?v=3`. The frontend pass checked `index.html` and `viewer/js/**` and reported the tokens consistent, which they were - within that set. Any cache holding those entries served the validation page a stylesheet from many revisions ago, and no app.css change would ever have busted it. All 25 tokens across `viewer/` are now on one value.
+
+### Deployed 2026-09-02, and the bug the deploy verification caught
+
+Shipped as 47abaa1 (the audit fixes) and cd4af7a (the follow-up below). Prod runs the new image, `health=healthy`, attribute filter correct, viewer on ?v=81, 16 maps, solves returning 400 lineups.
+
+**The first rate limiter could be bypassed completely, and only testing production found it.**
+`ClientKey` keyed on X-Forwarded-For's first entry. Cloudflare and traefik APPEND to that header rather than replacing it, so a value the client sends arrives at the front of the chain and the limiter reads attacker-controlled text as the caller's identity - a fresh header per request meant a fresh bucket per request.
+Measured against the freshly deployed prod: the real bucket was exhausted to 429, then two forged X-Forwarded-For values both went straight through with 400.
+Fixed by keying on CF-Connecting-IP, which Cloudflare writes on every proxied request and overwrites whatever the client sent, falling back to the socket address with no Cloudflare in front (which shares one bucket across a proxy - over-limiting, the safe direction).
+Re-verified after deploying the fix: bucket exhausted, then 7 of 8 distinct forged X-Forwarded-For values refused with 429 (the one pass being a legitimately refilled token at 10 per 30s). Cloudflare additionally rejects a forged CF-Connecting-IP with its own 403 before the request ever reaches the origin.
+`ClientKeyTests` pins all four cases. 202 tests.
+
+The lesson worth keeping: a rate limiter's identity source has to be a header the client cannot write. "The proxy sets X-Forwarded-For" is true and useless - the question is whether the proxy REPLACES it, and both hops here append. This was reasoned about correctly-sounding and was wrong; the ten-second experiment against the real deployment settled it.
+
+Rollback point if needed: the image running before this deploy was
+`ghcr.io/nc1107/cs2-smoke-solver@sha256:68acc290f7752494efafa641d44132b206376e46c5fbab26a0470bb7cc071662`
+(set `SMOKESOLVER_IMAGE` to it in prod's .env and `docker compose up -d`).
