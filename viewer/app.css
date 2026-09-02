@@ -929,10 +929,31 @@
   .ref.reticle { color: var(--target); border: 1px solid var(--target); }
   .ref.flat { color: var(--muted); border: var(--border); }
   .ref.edge { color: var(--accent); border: 1px solid var(--accent); }
+  /* Feet placed by geometry: walking into it is exact and free, so it reads as
+     the recommendation it is. */
+  /* The ranking number, on the row. Muted and tabular so it reads as a
+     reference figure being compared down the column, not as a headline. */
+  .lu-score {
+    margin-left: auto;
+    color: var(--muted);
+    font-variant-numeric: tabular-nums;
+    font-size: 0.9em;
+  }
   .ref.pin { color: var(--click-left); border: 1px solid var(--click-left); font-weight: 600; }
+  /* Near a wall but NOT touching. Deliberately not the pin colour: the whole
+     point is that this one looks like a wall spot on the map and is not one,
+     so it must not borrow the pin badge's confidence. */
+  .ref.nearwall { color: var(--ref-sky-ink); border: 1px dashed var(--ref-sky-ink); }
   /* Warning red: the throw spot is exposed to the area it smokes. Distinct from
      the aim-ref badges (blue/orange/gold) so it reads as a caution, not a tier. */
   .ref.exposed { color: var(--danger); border: 1px solid var(--danger); font-weight: 700; }
+  /* Aim-reference quality, the thing that decides whether a lineup is copyable
+     in a round. Filled accent for the best case so it reads as a recommendation
+     rather than one more neutral tag; muted and dashed for the weak ones so
+     they are legible as a caveat without shouting like the exposed warning. */
+  .ref.tightref { color: var(--bg); background: var(--accent); border: 1px solid var(--accent); font-weight: 700; }
+  .ref.weakref { color: var(--muted); border: 1px dashed var(--muted); }
+  .ref.nolandmark { color: var(--ref-sky-ink); border: 1px dashed var(--ref-sky-ink); font-weight: 600; }
   /* Filled gold pill so a spawn-throwable lineup stands out at a glance. */
   .ref.spawn { color: #1a1a1a; background: #d9a441; border: 1px solid #d9a441; font-weight: 700; }
   .ref.fav { color: var(--target); border: none; padding: 0; }

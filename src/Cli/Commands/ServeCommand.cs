@@ -251,6 +251,69 @@ public static class ServeCommand
         // on a map like de_nuke can mean the roof, the bombsite under it, or the
         // site below that; the solver has to pick one (the lowest) and the
         // viewer uses this to let the user say which they meant instead.
+        // The volume a smoke placed here would actually fill, so the question
+        // "does this target cover what I want it to" can be answered before
+        // solving anything. Not a circle: a smoke against a wall does not
+        // cover the far side of it, and one in a stairwell climbs instead of
+        // spreading - which is exactly what the flood fill already models and
+        // a radius drawn on a map cannot say.
+        app.MapGet("/api/smoke", (HttpContext context, string? map, float x, float y, float z, bool full = false) =>
+        {
+            if (map == null || !maps.TryGetValue(map, out var entry))
+            {
+                return ApiError(StatusCodes.Status404NotFound, UnknownMapError);
+            }
+            if (!float.IsFinite(x) || !float.IsFinite(y) || !float.IsFinite(z))
+            {
+                return ApiError(StatusCodes.Status400BadRequest, "non-finite coordinate");
+            }
+            var mesh = entry.Mesh;
+            var (meshMin, meshMax) = mesh.ComputeBounds();
+            var at = new Vector3(x, y, z);
+            // Outside the map there is nothing to flood through, and the grid
+            // build below would be a large allocation for an empty answer.
+            if (at.X < meshMin.X - 512 || at.X > meshMax.X + 512 ||
+                at.Y < meshMin.Y - 512 || at.Y > meshMax.Y + 512)
+            {
+                return ApiError(StatusCodes.Status400BadRequest, "point is outside the map bounds");
+            }
+            var p = full ? SmokeParams.FullReach : SmokeParams.Coverage;
+            const float voxel = 16f;
+            // Only the region one bloom can reach, padded so the fill is never
+            // clipped by the edge of its own grid.
+            var pad = new Vector3(p.MaxRadius + 4 * voxel);
+            var grid = VoxelGrid.Build(mesh, voxel, at - pad, at + pad, entry.AttributeFilter);
+            var (gx, gy, gz) = grid.CellOf(at);
+            if (!grid.InBounds(gx, gy, gz))
+            {
+                return ApiError(StatusCodes.Status400BadRequest, "point is outside the map bounds");
+            }
+            var smoke = SmokeFloodFill.Fill(grid, at, p);
+            // Flat triples rather than nested arrays: a full bloom is a few
+            // thousand cells and the nesting roughly doubles the payload for
+            // nothing the client needs.
+            var cells = new float[smoke.Cells.Length * 3];
+            for (var i = 0; i < smoke.Cells.Length; i++)
+            {
+                var c = grid.CellCenter(smoke.Cells[i]);
+                cells[i * 3] = c.X;
+                cells[i * 3 + 1] = c.Y;
+                cells[i * 3 + 2] = c.Z;
+            }
+            context.Response.Headers.ETag = entry.BuildETag;
+            context.Response.Headers.CacheControl = "public, max-age=604800";
+            return Results.Json(new
+            {
+                voxel = grid.VoxelSize,
+                radius = p.MaxRadius,
+                // What the same throw would reach at the grenade's documented
+                // maximum, so the viewer can draw the optimistic edge faintly
+                // around the one it is promising.
+                fullRadius = SmokeParams.GameRadius,
+                cells,
+            });
+        }).RequireRateLimiting(PhysicsPolicy);
+
         app.MapGet("/api/levels", (string? map, float x, float y) =>
         {
             if (map == null || !maps.TryGetValue(map, out var entry))

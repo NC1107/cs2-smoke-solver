@@ -192,7 +192,8 @@ public static class LineupApi
         var stability = total == 0 ? 0f : (float)hits / total;
 
         var aim = AimReference.Analyze(collider, feet, type, pitchDeg, yawDeg);
-        var pin = LineupSolver.PositionPin(playerCollider, feet);
+        var stance = LineupSolver.PositionStance(playerCollider, feet);
+        var pin = stance.Pin;
 
         var json = new StringBuilder("{\"points\":[");
         for (var i = 0; i < ticks.Count; i++)
@@ -216,12 +217,19 @@ public static class LineupApi
             stability,
             scatter,
             pin = pin switch { 2 => "corner", 1 => "wall", _ => (string?)null },
+            // How far the shoulder sits from the nearest wall when it is NOT
+            // touching one. Null while pinned (the gap is zero by definition)
+            // and null out in the open, where no wall is close enough to line
+            // your feet up against at all.
+            wallGap = stance.WallGap,
             aimRef = new
             {
                 tier = aim.Tier,
                 sky = aim.SkyFraction,
                 edgeDeg = float.IsFinite(aim.NearestSilhouetteDeg) ? (float?)aim.NearestSilhouetteDeg : null,
                 reticleDeg = float.IsFinite(aim.NearestReticleDeg) ? (float?)aim.NearestReticleDeg : null,
+                band = aim.Band,
+                marginDeg = aim.MarginDeg,
             },
             console = SetposCommand(feet, pitchDeg, yawDeg),
             lost = result.Lost,
@@ -463,7 +471,7 @@ public static class LineupApi
             : "all";
         // Bump when solver or sim behavior changes: cached answers from older code
         // must never be replayed as current results.
-        const int QueryVersion = 22;
+        const int QueryVersion = 26;
         // meshVersion is the content-hashed mesh identity (not just the game
         // build), so re-extracting a map - e.g. dropping the Retake tape - forces
         // a re-solve instead of replaying results computed against the old mesh.
@@ -559,9 +567,10 @@ public static class LineupApi
         var aimRefs = solve.Lineups.ToDictionary(
             l => l,
             l => AimReference.Analyze(solve.Collider, l.Feet, l.Type, l.PitchDeg, l.YawDeg));
-        var pins = solve.Lineups.ToDictionary(
+        var stances = solve.Lineups.ToDictionary(
             l => l,
-            l => LineupSolver.PositionPin(solve.PlayerCollider, l.Feet));
+            l => LineupSolver.PositionStance(solve.PlayerCollider, l.Feet));
+        var pins = stances.ToDictionary(kv => kv.Key, kv => kv.Value.Pin);
         // A probe means "I stand HERE": closeness to the click outranks
         // everything but a usable aim reference, in 32u bands so a pinned spot
         // still wins among near-equals. A map-wide sweep has no "here", so
@@ -584,9 +593,25 @@ public static class LineupApi
         // while throwing is the danger the smoke is meant to deny, so a
         // concealed throw is preferred. Still shown, never dropped - it is a
         // penalty, not a filter.
+        // Reproducibility leads the ranking, and it is graded rather than a
+        // yes/no. Previously the only aim criterion here was "is this a sky
+        // shot", so a silhouette sitting 18 degrees off the crosshair ranked
+        // level with one the crosshair is already on - the measured median for
+        // more than half of all results. "The maths works" outranked "you can
+        // aim this", which is backwards for a tool people use mid-round.
+        //
+        // Position chaos folds into the same number rather than sorting after
+        // it: a throw whose rest point jumps hundreds of units when the feet
+        // shift a single movement tick is not reproducible either, whatever it
+        // has to aim at, so it drops the equivalent of three bands and can
+        // never sit at the top of the list.
+        const float ChaosScatter = 16f;
+        const int ChaosBands = 3;
+        int Reproducibility(Lineup l) =>
+            aimRefs[l].Band + (l.RestScatter > ChaosScatter ? ChaosBands : 0);
+
         var bySky = solve.Lineups
-            .OrderBy(l => aimRefs[l].IsSkyShot ? 1 : 0)
-            .ThenBy(l => l.RestScatter > 16f ? 1 : 0)
+            .OrderBy(Reproducibility)
             .ThenBy(l => l.DirectLos ? 1 : 0);
         var ranked = (originClick is { } click
                 ? bySky.ThenBy(l => (int)(Vector2.Distance(new Vector2(l.Feet.X, l.Feet.Y), click) / 32f)).ThenByDescending(l => pins[l]).ThenBy(l => (int)l.Type)
@@ -633,6 +658,7 @@ public static class LineupApi
                 // precisely it is aimed.
                 scatter = l.RestScatter,
                 pin = pins[l] switch { 2 => "corner", 1 => "wall", _ => (string?)null },
+                wallGap = stances[l].WallGap,
                 // Clear sightline from the throw spot to the landing - the
                 // viewer badges it so the player knows the spot is exposed and
                 // why it ranks below concealed throws.
@@ -643,6 +669,12 @@ public static class LineupApi
                     sky = aimRefs[l].SkyFraction,
                     edgeDeg = float.IsFinite(aimRefs[l].NearestSilhouetteDeg) ? (float?)aimRefs[l].NearestSilhouetteDeg : null,
                     reticleDeg = float.IsFinite(aimRefs[l].NearestReticleDeg) ? (float?)aimRefs[l].NearestReticleDeg : null,
+                    // How reproducible the aim is (0 best, 6 nothing to aim at)
+                    // and the margin it was judged on, so the viewer can rank,
+                    // filter and describe by the same measure the server ranked
+                    // by rather than re-deriving it from the tier alone.
+                    band = aimRefs[l].Band,
+                    marginDeg = aimRefs[l].MarginDeg,
                 },
                 console = SetposCommand(l.Feet, l.PitchDeg, l.YawDeg),
             }),

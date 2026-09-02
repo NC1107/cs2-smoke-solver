@@ -3,10 +3,10 @@
 // wraps init/sync. Raycast picks route through callbacks that main.js
 // registers, so this module never imports the orchestrator.
 
-import { state, filtered, clickClass, lowMemoryDevice, SMOKE_BLOOM_RADIUS, EYE_HEIGHT_BY_TYPE, DEFAULT_EYE_HEIGHT } from "./state.js?v=81";
-import { fetchMesh } from "./api.js?v=81";
-import { createFlyCamera } from "./flycam.js?v=81";
-import { loadScript, ensureTexturedScene, currentTexturedScene, disposeSceneContents, disposeTexturedScene } from "./textured-scene.js?v=81";
+import { state, filtered, clickClass, lowMemoryDevice, SMOKE_BLOOM_RADIUS, EYE_HEIGHT_BY_TYPE, DEFAULT_EYE_HEIGHT } from "./state.js?v=86";
+import { fetchMesh } from "./api.js?v=86";
+import { createFlyCamera } from "./flycam.js?v=86";
+import { loadScript, ensureTexturedScene, currentTexturedScene, disposeSceneContents, disposeTexturedScene } from "./textured-scene.js?v=86";
 
 const stage3d = state.stage3d;
 // Warning tint for phantom blockers (grenade-clips, physics-clips, glass) - a
@@ -94,6 +94,7 @@ export function teardown3d() {
   three = null;
   threePromise = null;
   meshdiffCloud = null;
+  disposeCoverageAssets();
   disposeTexturedScene();
 }
 
@@ -680,6 +681,9 @@ function clearGroup(group) {
     // and disposing only the top object would leak every surface under it.
     child.traverse(o => {
       if (o.userData.ownedGeometry) { o.geometry.dispose(); }
+      // An InstancedMesh owns a GPU instance buffer even when its geometry and
+      // material are shared, so it has to be disposed or every rebuild leaks one.
+      if (o.userData.ownedInstance) { o.dispose(); }
     });
     group.remove(child);
   }
@@ -836,6 +840,62 @@ function addSpawns3d(pts, material, edgeMaterial, team) {
   }
 }
 
+// The flooded smoke volume as one instanced box per filled cell. Instanced
+// because a full bloom is a couple of thousand cells and that many separate
+// meshes costs a draw call each.
+//
+// The geometry and material are built once and shared: sync3d rebuilds the
+// target group on every selection, filter and hover change, so allocating a
+// BoxGeometry and a material per call would leak a GPU buffer each time. Only
+// the InstancedMesh is per-call, and it carries a flag telling clearGroup to
+// dispose its instance buffer without touching the shared pair.
+let coverageGeo = null;
+let coverageMat = null;
+
+function coverageAssets(voxel) {
+  if (coverageGeo?.userData?.voxel !== voxel) {
+    coverageGeo?.dispose();
+    coverageGeo = new THREE.BoxGeometry(voxel, voxel, voxel);
+    coverageGeo.userData.voxel = voxel;
+  }
+  coverageMat ??= new THREE.MeshBasicMaterial({
+    color: new THREE.Color(state.colors.target ?? "#7fd4ff"),
+    transparent: true,
+    // Low per-cell alpha: the cells overlap along the view ray, so anything
+    // higher reads as a solid block rather than smoke.
+    opacity: 0.1,
+    depthWrite: false,
+  });
+  return { geo: coverageGeo, mat: coverageMat };
+}
+
+export function disposeCoverageAssets() {
+  coverageGeo?.dispose();
+  coverageMat?.dispose();
+  coverageGeo = null;
+  coverageMat = null;
+}
+
+function addCoverage3d(group, cov) {
+  const { cells, voxel } = cov;
+  const count = cells.length / 3;
+  if (!count) {
+    return;
+  }
+  const { geo, mat } = coverageAssets(voxel);
+  const mesh = new THREE.InstancedMesh(geo, mat, count);
+  const m = new THREE.Matrix4();
+  for (let i = 0; i < count; i++) {
+    m.makeTranslation(cells[i * 3], cells[i * 3 + 1], cells[i * 3 + 2]);
+    mesh.setMatrixAt(i, m);
+  }
+  mesh.instanceMatrix.needsUpdate = true;
+  mesh.renderOrder = 2;
+  // Shared geometry and material, per-call instance buffer.
+  mesh.userData.ownedInstance = true;
+  group.add(mesh);
+}
+
 export function sync3d() {
   if (!three || stage3d.style.display === "none") {
     return;
@@ -857,11 +917,19 @@ export function sync3d() {
     const dot = new THREE.Mesh(targetGeo, targetMat);
     dot.position.set(target[0], target[1], tz + 6);
     targetGroup.add(dot);
-    const zoneRadius = state.filters.precision.value ? Number.parseFloat(state.filters.precision.value) : SMOKE_BLOOM_RADIUS;
-    const bloom = new THREE.Mesh(bloomGeo, bloomMat);
-    bloom.scale.setScalar(zoneRadius);
-    bloom.position.copy(dot.position);
-    targetGroup.add(bloom);
+    // The idealised sphere is only honest in the open. Once the real flooded
+    // volume is available it replaces the sphere rather than sitting inside it:
+    // two overlapping blobs claiming different coverage is worse than either.
+    const cov = state.coverageOn ? state.coverage : null;
+    if (cov?.cells?.length) {
+      addCoverage3d(targetGroup, cov);
+    } else {
+      const zoneRadius = state.filters.precision.value ? Number.parseFloat(state.filters.precision.value) : SMOKE_BLOOM_RADIUS;
+      const bloom = new THREE.Mesh(bloomGeo, bloomMat);
+      bloom.scale.setScalar(zoneRadius);
+      bloom.position.copy(dot.position);
+      targetGroup.add(bloom);
+    }
   }
   if (state.result) {
     for (const l of filtered()) {

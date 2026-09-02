@@ -3,8 +3,8 @@
 // actions (set target, select, run query) go through callbacks that main.js
 // registers, so this module never imports the orchestrator.
 
-import { cacheBust } from "./api.js?v=81";
-import { isDrag, state, filtered, clickWords, movementWords, clickClass, esc, SMOKE_BLOOM_RADIUS, PICK_RADIUS_PX, TOUCH_PICK_RADIUS_PX, HEAT_CELL } from "./state.js?v=81";
+import { cacheBust } from "./api.js?v=86";
+import { isDrag, state, filtered, clickWords, movementWords, clickClass, esc, SMOKE_BLOOM_RADIUS, PICK_RADIUS_PX, TOUCH_PICK_RADIUS_PX, HEAT_CELL } from "./state.js?v=86";
 
 const canvas = state.canvas;
 const ctx = canvas.getContext("2d");
@@ -156,6 +156,30 @@ export function draw() {
       placed.push([px - hw, py - hh, px + hw, py + hh]);
       ctx.fillText(label, px, py);
     }
+  }
+  // The real bloom, under the target ring: the volume a smoke landing here
+  // would actually fill, flooded through the map's own geometry. Drawn first so
+  // the target ring and markers stay on top of it. Squares rather than a blob
+  // because they are what the model is - one per 16u cell the smoke reaches -
+  // and pretending otherwise would imply a precision the voxel grid does not
+  // have. Collapsed to a footprint: the 2D view has no height to show.
+  if (state.coverageOn && state.coverage?.cells?.length) {
+    const { cells, voxel } = state.coverage;
+    const seen = new Set();
+    ctx.fillStyle = colors.target;
+    ctx.globalAlpha = 0.16;
+    ctx.beginPath();
+    for (let i = 0; i < cells.length; i += 3) {
+      const cx = cells[i], cy = cells[i + 1];
+      const key = `${cx},${cy}`;
+      if (seen.has(key)) {
+        continue;
+      }
+      seen.add(key);
+      ctx.rect(cx - voxel / 2, -cy - voxel / 2, voxel, voxel);
+    }
+    ctx.fill();
+    ctx.globalAlpha = 1;
   }
   if (state.target) {
     // Circle = the landing zone in play: the precision filter radius when

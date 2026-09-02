@@ -3,8 +3,8 @@
 // wired via wireCopyButtons on document.body). Setting a target and
 // selecting a lineup route through the callbacks main.js registers.
 
-import { state, filtered, clickShort, clickClass, esc, skyAngle, proMatched, scoreBreakdown,
-  movementWords, clickWords, aimWords, difficultyWords } from "./state.js?v=81";
+import { state, filtered, clickShort, clickClass, esc, skyAngle, proMatched, scoreBreakdown, referenceBand, referenceFallback,
+  movementWords, clickWords, aimWords, difficultyWords } from "./state.js?v=86";
 
 const statusEl = state.statusEl;
 const PAGE_SIZE = 50;
@@ -70,14 +70,47 @@ function lineupSummaryHtml(l) {
   // performing one; the instructions matter after the choice, not during it.
   const how = [esc(l.how), l.aimRef ? `Aim at ${esc(aimWords(l))}.` : ""]
     .filter(Boolean).join(" · ");
+  // The number the list is ordered by, on the row rather than two clicks deep
+  // inside an opened card. A ranking whose score you cannot see while comparing
+  // rows is asking to be taken on trust; the full working stays in the card.
+  const target = state.result?.target;
+  const score = target ? scoreBreakdown(l, target).total : null;
+  const scoreChip = score === null ? "" :
+    `<span class="lu-score" title="Match score: how this lineup ranks against the others for this target. Open the row for the full working - what each part added or took away">${score}</span>`;
   const head =
     `<span class="lu-head" title="${how}">` +
     `<b class="${clickClass(l.strength)}">${clickWords(l.strength)}</b>` +
     `<span class="lu-move">${movementWords(l)}</span>` +
     `<span class="diff ${diff.cls}" title="how forgiving this throw is of your feet and your crosshair">${diff.word}</span>` +
+    scoreChip +
     `</span>`;
 
-  // At most one line of tags, and only facts a player would change their pick
+  // Where the feet go, and how exactly. This is the position half of "can you
+// reproduce it", and it used to be a yes/no: a spot wedged in a corner and one
+// standing a shoulder's width off the same wall both showed nothing but their
+// coordinates, so there was no way to tell whether you should walk into the
+// wall or judge a gap. Walking into geometry costs nothing and is exact;
+// judging a gap in a round is not something people can do.
+function stanceTag(l) {
+  if (l.pin === "corner") {
+    return `<span class="ref pin" title="Wedged into a corner: walk into both walls and your feet are exactly right every time, with nothing to measure and nothing to remember">Wedge into corner</span>`;
+  }
+  if (l.pin === "wall") {
+    return `<span class="ref pin" title="Flush against the wall: walk into it and your feet are exactly right every time, with nothing to measure">Walk into wall</span>`;
+  }
+  const gap = l.wallGap;
+  if (typeof gap !== "number") {
+    // Open ground is the common case - badging it would put a tag on nearly
+    // every row and say nothing. No stance tag already means "nothing places
+    // your feet for you".
+    return "";
+  }
+  // Close enough that people will read the marker as "against that wall" and
+  // be wrong about it - which is exactly the case worth naming.
+  return `<span class="ref nearwall" title="Near a wall but NOT touching it - your shoulder sits about ${gap.toFixed(0)} units short. Walking into the wall puts you in the wrong place; this spot has to come from the pasted position, not from the wall">${gap.toFixed(0)}u off the wall</span>`;
+}
+
+// At most one line of tags, and only facts a player would change their pick
   // over: pros use this spot, or you can be seen throwing it. "exposed" was
   // our word for the second one and had to be learned.
   const tags = [
@@ -85,10 +118,15 @@ function lineupSummaryHtml(l) {
     // the feet, so only the aim is left to get right. It was folded into the
     // hover with the rest of the execution detail, and a whole class of lineup
     // people hunt for became invisible.
-    l.pin === "corner" ? `<span class="ref pin" title="wedged into a corner - walk into it and your feet are exactly right every time, with nothing to measure">Corner spot</span>`
-      : l.pin === "wall" ? `<span class="ref pin" title="against a wall - walk into it and your feet are exactly right every time, with nothing to measure">Wall spot</span>` : "",
+    stanceTag(l),
     proMatched(l) ? `<span class="ref pro" title="pros throw this exact smoke from this spot in real matches - same spot, and it lands where this one lands">Pro pick</span>` : "",
     l.exposed ? `<span class="ref exposed" title="Seen while throwing: a clear line of sight from this spot to where the smoke lands, so anyone holding that area sees you throw it">Exposed</span>` : "",
+    // The other half of ranking by reproducibility: when a throw survives to
+    // the list with a weak reference (or none), say so on the row instead of
+    // letting it borrow the visual weight of a lineup you can actually copy.
+    referenceBand(l) >= 6 ? `<span class="ref nolandmark" title="Nothing under the crosshair or the reticle arms to line this up against - the angle can only be set in practice mode, not eyeballed in a round">No landmark</span>`
+      : referenceBand(l) >= 4 ? `<span class="ref weakref" title="The only thing to line up against sits far out on the reticle arm. CS2's grenade-crosshair ticks are 10° apart, so this is over a tick off centre and hard to judge under pressure">Loose aim</span>`
+      : referenceBand(l) === 0 ? `<span class="ref tightref" title="A silhouette sits within 1° of the crosshair - put the crosshair on it and the aim is set, with nothing to estimate">On the crosshair</span>` : "",
     detailed && l._spawn ? `<span class="ref spawn" title="throwable from a player spawn">spawn</span>` : "",
     l._favorite ? `<span class="ref fav" title="saved">★</span>` : "",
   ].filter(Boolean).join("");
@@ -147,8 +185,14 @@ export function resultStatusText(shown) {
   const scope = state.solveScope
     ? ` · solved for ${[state.solveScope.types?.[0], state.solveScope.strengths?.map(clickShort)?.[0]].filter(Boolean).join(" + ")} only`
     : "";
+  // The reference filter is the one that ships pre-set to something opinionated,
+  // so when it would have emptied the list and we showed everything anyway, say
+  // that plainly - otherwise the badges look like the filter simply failed.
+  const fallback = referenceFallback.active
+    ? " · nothing here has a reference near the crosshair, showing all of them"
+    : "";
   return `${shown} lineups - click a marker or use the list` +
-    (hidden > 0 ? ` · ${hidden} hidden by filters` : "") + scope;
+    (hidden > 0 ? ` · ${hidden} hidden by filters` : "") + fallback + scope;
 }
 
 export function renderLineups() {

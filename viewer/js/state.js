@@ -82,6 +82,12 @@ export const state = {
   // on every map until someone runs meshdiff for it - the toggle stays hidden.
   meshdiff: null,
   meshdiffOn: false,
+  // The smoke volume a target would actually fill: { voxel, radius, fullRadius,
+  // cells: [x,y,z,...] } for the current target, and whether it is drawn. The
+  // question it answers is "does the spot I picked cover what I want", which is
+  // asked while placing the target, before any lineup exists.
+  coverage: null,
+  coverageOn: false,
   hovered: -1,
   canvas: document.getElementById("map"),
   stage3d: document.getElementById("stage3d"),
@@ -95,8 +101,14 @@ export const state = {
     sky: document.getElementById("f-sky"),
     precision: document.getElementById("f-precision"),
     pin: document.getElementById("f-pin"),
+    reference: document.getElementById("f-reference"),
   },
 };
+
+// True when the reference filter hid everything and we showed the list anyway.
+// A solver that hides its only answer is worse than one that qualifies it, so
+// the fallback is deliberate - but the panel has to be able to say it happened.
+export const referenceFallback = { active: false };
 
 // How far above the horizon a throw aims, in degrees. Source's pitch is
 // negative upwards (setang), so this is the sign flip.
@@ -160,7 +172,7 @@ function filterSignature() {
     result.single ? 1 : 0,
     removed,
     f.type.value, f.strength.value, f.bounces.value, f.flight.value,
-    f.stability.value, f.sky.value, f.precision.value, f.pin.value,
+    f.stability.value, f.sky.value, f.precision.value, f.pin.value, f.reference.value,
   ].join("|");
 }
 
@@ -173,11 +185,12 @@ function computeFiltered() {
   // hide the very throw the link was meant to open (a sky shot under the
   // default sky filter, say).
   if (state.result.single) {
+    referenceFallback.active = false;
     return state.result.lineups.filter(l => !l._removed);
   }
   const filters = state.filters;
   const t = state.result.target;
-  return state.result.lineups.filter(l =>
+  const passesRest = l =>
     !l._removed &&
     (!filters.type.value || l.type === filters.type.value) &&
     (!filters.strength.value || Math.abs(l.strength - Number.parseFloat(filters.strength.value)) < 0.01) &&
@@ -186,8 +199,28 @@ function computeFiltered() {
     (!filters.stability.value || l.stability >= Number.parseFloat(filters.stability.value)) &&
     (!filters.sky.value || skyAllowed(l, filters.sky.value)) &&
     (!filters.precision.value || Math.hypot(l.rest[0] - t[0], l.rest[1] - t[1]) <= Number.parseFloat(filters.precision.value)) &&
-    (!filters.pin.value || (filters.pin.value === "corner" ? l.pin === "corner" : !!l.pin)));
+    (!filters.pin.value || (filters.pin.value === "corner" ? l.pin === "corner" : !!l.pin));
+
+  const rest = state.result.lineups.filter(passesRest);
+  const band = filters.reference.value;
+  if (band === "") {
+    referenceFallback.active = false;
+    return rest;
+  }
+  // "Never hide, always label": when a target genuinely has nothing that clears
+  // the bar, showing none of its answers is worse than showing them qualified.
+  // The rows badge themselves by band, so a weak reference is visibly weak
+  // rather than silently absent.
+  const withReference = rest.filter(l => referenceBand(l) <= Number.parseInt(band));
+  referenceFallback.active = rest.length > 0 && withReference.length === 0;
+  return referenceFallback.active ? rest : withReference;
 }
+
+// How reproducible a lineup's aim is: 0 best, 6 nothing to line up against.
+// The server ranks by this same number, so the filter and the order agree.
+// Older cached results predate the field; treat those as "has some landmark"
+// rather than dropping them.
+export const referenceBand = l => l.aimRef?.band ?? (l.aimRef?.tier === "sky" ? 6 : 3);
 
 // A lineup's stable identity across solves: the throw itself, quantised to
 // what a player could reproduce. Feet to the unit and angles to a tenth of a
@@ -384,15 +417,25 @@ export const clickWords = s => s >= 0.99 ? "Left click" : s >= 0.49 ? "Both butt
 // What the player aims at, in words. The tier already encodes the answer; the
 // degree figure it was shown with ("1.5 deg") is meaningless without reading
 // the solver that produced it.
+// What you actually put the crosshair on, said in terms of how far off centre
+// it sits. The tier alone called a silhouette on the crosshair and one 18
+// degrees out the same thing; CS2's grenade crosshair ticks are 10 degrees
+// apart, so that difference is most of what decides whether a lineup is
+// copyable in a round.
 export const aimWords = l => {
   if (!l.aimRef) {
     return "";
   }
-  switch (l.aimRef.tier) {
-    case "sky": return "open sky, nothing to line up against";
-    case "reticle": return "off to the side, on the reticle line";
-    case "flat": return "a blank wall, hard to line up exactly";
-    default: return "a wall or corner edge";
+  const deg = l.aimRef.marginDeg;
+  const off = typeof deg === "number" && deg >= 0.5 ? ` about ${Math.round(deg)}° off centre` : "";
+  switch (referenceBand(l)) {
+    case 0: return "an edge right under the crosshair";
+    case 1: return `an edge just off the crosshair${off}`;
+    case 2: return `an edge near the crosshair${off}`;
+    case 3: return `an edge out on the reticle arm${off}`;
+    case 4: return `an edge far out on the reticle${off} - hard to judge`;
+    case 5: return "a blank wall, nothing exact to line up on";
+    default: return "open sky, nothing to line up against";
   }
 };
 
@@ -416,11 +459,19 @@ export const aimWords = l => {
 const DIFFICULTY = ["Tricky", "Needs practice", "Reliable", "Easy"];
 
 // The best a throw of this kind can be called, whatever else is in its favour.
+// Leaving the ground is the dividing line. A stationary throw is your crosshair
+// and a click; anything airborne adds a jump to time and a release to hit while
+// the body is moving, and stability - which only measures how far the crosshair
+// may drift - says nothing about landing that. So an airborne throw is never
+// "Easy", and it does not get "Reliable" for free either: it has to earn that
+// back below by placing the feet against geometry and putting a real edge under
+// the crosshair.
 const MOVEMENT_CEILING = {
   Stand: 3, Crouch: 3,
-  JumpThrow: 2, CrouchJumpThrow: 2,
-  RunJumpThrow: 2,
+  JumpThrow: 1, CrouchJumpThrow: 1,
+  RunJumpThrow: 1,
 };
+const AIRBORNE = new Set(["JumpThrow", "CrouchJumpThrow", "RunJumpThrow"]);
 // And the best an aim with this much to line up against can be called.
 const AIM_CEILING = { edge: 3, reticle: 3, flat: 1, sky: 0 };
 
@@ -435,16 +486,15 @@ export const difficultyWords = l => {
   if (pinned) {
     rank += 1;
   }
-  rank = Math.min(rank, MOVEMENT_CEILING[l.type] ?? 3, AIM_CEILING[tier] ?? 1);
-  // A moving throw with nothing under the crosshair is the case this ranking
-  // exists to be honest about: nothing pins the feet, the body is in the air,
-  // and the only reference is a silhouette off to one side that a reticle arm
-  // happens to cross. However forgiving the numbers are, that is something to
-  // practise, not something to rely on. An edge at the crosshair, or a wall
-  // that places the feet, earns the run-jump its way back up.
-  if (l.type === "RunJumpThrow" && !pinned && tier !== "edge") {
-    rank = Math.min(rank, 1);
-  }
+  // An airborne throw earns its way back to "Reliable" - never past it - by
+  // removing the two things that actually go wrong: the feet, placed by walking
+  // into geometry rather than judged, and the aim, set on an edge sitting on the
+  // crosshair rather than estimated off a reticle arm. With both, the jump is
+  // the only variable left. With either missing it stays something to practise,
+  // however forgiving the stability number looks.
+  const airborne = AIRBORNE.has(l.type);
+  const earnedBack = airborne && pinned && referenceBand(l) <= 1 ? 2 : (MOVEMENT_CEILING[l.type] ?? 3);
+  rank = Math.min(rank, earnedBack, AIM_CEILING[tier] ?? 1);
   const word = DIFFICULTY[Math.max(0, Math.min(DIFFICULTY.length - 1, rank))];
   return { word, cls: word === "Easy" ? "easy" : word === "Reliable" ? "reliable"
     : word === "Tricky" ? "tricky" : "practice" };

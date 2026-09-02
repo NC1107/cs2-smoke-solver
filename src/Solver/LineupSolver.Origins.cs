@@ -515,21 +515,62 @@ public static partial class LineupSolver
     /// How geometry pins a lineup's stand spot: 2 = wedged into a corner (both
     /// axes fixed by walking in), 1 = pressed against one wall, 0 = open ground.
     /// </summary>
-    public static int PositionPin(TriangleCollider collider, Vector3 feet)
+    public static int PositionPin(TriangleCollider collider, Vector3 feet) =>
+        PositionStance(collider, feet).Pin;
+
+    // How far past touching a wall may sit and still count as pressed against
+    // it: the hull face is not perfectly flush with a plane it slid along.
+    const float TouchSlack = 1.5f;
+
+    // How far out a non-touching wall is still worth reporting. Measured on a
+    // real dust2 solve: 110 of 400 lineups sat within 40u of a wall, but past
+    // about a hull half-width (16u) the gap is plainly visible and nobody would
+    // mistake the spot for a wall press. Inside it they would - and did. So the
+    // range is the confusable band, not everything the probe can see.
+    const float WallNoticeRange = 16f;
+
+    /// <summary>
+    /// The stand spot's relationship to nearby walls: the pin class, and the
+    /// gap from the player's shoulder to the nearest wall when it is not
+    /// touching one.
+    /// </summary>
+    // The pin alone answers "is this against something" and drops the number
+    // that decides whether a human can reproduce it. Walking into a wall costs
+    // nothing and puts your feet exactly right; standing "about eight units
+    // off" that same wall is a measurement you cannot make in a round, and the
+    // two were indistinguishable - both a spot flush against the wall and one a
+    // shoulder's width off it came back as open ground with no wall mentioned
+    // at all. The gap travels with the pin so the viewer can say which it is.
+    public static (int Pin, float? WallGap) PositionStance(TriangleCollider collider, Vector3 feet)
     {
         var feetXy = new Vector2(feet.X, feet.Y);
         // The hull face sits along the wall normal, not along the probe ray,
         // so "touching" is a point-to-plane distance, not a ray length.
-        var touching = NearbyWallPlanes(collider, feet, PlayerHalfWidth + 8f)
-            .Where(w => Vector2.Dot(w.N, feetXy) - w.PlaneD <= PlayerHalfWidth + 1.5f)
-            .Select(w => w.N)
-            .ToList();
+        var walls = NearbyWallPlanes(collider, feet, PlayerHalfWidth + WallNoticeRange);
+        var touching = new List<Vector2>();
+        float? nearestGap = null;
+        foreach (var wall in walls)
+        {
+            // Distance from the hull's FACE to the wall plane, not from its
+            // centre. Signed: negative means the hull would have to be inside
+            // the wall to stand here, which is not a position a player can
+            // reach and so is never a lineup we should hand out.
+            var gap = Vector2.Dot(wall.N, feetXy) - wall.PlaneD - PlayerHalfWidth;
+            if (nearestGap is not { } best || gap < best)
+            {
+                nearestGap = gap;
+            }
+            if (gap <= TouchSlack)
+            {
+                touching.Add(wall.N);
+            }
+        }
         if (touching.Count >= 2 &&
             touching.Any(a => touching.Any(b => a != b && MathF.Abs(Vector2.Dot(a, b)) < 0.7f)))
         {
-            return 2;
+            return (2, nearestGap);
         }
-        return touching.Count > 0 ? 1 : 0;
+        return (touching.Count > 0 ? 1 : 0, nearestGap);
     }
 
     /// <summary>

@@ -1525,3 +1525,64 @@ The lesson worth keeping: a rate limiter's identity source has to be a header th
 Rollback point if needed: the image running before this deploy was
 `ghcr.io/nc1107/cs2-smoke-solver@sha256:68acc290f7752494efafa641d44132b206376e46c5fbab26a0470bb7cc071662`
 (set `SMOKESOLVER_IMAGE` to it in prod's .env and `docker compose up -d`).
+
+
+## Stage 1 of Reproducible First, plus smoke coverage (2026-09-02)
+
+### Ranking and describing by reproducibility
+
+`AimReferenceInfo.Band` grades the aim margin that was previously computed and discarded: 0 = a silhouette within 1 degree of the crosshair, 1 = within 3, 2 = within 6, 3/4 = out on a reticle arm, 5 = a blank wall, 6 = nothing at all.
+That band now leads the ranking, with position chaos folded in as a three-band penalty rather than a separate sort key - a throw whose rest point jumps when the feet move one tick is not reproducible either.
+Measured on a de_dust2 map-wide solve: the top 20 became entirely band 0, led by a corner-wedged throw with a 0-degree reference.
+
+A `reference` filter ships defaulted to "on the crosshair" (band <= 1, edge within 3 degrees) and shows 163 of 400 on that solve.
+When it would empty the list entirely the viewer shows everything anyway and says so - hiding a target's only answer is worse than qualifying it.
+
+### Wall contact was binary and misleading
+
+`PositionPin` measured a gap and threw it away, so "wedged in a corner", "flush against a wall" and "a shoulder's width off that same wall" were indistinguishable - the third showed nothing at all.
+Measured: **110 of 400 lineups sat within 40u of a wall without touching it, every one of them displaying no wall information whatsoever.**
+`PositionStance` now returns the signed gap from the hull FACE to the nearest wall plane, and the row says which of three things it is: `Wedge into corner`, `Walk into wall`, or `12u off the wall`.
+The notice range is 16u (a hull half-width) because past that the gap is plainly visible and a badge would be noise; open ground stays untagged since it is 323 of 400.
+
+**Hull validity, checked rather than assumed.** Pinned origins run through `StandSpots.StanceAt`, a real 32x32x72 box test.
+Measured across 400 lineups: worst overlap 0.57u against a 0.5u skin allowance - 0.07u of plane-fitting noise on a 16u grid, not a player pushed into geometry - and zero pins claiming contact they do not have.
+`StanceGeometryTests` pins both failure directions.
+
+### Difficulty stopped calling movement throws reliable
+
+Airborne throws (jump, crouch-jump, run-jump) reached "Reliable" on stability alone, which measures only how far the crosshair may drift and says nothing about landing a jump.
+They now cap at "Needs practice" and must EARN "Reliable" with pinned feet AND an edge within 3 degrees - the two things that actually go wrong.
+Airborne throws reading Reliable or Easy: **96 -> 6**, all six pinned with a tight reference. "Easy" is now stationary-only.
+The match score also moved onto every row; it had been two clicks deep behind a "Show details" disclosure inside an opened card, so the list could not be compared on the number it was ordered by.
+
+### Smoke coverage overlay
+
+New `/api/smoke`, and a Coverage tile in the overlays row: the volume a smoke landing on the current target would actually fill, flooded through the map's real geometry by the same `SmokeFloodFill` the solver uses.
+Not a circle - a circle promises coverage through walls, which is the one thing the overlay exists to check.
+
+Researched rather than guessed.
+The real grenade is 288 units across (144 radius), shipped in CS:GO and kept in CS2; a third-party CS2 reimplementation confirms Valve's own approach is a voxel grid plus a "limited flood fill" that fills spaces and adapts to geometry without leaking - the same shape as this model.
+Those numbers are now named constants (`SmokeParams.GameRadius`, `CoverageRadius`, `GameCellBudget`) instead of a bare 144 in the viewer and a 165 in the solver.
+
+The overlay draws at **128u, about 89% of the real reach**, so the area shown is area to count on rather than the grenade's absolute best case; the response also carries `fullRadius` so the optimistic edge can be drawn later.
+
+Verified geometry-awareness on four de_dust2 positions - the model reproduces real smoke behaviour:
+
+| position | cells | footprint | height |
+|---|---|---|---|
+| A site (open) | 1750 | 50,432 | 240u |
+| mid (open) | 1443 | 46,848 | 240u |
+| T spawn (low ceiling) | 1227 | 43,776 | 160u |
+| long doors (confined) | 889 | 31,744 | **272u** |
+
+Confined space gives the smallest footprint and the tallest column - the smoke climbs instead of spreading, exactly as it does in game.
+
+**Left as it was, deliberately:** `SmokeParams.UncalibratedDefault` is still 165u.
+Its own name says nobody has validated it, it drives the older CLI solve paths (`solve`, `lineups`, `LandingZoneSolver`), and retuning a physics constant underneath them as a side effect of a UI feature is how silent accuracy regressions happen.
+It wants its own calibration pass against the game.
+
+**Verification gap worth naming:** the 2D overlay was confirmed to paint by measuring the canvas before and after toggling; the 3D instanced volume was verified by code path, module parse and leak-safe disposal only, not seen rendered.
+The headless browser became unusable partway through - 87 orphaned Chrome processes from repeated sessions had taken the machine to 22 of 30 GB.
+
+QueryVersion 22 -> 26 across this work. Viewer token 81 -> 86. 210 tests, 18 new.

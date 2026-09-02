@@ -30,6 +30,37 @@ public readonly record struct AimReferenceInfo(
         : float.IsFinite(NearestSilhouetteDeg) ? "edge"
         : SkyFraction > 0.95f ? "reticle"
         : "flat";
+
+    /// <summary>
+    /// How reproducible this aim is, low is better, for ranking and filtering.
+    /// </summary>
+    // The tier alone throws away the thing that decides whether a player can
+    // actually copy the shot: HOW FAR the landmark sits from the crosshair. A
+    // silhouette 1 degree off centre and one 18 degrees away are both "edge",
+    // and they are not the same answer - CS2's grenade crosshair puts its ticks
+    // 10 degrees apart, so 18 degrees is nearly two ticks out, which is a
+    // rumour of a reference rather than one you can line up against.
+    //
+    // Banded rather than continuous so that a hair's difference in margin never
+    // outranks a pinned stance or an easier throw; within a band the other
+    // criteria still decide.
+    public int Band =>
+        IsSkyShot ? 6
+        : float.IsFinite(NearestSilhouetteDeg)
+            ? NearestSilhouetteDeg <= 1f ? 0
+            : NearestSilhouetteDeg <= 3f ? 1
+            : 2
+        : SkyFraction > 0.95f
+            ? float.IsFinite(NearestReticleDeg) && NearestReticleDeg <= 15f ? 3 : 4
+        : 5;
+
+    // The margin the band was judged on, for display: the silhouette angle for
+    // an edge shot, the reticle-arm angle for a reticle one, and nothing at all
+    // where there is no landmark to measure to.
+    public float? MarginDeg =>
+        float.IsFinite(NearestSilhouetteDeg) ? NearestSilhouetteDeg
+        : float.IsFinite(NearestReticleDeg) ? NearestReticleDeg
+        : null;
 }
 
 public static class AimReference

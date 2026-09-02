@@ -2,18 +2,18 @@
 // import the feature modules; they call back into the orchestrators defined
 // here (setTarget, select, runQuery) via the init*/set*Callbacks hooks.
 
-import { state, filtered, esc, lowMemoryDevice, loadFavorites, setFavorite, isFavorite, DEFAULT_EYE_HEIGHT, EYE_HEIGHT_BY_TYPE } from "./state.js?v=81";
-import { loadMapList, loadMapData, runQuery as postLineupQuery, fetchTrajectory, fetchLineupOne, fetchSlack, fetchSpawns, fetchProSmokes, fetchMeshDiff, meshDiffExists, fetchLevels } from "./api.js?v=81";
-import { loadRadar, readColors, recolorRadar, draw, scheduleDraw, resize, resetView, initMap2d, screenOf } from "./map2d.js?v=81";
-import { ensure3d, resetEnsure3d, teardown3d, current3d, sync3d, syncProgress3d, syncMeshDiff3d, set3dCallbacks, applyTheme3d, verticalFovFromDesired } from "./view3d.js?v=81";
-import { resetEnsureTexturedScene } from "./textured-scene.js?v=81";
-import { capturePreview } from "./preview.js?v=81";
+import { state, filtered, esc, lowMemoryDevice, loadFavorites, setFavorite, isFavorite, DEFAULT_EYE_HEIGHT, EYE_HEIGHT_BY_TYPE } from "./state.js?v=86";
+import { loadMapList, loadMapData, runQuery as postLineupQuery, fetchTrajectory, fetchLineupOne, fetchSlack, fetchSpawns, fetchProSmokes, fetchMeshDiff, meshDiffExists, fetchLevels, fetchSmokeCoverage} from "./api.js?v=86";
+import { loadRadar, readColors, recolorRadar, draw, scheduleDraw, resize, resetView, initMap2d, screenOf } from "./map2d.js?v=86";
+import { ensure3d, resetEnsure3d, teardown3d, current3d, sync3d, syncProgress3d, syncMeshDiff3d, set3dCallbacks, applyTheme3d, verticalFovFromDesired } from "./view3d.js?v=86";
+import { resetEnsureTexturedScene } from "./textured-scene.js?v=86";
+import { capturePreview } from "./preview.js?v=86";
 // Every local import across viewer/js carries the SAME ?v= token, bumped
 // together on any change. The HTML is served no-cache, so a fresh load pulls
 // main.js?v=N, which pulls every module at ?v=N - the whole graph refreshes as
 // one consistent set past Cloudflare's 4h JS cache, with no duplicate module
 // instances (which a partial versioning would cause). Bump the token everywhere.
-import { renderLineups, initPanel, revealSelected, resultStatusText } from "./panel.js?v=81";
+import { renderLineups, initPanel, revealSelected, resultStatusText } from "./panel.js?v=86";
 
 (async () => {
   // Map switching means a failed load is no longer necessarily terminal (the
@@ -77,6 +77,7 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
   const reticleBtns = [...document.querySelectorAll("#reticle-seg .tile")];
   const collisionBtn = overlayBtn("collision");
   const meshdiffBtn = overlayBtn("meshdiff");
+  const coverageBtn = overlayBtn("coverage");
   const rulerEl = document.getElementById("lineup-ruler");
   const clearBtn = document.getElementById("clear");
   const panelEl = document.getElementById("panel");
@@ -127,6 +128,46 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
     syncControls();
     current3d()?.focusStage();
   });
+  // Coverage is asked about while PLACING the target, so it reloads whenever the
+  // target moves rather than only when the button is pressed - a stale bloom
+  // sitting under a target you have since moved is worse than none.
+  async function loadCoverage() {
+    if (!state.coverageOn || !state.target) {
+      state.coverage = null;
+      return;
+    }
+    const gen = state.mapGeneration;
+    const at = state.target;
+    try {
+      const data = await fetchSmokeCoverage(state.currentMap, at);
+      // The map may have changed, or the target moved on, while this was in
+      // flight; either way this answer is about a question nobody is asking.
+      if (state.mapGeneration !== gen || state.target !== at) {
+        return;
+      }
+      state.coverage = data;
+    } catch (err) {
+      state.coverage = null;
+      statusEl.textContent = `coverage unavailable: ${err.message}`;
+    }
+    syncControls();
+    scheduleDraw();
+    sync3d();
+  }
+
+  coverageBtn.addEventListener("click", async () => {
+    state.coverageOn = !state.coverageOn;
+    state.coverage = null;
+    syncControls();
+    scheduleDraw();
+    sync3d();
+    if (state.coverageOn && !state.target) {
+      statusEl.textContent = "pick a target first - coverage shows what a smoke landing there would fill";
+      return;
+    }
+    await loadCoverage();
+  });
+
   meshdiffBtn.addEventListener("click", async () => {
     const turningOn = !state.meshdiffOn;
     if (turningOn && !state.meshdiff) {
@@ -415,6 +456,7 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
     press(topDownBtn, state.topDownOn);
     meshdiffBtn.hidden = !(state.meshdiffAvailable || state.meshdiff?.cells.length);
     press(meshdiffBtn, state.meshdiffOn);
+    press(coverageBtn, state.coverageOn);
     document.body.classList.toggle("crosshair-3d", in3d && state.crosshairOn);
     rulerEl.hidden = !(in3d && state.reticleOn);
 
@@ -1125,6 +1167,8 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
     statusEl.textContent = `${note} - now set a throw position, or "Search the whole map" to find every spot that can`;
     syncControls();
     renderLineups();
+    // The coverage overlay is about THIS target, so a new one invalidates it.
+    loadCoverage();
     draw();
     sync3d();
     // A 2-length target still has a floor to choose; the held spawn is spent

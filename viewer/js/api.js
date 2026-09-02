@@ -1,6 +1,6 @@
 // Fetch wrappers. No DOM access here; callers own status text and overlays.
 
-import { state } from "./state.js?v=81";
+import { state } from "./state.js?v=86";
 
 // Cache-bust a data URL with the map build: re-processed radars/GLBs change
 // content without changing name, and the query string gets a fresh copy past
@@ -207,4 +207,17 @@ export async function fetchMesh(map) {
     throw new Error(`mesh HTTP ${res.status}`);
   }
   return res.arrayBuffer();
+}
+
+// The volume a smoke placed at `at` would actually fill, from the server's own
+// flood fill - the same model the solver uses, so the overlay cannot disagree
+// with the answer. Geometry-aware on purpose: a circle would promise coverage
+// through walls, which is the one thing this is meant to check.
+export async function fetchSmokeCoverage(map, at, full = false) {
+  const q = new URLSearchParams({ map, x: at[0], y: at[1], z: at[2] ?? 0, full: full ? "true" : "false" });
+  const res = await fetch(`/api/smoke?${q}`);
+  if (!res.ok) {
+    throw new Error(`smoke coverage HTTP ${res.status}`);
+  }
+  return res.json();
 }
