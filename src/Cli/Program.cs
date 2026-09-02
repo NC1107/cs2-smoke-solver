@@ -29,6 +29,7 @@ var commands = new Dictionary<string, Func<Dictionary<string, string>, int>>
     ["pointlineup"] = PointLineupCommand.Run,
     ["meshdiff"] = MeshDiffCommand.Run,
     ["crop"] = CropCommand.Run,
+    ["selfcheck"] = SelfCheckCommand.Run,
 };
 
 if (args.Length == 0 || !commands.TryGetValue(args[0], out var command))
@@ -52,6 +53,7 @@ if (args.Length == 0 || !commands.TryGetValue(args[0], out var command))
           batchvalidate --maps a,b,c [--targets-per-map 3] [--fuzz N] [--limit 50] [--perturb 0.25] [--batch label] (unattended accuracy sweep via the rig server)
           bestlineup --geo ... --nav ... --target x,y[,z] --near x,y,z (nearest practical lineup)
           pointlineup --geo ... --from x,y,z --target x,y,z [--mode quick|deep] (fixed-spot solve)
+          selfcheck  [--root .] [--attrs ...] (exits nonzero if solves would return zero - the container healthcheck)
           crop       --geo <file.s2geo> --box x0,y0,z0,x1,y1,z1 [--out out.s2geo] (region subset, for test fixtures)
           meshdiff   --geo <file.s2geo> --vpk <map.vpk> [--out out.json] [--step 16] [--threshold 8] (physics-vs-render geometry diff, red/orange overlay data)
           exportgltf --vpk <map.vpk> [--out out.glb] (textured render mesh export)

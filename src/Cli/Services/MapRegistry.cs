@@ -1,3 +1,4 @@
+using System.Numerics;
 using System.Text.Json;
 using SmokeSolver.Extraction;
 using SmokeSolver.Sim;
@@ -217,6 +218,198 @@ public static class MapRegistry
         if (pruned > 0)
         {
             Console.WriteLine($"cache: pruned {pruned} stale file(s)");
+        }
+    }
+
+    // Per-map entity data (spawns, named places) parsed from
+    // data/<map>.entities.json. Same load-once-and-cache shape as LoadStandSpots
+    // above; it lived in the routing file, which meant two copies of the same
+    // idiom for adjacent per-map data and two places to fix when it changed.
+
+    public static readonly System.Collections.Concurrent.ConcurrentDictionary<string, (List<float[]> T, List<float[]> Ct)?> SpawnCache = new(StringComparer.Ordinal);
+
+    // Named place volumes (env_cs_place) with their positions: the callout a
+    // player would use for a spot. Parsed once per map like the spawns above.
+    public static readonly System.Collections.Concurrent.ConcurrentDictionary<string, List<(string Name, float[] Origin)>> PlaceCache = new(StringComparer.Ordinal);
+
+    public static List<(string Name, float[] Origin)> LoadPlaces(string root, string mapName)
+    {
+        var places = new List<(string, float[])>();
+        var path = Path.Combine(root, "data", $"{mapName}.entities.json");
+        if (!File.Exists(path))
+        {
+            return places;
+        }
+        try
+        {
+            using var doc = JsonDocument.Parse(File.ReadAllText(path));
+            foreach (var e in doc.RootElement.EnumerateArray())
+            {
+                if (e.GetProperty("ClassName").GetString() != "env_cs_place" ||
+                    !e.TryGetProperty("Place", out var placeEl) ||
+                    placeEl.GetString() is not { Length: > 0 } name)
+                {
+                    continue;
+                }
+                var o = e.GetProperty("Origin");
+                places.Add((name, [o[0].GetSingle(), o[1].GetSingle(), o[2].GetSingle()]));
+            }
+        }
+        catch (Exception e) when (e is JsonException or InvalidOperationException or KeyNotFoundException or IndexOutOfRangeException or IOException)
+        {
+            Console.Error.WriteLine($"places unreadable for {mapName}: {e.Message}");
+        }
+        return places;
+    }
+
+    // Every spawn on the map, for a search scoped to them.
+    public static IReadOnlyList<Vector3> SpawnPoints(string root, string mapName)
+    {
+        var spawns = SpawnCache.GetOrAdd(mapName, name => LoadSpawns(root, name));
+        return spawns is { } s
+            ? s.T.Concat(s.Ct).Select(p => new Vector3(p[0], p[1], p[2])).ToList()
+            : [];
+    }
+
+    // One representative point per side, for the sweep's extra flood fronts.
+    // The whole spawn cluster would be a dozen seeds a few feet apart flooding
+    // the same corridor; one is all the ordering needs.
+    public static IReadOnlyList<Vector3> SpawnFronts(string root, string mapName)
+    {
+        var spawns = SpawnCache.GetOrAdd(mapName, name => LoadSpawns(root, name));
+        if (spawns is not { } s)
+        {
+            return [];
+        }
+        var fronts = new List<Vector3>();
+        foreach (var side in new[] { s.T, s.Ct })
+        {
+            if (side.Count == 0)
+            {
+                continue;
+            }
+            var mid = side[side.Count / 2];
+            fronts.Add(new Vector3(mid[0], mid[1], mid[2]));
+        }
+        return fronts;
+    }
+
+    public static (List<float[]> T, List<float[]> Ct)? LoadSpawns(string root, string mapName)
+    {
+        var path = Path.Combine(root, "data", $"{mapName}.entities.json");
+        var t = new List<float[]>();
+        var ct = new List<float[]>();
+        if (!File.Exists(path))
+        {
+            return (t, ct);
+        }
+        try
+        {
+            using var doc = JsonDocument.Parse(File.ReadAllText(path));
+            foreach (var e in doc.RootElement.EnumerateArray())
+            {
+                var bucket = e.GetProperty("ClassName").GetString() switch
+                {
+                    "info_player_terrorist" => t,
+                    "info_player_counterterrorist" => ct,
+                    _ => null,
+                };
+                if (bucket == null)
+                {
+                    continue;
+                }
+                // Skip Wingman (2v2) spawns - they belong to the smaller 2v2
+                // layout (enabled=0 in Defusal) and sit in walled-off areas.
+                // Valve tags them targetname "[PR#]spawnpoints.2v2".
+                var name = e.TryGetProperty("Name", out var n) ? n.GetString() ?? "" : "";
+                if (name.Contains("2v2", StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+                var o = e.GetProperty("Origin");
+                bucket.Add([o[0].GetSingle(), o[1].GetSingle(), o[2].GetSingle()]);
+            }
+        }
+        catch (Exception e) when (e is JsonException or InvalidOperationException or KeyNotFoundException or IndexOutOfRangeException or IOException)
+        {
+            Console.Error.WriteLine($"spawns unreadable for {mapName}: {e.Message}");
+            return null;
+        }
+        return (t, ct);
+    }
+
+    /// <summary>
+    /// Ceiling on the solve cache, enforced while the server runs.
+    /// </summary>
+    // PruneCache only runs at startup and only drops results older than 30
+    // days, so a long-lived container never prunes at all. Each solve result is
+    // megabytes and the cache key is the target to a tenth of a unit, so a
+    // caller walking that space writes without limit onto a disk this process
+    // shares with everything else on the host. Oldest-first, which for a result
+    // cache is also least-recently-written.
+    const long CacheBudgetBytes = 4L * 1024 * 1024 * 1024;
+
+    // Sweeping is a directory scan, so amortize it: only look once a meaningful
+    // amount has been written since the last check.
+    const long CacheCheckIntervalBytes = 256L * 1024 * 1024;
+    static long cacheBytesSinceSweep;
+
+    public static void NoteCacheWrite(string root, long bytes)
+    {
+        if (Interlocked.Add(ref cacheBytesSinceSweep, bytes) < CacheCheckIntervalBytes)
+        {
+            return;
+        }
+        Interlocked.Exchange(ref cacheBytesSinceSweep, 0);
+        try
+        {
+            EnforceCacheBudget(root);
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            Console.Error.WriteLine($"cache budget sweep failed: {e.Message}");
+        }
+    }
+
+    public static void EnforceCacheBudget(string root, long budgetBytes = CacheBudgetBytes)
+    {
+        var cacheDir = Path.Combine(root, "data", "cache");
+        if (!Directory.Exists(cacheDir))
+        {
+            return;
+        }
+        // Only solve results. The .mesh.br blobs beside them are the maps
+        // themselves - evicting one costs minutes of recompression and they are
+        // already bounded by the number of maps.
+        var results = Directory.EnumerateFiles(cacheDir, "*.json")
+            .Select(f => new FileInfo(f))
+            .OrderBy(f => f.LastWriteTimeUtc)
+            .ToList();
+        var total = results.Sum(f => f.Length);
+        var evicted = 0;
+        foreach (var file in results)
+        {
+            if (total <= budgetBytes)
+            {
+                break;
+            }
+            var size = file.Length;
+            try
+            {
+                file.Delete();
+                total -= size;
+                evicted++;
+            }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+            {
+                // Locked or foreign-owned: skip it and keep going, exactly as
+                // the startup pruner does.
+                Console.Error.WriteLine($"cache evict skipped {file.Name}: {e.Message}");
+            }
+        }
+        if (evicted > 0)
+        {
+            Console.WriteLine($"cache: evicted {evicted} result(s) to stay under {budgetBytes / (1024 * 1024)} MB");
         }
     }
 

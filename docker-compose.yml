@@ -5,15 +5,35 @@ networks:
 
 services:
   smokesolver:
-    build:
-      context: .
-      dockerfile: Dockerfile
+    # No `build:` here on purpose. With one, `docker compose up -d --build` - a
+    # natural thing to reach for while troubleshooting - would build the image
+    # from whatever source is on the host, and the prod checkout is stale and
+    # dirty, so that silently deploys untested code and bypasses CI entirely
+    # with no signal that it happened. To build locally:
+    #     docker compose -f docker-compose.yml -f docker-compose.build.yml build
+    #
+    # SMOKESOLVER_IMAGE pins the deploy. CI publishes both :latest and
+    # :<git-sha>; set the sha in prod's .env to pin a known-good build or to
+    # roll one back:
+    #     SMOKESOLVER_IMAGE=ghcr.io/nc1107/cs2-smoke-solver:<sha>
     image: ${SMOKESOLVER_IMAGE:-ghcr.io/nc1107/cs2-smoke-solver:latest}
     container_name: smokesolver
     command: ["serve", "--port", "8137", "--bind", "any", "--attrs", "Default,default,EntitySolid"]
     volumes:
       - ./data:/app/data
     restart: unless-stopped
+    # Asks whether solves would return anything, not merely whether the port is
+    # open. This server's signature failure is answering every request promptly
+    # with zero lineups - an empty attribute filter, an unmounted data volume,
+    # or missing nav data all look perfectly healthy to a TCP or HTTP-200 probe.
+    # Declared here as well as in the Dockerfile so it also applies when running
+    # an older image that predates the HEALTHCHECK instruction.
+    healthcheck:
+      test: ["CMD", "./SmokeSolver.Cli", "selfcheck", "--root", "/app", "--attrs", "Default,default,EntitySolid"]
+      interval: 5m
+      timeout: 30s
+      start_period: 90s
+      retries: 3
     # The default json-file driver has no size cap; a long-lived server would
     # grow one unbounded log file on the host.
     logging:
@@ -48,3 +68,9 @@ services:
       - "traefik.http.services.smokesolver.loadbalancer.server.port=8137"
       - "traefik.docker.network=traefik_proxy"
       - "com.docker.compose.project=cs2-smoke-solver"
+      # Prod carried this label as a local edit that was never in the repo, so
+      # any deploy that overwrote the file silently turned auto-updates off.
+      # It lives here now so the two cannot drift again. Note it only does
+      # anything while SMOKESOLVER_IMAGE tracks a moving tag such as :latest;
+      # pinning to a sha (see above) deliberately freezes the deploy instead.
+      - "com.centurylinklabs.watchtower.enable=true"

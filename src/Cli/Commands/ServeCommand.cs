@@ -1,11 +1,13 @@
 using System.Globalization;
 using System.Numerics;
 using System.Text.Json;
+using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.DependencyInjection;
 using SmokeSolver.Sim;
 
 using static SmokeSolver.Cli.LineupApi;
@@ -20,8 +22,47 @@ public static class ServeCommand
     // requests keep flowing while solves are in flight.
     static readonly SemaphoreSlim SolveGate = new(2);
 
+    // How many requests may WAIT for one of those two slots. The gate bounds
+    // concurrency but not arrival rate, so without this an attacker's queue
+    // grows without limit and every waiter holds a connection and a solved
+    // request's worth of state. Past this, say so with a 429 instead.
+    const int MaxQueuedSolves = 16;
+    static int queuedSolves;
+
     // Lineup query bodies are a handful of numbers; anything bigger is abuse.
     const int MaxLineupBodyBytes = 4096;
+
+    // Per-IP budget for the solve endpoint. A human clicking targets sends one
+    // request per click; this allows a burst of 20 and 10 per 30s after that.
+    // The point is not to inconvenience a fast clicker but to make walking the
+    // cache key space pointless: the key is the target to a tenth of a unit
+    // (deliberately, so two nearby clicks never replay each other's answer),
+    // so `x += 0.1` yields unlimited guaranteed cache misses, each one minutes
+    // of CPU and megabytes of disk. Concurrency limits alone do not stop that.
+    const string SolvePolicy = "solve";
+    const int SolveBurst = 20;
+    const int SolveRefill = 10;
+    static readonly TimeSpan SolveRefillPeriod = TimeSpan.FromSeconds(30);
+
+    // The physics GETs (/api/trajectory, /api/lineup-one, /api/slack) are far
+    // cheaper than a solve but were not gated at all, while the solve they
+    // compete with for CPU is capped at two. One /api/slack call runs up to 84
+    // simulations, and a throw aimed at open sky runs the full 640-tick budget
+    // rather than settling early - so a burst of them costs real CPU on a box
+    // whose whole point is having some spare for solves. Generous enough that
+    // the viewer drawing a page of lineups never notices.
+    const string PhysicsPolicy = "physics";
+    const int PhysicsBurst = 240;
+    const int PhysicsRefill = 120;
+    static readonly TimeSpan PhysicsRefillPeriod = TimeSpan.FromSeconds(30);
+
+    // Behind the reverse proxy every request arrives from the same socket
+    // address, so the forwarded client is the only thing that distinguishes one
+    // caller from another. Falls back to the socket for a direct connection.
+    static string ClientKey(HttpContext context) =>
+        context.Request.Headers["X-Forwarded-For"].ToString() is { Length: > 0 } forwarded
+            ? forwarded.Split(',')[0].Trim()
+            : context.Connection.RemoteIpAddress?.ToString() ?? "unknown";
 
     // Spawn lists parsed from data/<map>.entities.json, once per map for the
     // process lifetime. Null marks a file that exists but would not parse, so
@@ -39,117 +80,6 @@ public static class ServeCommand
     const float LevelSnapUp = 32f;
     const float LevelSnapDown = 32f;
 
-    static readonly System.Collections.Concurrent.ConcurrentDictionary<string, (List<float[]> T, List<float[]> Ct)?> SpawnCache = new(StringComparer.Ordinal);
-
-    // Named place volumes (env_cs_place) with their positions: the callout a
-    // player would use for a spot. Parsed once per map like the spawns above.
-    static readonly System.Collections.Concurrent.ConcurrentDictionary<string, List<(string Name, float[] Origin)>> PlaceCache = new(StringComparer.Ordinal);
-
-    static List<(string Name, float[] Origin)> LoadPlaces(string root, string mapName)
-    {
-        var places = new List<(string, float[])>();
-        var path = Path.Combine(root, "data", $"{mapName}.entities.json");
-        if (!File.Exists(path))
-        {
-            return places;
-        }
-        try
-        {
-            using var doc = JsonDocument.Parse(File.ReadAllText(path));
-            foreach (var e in doc.RootElement.EnumerateArray())
-            {
-                if (e.GetProperty("ClassName").GetString() != "env_cs_place" ||
-                    !e.TryGetProperty("Place", out var placeEl) ||
-                    placeEl.GetString() is not { Length: > 0 } name)
-                {
-                    continue;
-                }
-                var o = e.GetProperty("Origin");
-                places.Add((name, [o[0].GetSingle(), o[1].GetSingle(), o[2].GetSingle()]));
-            }
-        }
-        catch (Exception e) when (e is JsonException or InvalidOperationException or KeyNotFoundException or IndexOutOfRangeException or IOException)
-        {
-            Console.Error.WriteLine($"places unreadable for {mapName}: {e.Message}");
-        }
-        return places;
-    }
-
-    // Every spawn on the map, for a search scoped to them.
-    static IReadOnlyList<Vector3> SpawnPoints(string root, string mapName)
-    {
-        var spawns = SpawnCache.GetOrAdd(mapName, name => LoadSpawns(root, name));
-        return spawns is { } s
-            ? s.T.Concat(s.Ct).Select(p => new Vector3(p[0], p[1], p[2])).ToList()
-            : [];
-    }
-
-    // One representative point per side, for the sweep's extra flood fronts.
-    // The whole spawn cluster would be a dozen seeds a few feet apart flooding
-    // the same corridor; one is all the ordering needs.
-    static IReadOnlyList<Vector3> SpawnFronts(string root, string mapName)
-    {
-        var spawns = SpawnCache.GetOrAdd(mapName, name => LoadSpawns(root, name));
-        if (spawns is not { } s)
-        {
-            return [];
-        }
-        var fronts = new List<Vector3>();
-        foreach (var side in new[] { s.T, s.Ct })
-        {
-            if (side.Count == 0)
-            {
-                continue;
-            }
-            var mid = side[side.Count / 2];
-            fronts.Add(new Vector3(mid[0], mid[1], mid[2]));
-        }
-        return fronts;
-    }
-
-    static (List<float[]> T, List<float[]> Ct)? LoadSpawns(string root, string mapName)
-    {
-        var path = Path.Combine(root, "data", $"{mapName}.entities.json");
-        var t = new List<float[]>();
-        var ct = new List<float[]>();
-        if (!File.Exists(path))
-        {
-            return (t, ct);
-        }
-        try
-        {
-            using var doc = JsonDocument.Parse(File.ReadAllText(path));
-            foreach (var e in doc.RootElement.EnumerateArray())
-            {
-                var bucket = e.GetProperty("ClassName").GetString() switch
-                {
-                    "info_player_terrorist" => t,
-                    "info_player_counterterrorist" => ct,
-                    _ => null,
-                };
-                if (bucket == null)
-                {
-                    continue;
-                }
-                // Skip Wingman (2v2) spawns - they belong to the smaller 2v2
-                // layout (enabled=0 in Defusal) and sit in walled-off areas.
-                // Valve tags them targetname "[PR#]spawnpoints.2v2".
-                var name = e.TryGetProperty("Name", out var n) ? n.GetString() ?? "" : "";
-                if (name.Contains("2v2", StringComparison.OrdinalIgnoreCase))
-                {
-                    continue;
-                }
-                var o = e.GetProperty("Origin");
-                bucket.Add([o[0].GetSingle(), o[1].GetSingle(), o[2].GetSingle()]);
-            }
-        }
-        catch (Exception e) when (e is JsonException or InvalidOperationException or KeyNotFoundException or IndexOutOfRangeException or IOException)
-        {
-            Console.Error.WriteLine($"spawns unreadable for {mapName}: {e.Message}");
-            return null;
-        }
-        return (t, ct);
-    }
 
     const string JsonContentType = "application/json";
     const string UnknownMapError = "unknown map (see /api/maps)";
@@ -209,7 +139,34 @@ public static class ServeCommand
                 kestrel.ListenLocalhost(port);
             }
         });
+        builder.Services.AddRateLimiter(limiter =>
+        {
+            limiter.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+            limiter.AddPolicy(SolvePolicy, context => RateLimitPartition.GetTokenBucketLimiter(
+                ClientKey(context),
+                _ => new TokenBucketRateLimiterOptions
+                {
+                    TokenLimit = SolveBurst,
+                    TokensPerPeriod = SolveRefill,
+                    ReplenishmentPeriod = SolveRefillPeriod,
+                    // Queueing a rejected solve helps nobody: the caller would
+                    // rather be told to slow down than hold a connection open.
+                    QueueLimit = 0,
+                    AutoReplenishment = true,
+                }));
+            limiter.AddPolicy(PhysicsPolicy, context => RateLimitPartition.GetTokenBucketLimiter(
+                ClientKey(context),
+                _ => new TokenBucketRateLimiterOptions
+                {
+                    TokenLimit = PhysicsBurst,
+                    TokensPerPeriod = PhysicsRefill,
+                    ReplenishmentPeriod = PhysicsRefillPeriod,
+                    QueueLimit = 0,
+                    AutoReplenishment = true,
+                }));
+        });
         using var app = builder.Build();
+        app.UseRateLimiter();
 
         // Baseline hardening headers on every response: block MIME sniffing,
         // deny framing (the viewer is never meant to be embedded), and keep
@@ -413,13 +370,20 @@ public static class ServeCommand
             }
             var eye = new Vector3(x, y, z + GrenadeTrajectory.EyeHeight(throwType));
             var spec = new ThrowSpec(eye, yaw, pitch, throwType, strength, runDeg);
+            // Same revalidation the mesh endpoint does. These set an ETag and a
+            // week of cache but never answered If-None-Match, so a client doing
+            // the right thing paid for the whole payload to be recomputed.
+            if (IsNotModified(context, entry.BuildETag))
+            {
+                return Results.StatusCode(StatusCodes.Status304NotModified);
+            }
             var payload = TrajectoryPayload(entry.ColliderExcluding(brokenState.Groups), spec, entry.Constants);
             // Deterministic for a given throw on a given build, so it never needs
             // recomputing for a lineup the viewer has already drawn.
             context.Response.Headers.ETag = entry.BuildETag;
             context.Response.Headers.CacheControl = "public, max-age=604800";
             return Results.Bytes(payload, JsonContentType);
-        });
+        }).RequireRateLimiting(PhysicsPolicy);
 
         // One fully-analyzed lineup from its physical spec alone - the shape a
         // map sweep returns per lineup, plus its flight path inline. A shared
@@ -446,13 +410,20 @@ public static class ServeCommand
             {
                 return ApiError(StatusCodes.Status400BadRequest, ParseBroken(broken).Error!);
             }
+            // Same revalidation the mesh endpoint does. These set an ETag and a
+            // week of cache but never answered If-None-Match, so a client doing
+            // the right thing paid for the whole payload to be recomputed.
+            if (IsNotModified(context, entry.BuildETag))
+            {
+                return Results.StatusCode(StatusCodes.Status304NotModified);
+            }
             var payload = LineupOnePayload(
                 entry.ColliderExcluding(brokenState.Groups), entry.PlayerCollider.Value, new Vector3(x, y, z), new Vector3(tx, ty, tz),
                 throwType, strength, pitch, yaw, runDeg, entry.Constants);
             context.Response.Headers.ETag = entry.BuildETag;
             context.Response.Headers.CacheControl = "public, max-age=604800";
             return Results.Bytes(payload, JsonContentType);
-        });
+        }).RequireRateLimiting(PhysicsPolicy);
 
         // The positional slack ring for one lineup: how far the feet can drift
         // per direction before the same aim misses the `within` radius. Fetched
@@ -484,19 +455,37 @@ public static class ServeCommand
             }
             // Grenade paths honor the broken state; the player-side probes keep
             // the intact world (feet cannot stand where a door swings anyway).
+            // Same revalidation the mesh endpoint does. These set an ETag and a
+            // week of cache but never answered If-None-Match, so a client doing
+            // the right thing paid for the whole payload to be recomputed.
+            if (IsNotModified(context, entry.BuildETag))
+            {
+                return Results.StatusCode(StatusCodes.Status304NotModified);
+            }
             var payload = PositionSlackPayload(
                 entry.ColliderExcluding(brokenState.Groups), entry.PlayerCollider.Value, new Vector3(x, y, z), throwType, strength,
                 pitch, yaw, runDeg, new Vector3(tx, ty, tz), within, entry.Constants);
             context.Response.Headers.ETag = entry.BuildETag;
             context.Response.Headers.CacheControl = "public, max-age=604800";
             return Results.Bytes(payload, JsonContentType);
-        });
+        }).RequireRateLimiting(PhysicsPolicy);
 
         app.MapPost("/api/lineup", async (HttpContext context) =>
         {
             if (maps.Count == 0)
             {
                 await WriteApiError(context, StatusCodes.Status503ServiceUnavailable, "no maps extracted yet - run extract --map <name> first");
+                return;
+            }
+            // A browser may send text/plain, multipart, or form-encoded across
+            // origins without asking permission first; application/json is not
+            // on that list, so requiring it means a cross-origin caller has to
+            // pass a preflight this server never answers. Without the check any
+            // page open in a visitor's browser can start solves here.
+            if (context.Request.ContentType is not { } contentType ||
+                !contentType.StartsWith("application/json", StringComparison.OrdinalIgnoreCase))
+            {
+                await WriteApiError(context, StatusCodes.Status415UnsupportedMediaType, "Content-Type must be application/json");
                 return;
             }
             if (context.Request.ContentLength is > MaxLineupBodyBytes)
@@ -571,11 +560,19 @@ public static class ServeCommand
                         await context.Response.WriteAsync(line + "\n", CancellationToken.None);
                         await context.Response.Body.FlushAsync(CancellationToken.None);
                     }
-                    catch
+                    catch (Exception e)
                     {
                         // The solve keeps running so its result still lands in the
                         // cache; a reload after cancel then answers instantly.
                         clientGone = true;
+                        // A disconnect is the expected case and says nothing worth
+                        // logging. Anything else - a serialization fault, a full
+                        // disk - would otherwise be silently filed as "they left"
+                        // and leave a truncated stream with no trace at all.
+                        if (e is not (OperationCanceledException or IOException or ObjectDisposedException))
+                        {
+                            Console.Error.WriteLine($"lineup stream write failed: {e}");
+                        }
                     }
                 }
 
@@ -586,7 +583,24 @@ public static class ServeCommand
                     return;
                 }
 
-                await SolveGate.WaitAsync(context.RequestAborted);
+                // Nothing has been written yet on this path (the cache hit above
+                // returns before here), so a refusal can still travel as a real
+                // status code rather than in-band.
+                if (Interlocked.Increment(ref queuedSolves) > MaxQueuedSolves)
+                {
+                    Interlocked.Decrement(ref queuedSolves);
+                    await WriteApiError(context, StatusCodes.Status429TooManyRequests,
+                        "too many solves queued - try again in a moment");
+                    return;
+                }
+                try
+                {
+                    await SolveGate.WaitAsync(context.RequestAborted);
+                }
+                finally
+                {
+                    Interlocked.Decrement(ref queuedSolves);
+                }
                 try
                 {
                     // A double-submit of the same query (two tabs, a re-click)
@@ -636,6 +650,7 @@ public static class ServeCommand
                     var temp = cachePath + "." + Environment.CurrentManagedThreadId + ".tmp";
                     await File.WriteAllTextAsync(temp, response);
                     File.Move(temp, cachePath, overwrite: true);
+                    NoteCacheWrite(root, response.Length);
                     foreach (var line in DrainProgress(events))
                     {
                         await WriteLine(line);
@@ -647,7 +662,7 @@ public static class ServeCommand
                     SolveGate.Release();
                 }
             }
-        });
+        }).RequireRateLimiting(SolvePolicy);
 
         app.MapGet("/", (HttpContext context) => ServeStatic(context, root, "viewer/index.html"));
         app.MapGet("/viewer/{**rest}", (HttpContext context, string? rest) => ServeStatic(context, root, "viewer/" + (rest ?? "")));

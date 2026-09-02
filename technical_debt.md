@@ -1313,3 +1313,198 @@ A **Stand spot** filter joins the others - any / wall or corner only / corner on
 (The single corner lineup on that target lands 44.5u out, so the default 32u precision filter hides it. That is the filter doing its job, not a second bug.)
 
 **Lesson worth keeping:** research about what a *new* player needs is not a licence to remove what an experienced one navigates by. The pin belonged in both places - the prose for someone learning what it means, the tag for someone hunting for it.
+
+## Audit 2026-09-02
+
+A seven-pass multi-agent review (security, code quality, performance, test coverage, API + architecture, frontend, devops) against a clean tree at f9b8a59.
+38 findings.
+Nothing was fixed in this pass; the list below is the queue.
+
+Baseline verified before reviewing: clean build with zero warnings, 162/162 tests, prod running the current image, viewer token `?v=80` matching on both sides, and a real map-wide solve against smoke.npc-server.top returning 400 lineups from 30,633 origins.
+A30-C2 (the golden replay test that returned green having asserted nothing) is **fixed**: `tests/Sim.Tests/fixtures/` now carries a cropped de_dust2 mesh plus captures, and the silent skip is a hard `Assert.True(File.Exists(...))`.
+
+Two measurements worth keeping.
+A cold map-wide solve on prod takes **102 seconds** wall.
+The old ~28-30s figure was taken at 16,148 origins; this ran 30,633, and prod is capped at 6 cores, so this is most likely origin-count growth rather than a code regression - but it is the number a first-time visitor waits.
+The solve cache holds ~5.7 MB per entry (measured: 18 entries, 102 MB).
+
+### Open - critical
+
+- **A31-C1 (security)** `src/Cli/Services/LineupApi.cs:446` plus `src/Cli/Commands/ServeCommand.cs:21`.
+  Unauthenticated CPU and disk exhaustion via POST /api/lineup.
+  The cache key quantizes the target to 0.1u and is not bucketed (deliberate, and correct for accuracy), so `x += 0.1` yields unlimited distinct keys, each a guaranteed cache miss costing ~102s of CPU and ~5.7 MB of disk.
+  `SolveGate` is a `SemaphoreSlim(2)`: it caps concurrency, not throughput, and its wait queue is unbounded.
+  There is no rate limiting in the app, in docker-compose.yml, or in the traefik labels (verified against prod's actual compose file - only `secureHeaders@file`).
+  `PruneCache` runs only at process startup and only deletes .json files older than 30 days, so a long-lived container never prunes at all.
+  Confirmed reachable cross-origin: a `Content-Type: text/plain` POST with `Origin: https://evil.example` (a CORS-simple request needing no preflight) was accepted by production and returned 400 lineups, so any page open in a visitor's browser can pin both solve slots.
+  Fix, fastest first: a Cloudflare rate-limiting rule on POST /api/lineup (CF already proxies the domain, so this needs no deploy); then `AddRateLimiter` keyed on remote IP - `Microsoft.AspNetCore.RateLimiting` is already in the shared framework under the existing `FrameworkReference`, so it adds no dependency; plus a content-type check and a cache size cap with LRU eviction.
+
+- **A31-C2 (correctness)** `src/Cli/Services/TargetSolver.cs:394` `SnapTargetToGround`.
+  The roof-target bug is still live in the deepest fallback.
+  The function scans `z = grid.Nz - 2` downward over a probe grid spanning the full mesh Z extent and returns the FIRST empty-over-solid transition, i.e. the topmost surface in the column.
+  This is precisely what the comment on `NavGapReach` (`src/Solver/LineupSolver.Origins.cs:669`) describes as the bug that "put de_dust2's BombsiteA and BombsiteB targets ~900u in the air and returned zero lineups for the two most-thrown-at spots on the map".
+  The eff2dad fix added 96u nav-sliver bridging so this scan is reached less often; the scan itself was never corrected.
+  `NavGroundZ` explicitly does lowest-wins and the sibling `SnapToGround` for origins bounds its scan to a +-8 cell window - `SnapTargetToGround` does neither.
+  Reachable whenever a 2D click (no target Z) lands more than 96u from every nav polygon: sparse-nav interiors, exterior ledges, rooftop-adjacent spots on stacked maps.
+  Fix: track the lowest match across the scan instead of returning on the first, or bound the scan to a window around an expected height. Small change; needs a test pinning it.
+
+### Open - high
+
+- **A31-H1 (devops)** `Dockerfile:22`.
+  The published image silently returns zero lineups by default.
+  `CMD ["serve", "--bind", "any"]` omits `--attrs`, and `ServeCommand.cs:161` defaults attrs to `""`, which drops world geometry so every solve returns nothing while the process stays healthy.
+  Prod is unaffected only because docker-compose.yml passes the flag; a bare `docker run` of the image, or any compose edit that loses the command, reproduces the project's most-repeated failure mode.
+  Fix: bake `--attrs Default,default,EntitySolid` into the CMD and let compose override only what genuinely varies per deploy.
+
+- **A31-H2 (devops)** Dockerfile and docker-compose.yml.
+  No HEALTHCHECK, no compose `healthcheck:`, no traefik `loadbalancer.healthcheck` label, and no health endpoint.
+  A container serving zero lineups is indistinguishable from a working one, so A31-H1 and every silent-zero regression can only be caught by a human opening the page.
+  Fix: a probe that exercises a real solve (a known-good map/target via /api/lineup-one) and asserts a non-empty result, plus a post-deploy smoke test.
+
+- **A31-H3 (api/versioning)** `src/Cli/Services/LineupApi.cs:466` `QueryVersion`.
+  Cache invalidation depends on remembering to bump a constant, and the discipline is measurably failing.
+  Walking the last 25 commits touching `src/Solver` or LineupApi.cs, seven changed solver semantics with no bump: eff2dad (clicked targets landing on roofs), b97247f (never place an origin in mid air), 0b377a2 (stand players on crates and ledges), cee2cd5 (re-aim verified lineups at the exact target), 9c209f8 (penalize exposed lineups - also added a new `exposed` field), e2dea96 (rank easier throws higher), 6828bf1 (stand the thrower on the floor, not the voxel boundary).
+  Each one meant warm cache entries kept serving pre-fix answers until an unrelated later commit incidentally bumped the version.
+  Mesh changes are keyed in via the content hash, so this only bites pure-solver commits - which is exactly where the accuracy fixes live.
+  Fix: a CI check that fails when `src/Solver/**` or the ranking/serialization block differs without a QueryVersion bump.
+
+- **A31-H4 (test-coverage)** `src/Solver/FreeSpaceReach.cs`.
+  The new BFS free-space prune has zero tests anywhere, yet it runs before every sweep (LineupSolver.cs:177) and reorders it via `extraFronts` (line 216).
+  An over-prune drops reachable origins with no error - the silent-zero mode again.
+  Fix: synthetic-grid tests for an open corridor (free-space distance equals walked length), a solid wall (null despite short straight-line distance - the entire point of the class), an L-corridor, out-of-bounds, a budget shorter than the true path, and two disjoint seed cells.
+
+- **A31-H5 (test-coverage)** `src/Cli/Services/TargetSolver.cs:58` `SolveForTarget`.
+  The single function every /api/lineup request runs through has no test that calls it; nothing in tests/ references `TargetSolver` outside a comment.
+  It is where spawnsOnly, exactOrigin, DropToFloor, NearestStandSpot, the crouch filter, and the LOS/pin post-processing are wired together - the exact multi-branch integration where the dust2 BombsiteA/B, de_vertigo, and floating-spawn bugs all lived.
+  Also untested: `FloorUnderHull` (`LineupSolver.Origins.cs:424`), whose own comment documents the median 1.2u / max 5.3u error that teleported people into the ground, and `ExactOriginOnly` (line 449).
+
+- **A31-H6 (api/error-handling)** `src/Cli/Services/LineupApi.cs:610`.
+  An empty result is always HTTP 200 with `lineups: []` and no machine-readable reason, so a genuine bug is indistinguishable from a legitimately unreachable target.
+  `TargetSolver.cs:172` already detects the specific "target is inside solid, or tolerance too small" case and writes it to the server's stderr, then falls through and runs the full sweep anyway - the explanation exists and never reaches the client.
+  Fix: classify the empty case (no reachable origins vs origins found but nothing verified vs target resolved off nav data) into an `emptyReason` field, and return early when the zone is empty rather than sweeping for nothing.
+
+- **A31-H7 (devops)** docker-compose.yml:11 and :8.
+  Prod pulls the mutable `:latest` tag and nothing records the deployed sha, so rolling back a bad ship means digging through GHCR under pressure.
+  The same file also declares `build:` alongside `image:`, so `docker compose up -d --build` - a natural command to reach for while troubleshooting - would build from prod's known-stale, dirty checkout and bypass CI entirely with no signal.
+  Fix: pin SMOKESOLVER_IMAGE to the sha tag CI already publishes and write it to a file on the host at deploy; drop `build:` from the prod-facing compose into an override file.
+
+### Open - medium
+
+- **A31-M1 (security)** ServeCommand.cs:394, :428, :460.
+  /api/trajectory, /api/lineup-one and /api/slack run CPU-bound physics synchronously with no gate at all, unlike POST /api/lineup.
+  /api/slack runs up to 84 simulations per request, and none of the three bound coordinates to the map AABB, so aiming into open sky forces the full 640-tick worst case cheaply.
+- **A31-M2 (api)** ServeCommand.cs:495. No Content-Type check on POST /api/lineup - see A31-C1 for the confirmed cross-origin consequence.
+- **A31-M3 (api)** ServeCommand.cs:419. /api/trajectory, /api/lineup-one and /api/slack set an ETag and a 7-day CacheControl but never call the `IsNotModified` helper that /api/mesh uses three lines away, so `If-None-Match` always gets a full recomputed body instead of a 304.
+- **A31-M4 (frontend)** viewer/js/map2d.js:658. Every native pointermove runs `nearestLineup()`, which re-runs `filtered()` (a full filter with ~8 predicates per lineup) plus a distance check over the survivors, unthrottled; only the redraw is rAF-coalesced. Janky hover on large map-wide results.
+- **A31-M5 (frontend)** viewer/js/main.js:405. Collision, Top-down, Mesh diff, Spawns, Pro smokes and the pro-smokes segment toggle only a CSS `.active` class and never set `aria-pressed`, unlike the View row and aim-overlay row directly above them.
+- **A31-M6 (architecture)** ServeCommand.cs:42-152. `SpawnCache`/`PlaceCache`/`LoadSpawns`/`LoadPlaces` re-implement, in the routing file, the same per-map lazy-load-and-cache idiom `MapRegistry` already owns for maps and stand spots.
+- **A31-M7 (performance)** LineupSolver.Origins.cs:364. `AddPinnedOrigins` walks every stand spot single-threaded (16 raycasts each, ~250k serial raycasts on a map-wide query) while the other cores idle, immediately before the fully-parallel sweep. Estimated 3-4% of the cold solve; unprofiled, and the shared `seen`/`pinned` mutation needs thread-safety work as part of any fix.
+- **A31-M8 (test-coverage)** `RunTargetQuery` (LineupApi.cs:488) is untested despite LineupApiTests covering the two pure functions beside it, and the `broken` world-state tests only exercise the exact collider, never the voxel grid the sweep actually prunes against - so a regression in the grid's attribute filter would silently zero every broken-glass query.
+- **A31-M9 (supply-chain)** Dockerfile:2 and :16 pin base images to the floating `10.0` tag; .github/workflows/ci.yml pins every action to a floating major (`actions/checkout@v4`, `docker/build-push-action@v6`, ...) while the publish job holds a `packages: write` token that prod auto-pulls.
+- **A31-M10 (ci)** .github/workflows/ci.yml has no `concurrency:` group, so two close pushes can race and leave `:latest` pointing at the older commit.
+
+### Open - low
+
+- **A31-L1 (correctness)** LineupSolver.cs:250. `zoneRise` always subtracts `CrouchEyeHeight` regardless of throw type, inflating it by up to 18.02u for standing types and eating into the 128u `VerticalReachMargin` cushion. No observed miss (the margin is 7x the error), but it silently narrows the intended safety band. Use `EyeHeight(type)`, as line 281 already does.
+- **A31-L2 (error-handling)** ServeCommand.cs:574. The NDJSON writer's bare `catch` sets `clientGone = true` and logs nothing, so a serialization or full-disk failure is misdiagnosed as a disconnect and leaves no trace. Catch the disconnect types specifically and log the rest.
+- **A31-L3 (frontend)** viewer/js/view3d.js:243. `scene.add(phantomVisual)` runs unconditionally but `phantomVisual` is only built when `phantomICount > 0`; three.js r144 logs a console error rather than throwing, so maps with door/glass geometry but no phantom clips spam the console on every 3D load.
+- **A31-L4 (ci)** The build-and-test job declares no `permissions:` block, inheriting whatever the repo default is.
+- **A31-L5 (scripts)** rig/deploy-plugin.sh:16 discards all rsync stderr before falling back to `cp`, hiding genuine failures (permission denied, disk full) as if rsync were merely absent.
+- **A31-L6 (housekeeping)** `data/onboard-logs/` (62 MB) and `data/reextract-logs/` are untracked and not gitignored, so they are one `git add -A` away from the repo.
+
+### Assessed and explicitly rejected
+
+- **The "per-origin sweep table, 10-20x" idea should be dropped.**
+  It is not implemented anywhere, and the codebase's own evidence argues it would be unsound.
+  `RestScatter` and VerifyExact's position-chaos probe exist precisely because real-world validation showed the rest point can move hundreds of units when the feet shift by a single 0.25u movement tick.
+  A table sharing or interpolating trajectory outcomes between origins 16-32u apart would silently misclassify exactly the bounce-boundary throws that mechanism was built to catch.
+  Treat the 10-20x figure the way the "expired trajectories dominate tick work" claim turned out: unverified and probably wrong until someone produces a mechanism and a controlled experiment.
+
+### Checked and clean
+
+Worth recording so the next audit does not re-derive them.
+Path traversal on static serving and /data/** (tested live against a running server: dot-segments, URL-encoded variants, encoded slashes, case variation, null bytes all rejected; the previously-fixed allowlist and cache `--root` bugs both hold), SSRF, deserialization, command injection, and secrets in CI.
+The viewer came back clean on every known-regression pattern: `?v=80` consistent across all script/link tags and all inter-module imports, no revived `disabled ||` latch, the `:has()` group rule at app.css:190 correctly lists `.btn`/`.seg-btn`/`.tile`, no deleted-but-referenced identifiers, `mapGeneration` checked after every await, and every `innerHTML` interpolation of server or user data passes through `esc()`.
+three.js disposal is handled deliberately throughout (`clearGroup`, `disposeSceneContents`, `teardown3d`'s resize listener removal, flycam's paired start/stop).
+`.dockerignore` correctly excludes the 2.8 GB data/ directory from the build context, and CI does gate publish on tests via `needs: build-and-test`.
+
+### Reference quality: the product problem, measured
+
+From the same live prod solve (de_dust2, 400 lineups), which quantifies the "most lineups are useless without a good point of reference" complaint:
+
+| aim tier | count | median off crosshair |
+|---|---|---|
+| edge | 168 | 2.12 deg |
+| reticle | 211 | 20.28 deg |
+| flat | 21 | - |
+
+Only **109 of 400** are edge tier within 3 degrees - an actual "put your crosshair on that corner" lineup - and only **9** of those sit on a wall or corner pin.
+378 of 400 are aiming at sky.
+The ranking still surfaces 20-degree-off throws alongside the good ones, which is the Reproducible First plan's premise, restated in fresh numbers.
+
+### Audit 2026-09-02: what was fixed
+
+Everything below was fixed the same day and verified: clean build, 198/198 tests (24 of them new), a real Docker image build, and live checks against a running server.
+
+**A31-C1 (critical, security) - unauthenticated CPU and disk exhaustion. Fixed.**
+Three defences, because the hole had three parts.
+`POST /api/lineup` now requires `Content-Type: application/json` and answers 415 otherwise, which closes the cross-origin drive-by: a browser can send text/plain, form-encoded, or multipart across origins without a preflight, but not JSON.
+A per-IP token bucket (`AddRateLimiter`, 20 burst then 10 per 30s, keyed on X-Forwarded-For behind the proxy) makes walking the cache key space pointless; the physics GETs got their own, roomier bucket (240 burst / 120 per 30s) since they were previously ungated entirely while the solve they compete with for CPU was capped at two.
+`SolveGate`'s wait queue is now bounded at 16, answering 429 rather than growing without limit.
+The solve cache gained a running 4 GB ceiling with oldest-first eviction (`MapRegistry.EnforceCacheBudget`), checked after every 256 MB written - the startup-only 30-day pruner never ran at all on a long-lived container.
+Verified live: text/plain and form-encoded now 415; 17 requests through then sustained 429s; a second burst of 30 entirely refused.
+
+**A31-C2 (critical, correctness) - the roof-target bug was still live. Fixed.**
+`SnapTargetToGround` scanned down from the sky and returned the first floor it met, which is the roof - the same top-down geometry scan `NavGapReach`'s own comment blames for putting de_dust2's BombsiteA and BombsiteB ~900u in the air. The 96u nav-sliver bridging added in eff2dad narrowed how often it is reached but never fixed it.
+It now takes the nearest walkable area at any distance as an anchor and picks the surface closest to it, falling back to lowest-wins with no anchor - matching `NavGroundZ`'s stacked-areas rule.
+`SnapTargetToGroundTests` pins it: against the old scan 4 of its 8 cases fail, the headline one reporting a target resolved 528u above the floor.
+
+**A31-H1/H2 - the image shipped a silent-zero default, and nothing could detect it. Fixed.**
+The Dockerfile CMD now carries `--attrs Default,default,EntitySolid`, so the published image is correct without compose.
+A new `selfcheck` command answers "would a solve return anything?" - maps present, nav data present, geometry surviving the attribute filter, and a drop test proving the collider really sees the world - and is wired as a HEALTHCHECK in both the Dockerfile and compose.
+It deliberately loads ONE map, not all of them: the obvious `LoadMaps` implementation peaked at 2 GB RSS, which is the container's entire allowance, so the healthcheck would have OOM-killed the server it was checking. One map runs in 0.39s at 72 MB.
+Verified in the real image: exit 0 healthy, exit 1 on empty attrs, exit 1 with no data volume.
+
+**A31-H3 - QueryVersion discipline. Fixed with a CI gate.**
+`rig/check-query-version.sh` fails a PR that touches `src/Solver`, `src/Sim`, `LineupApi.cs`, or `TargetSolver.cs` without bumping the constant, and is wired into the workflow. Verified both directions: exit 1 when the bump is missing, exit 0 when present.
+QueryVersion went 20 -> 22 across this work (the roof fix changes target resolution; `emptyReason` changes the response shape).
+
+**A31-H6 - empty results were indistinguishable from bugs. Fixed.**
+`TargetSolve` carries an `EmptyReason`, surfaced as `emptyReason` in the API and shown by the viewer in place of its guess. It separates "target resolved inside solid geometry" from "no stand spots in range" from "none of the N spots in range can land a smoke there".
+The inside-solid case now returns immediately instead of sweeping every origin to reach the empty list it already had - minutes of CPU for a knowably empty answer.
+
+**A31-H7, M9, M10, L4 - deploy and supply chain. Fixed.**
+Base images pinned by digest; all five actions pinned to commit SHAs with their version in a trailing comment; a `concurrency` group so two pushes cannot leave `:latest` on the older commit; an explicit `permissions: contents: read` on build-and-test.
+`build:` moved out of the prod compose into `docker-compose.build.yml`, so `up -d --build` on the prod host can no longer deploy its stale checkout behind CI's back.
+The watchtower label prod carried as an undocumented local edit is now in the repo, ending that drift; how to pin `SMOKESOLVER_IMAGE` to a sha for rollback is documented beside it.
+
+**A31-M3, M4, M5, M6, M8, L2, L3, L5, L6 - fixed.**
+The three physics endpoints answer `If-None-Match` with 304 (verified live) instead of setting an ETag nobody honoured.
+`filtered()` is memoized on a signature of every input it reads, so the 2D map's per-pointermove hit test stops re-filtering hundreds of lineups.
+A single `press()` helper sets `aria-pressed` alongside the `.active` class on every stateful toggle.
+`scene.add(phantomVisual)` is guarded and hoisted out of the loop it was running in per door/glass group.
+Validator tests now cover `scope` and `broken`; a new test proves breaking glass opens it in the SWEEP's voxel grid, not only in the exact collider.
+The spawn/place caches moved to `MapRegistry` beside the sibling per-map loaders.
+The NDJSON writer's bare `catch` now logs anything that is not a disconnect.
+`rig/deploy-plugin.sh` no longer discards rsync's stderr; the onboard/reextract log directories are gitignored.
+
+**A31-L1 - fixed.** `zoneRise` moved inside the per-type loop and uses `EyeHeight(type)`, instead of charging every throw the crouch height and overstating the climb by 18u for standing types.
+
+### Falsified by measurement - do not revisit without new evidence
+
+**A31-M7 (parallelize AddPinnedOrigins) is not worth doing.**
+The claim was 3-4% of a cold solve, explicitly unprofiled. Measured from the NDJSON phase markers on a real de_dust2 map-wide solve (13,271 origins): the entire `prepare` phase - grid build, origin generation AND pin probing together - is **0.40s of 19.11s, 2.1%**, and pin probing is only a part of that. The estimate exceeded the whole phase it sits in.
+The change would require replacing a `HashSet` and `List` with concurrent structures inside origin generation, which is where this project's silent lineup-loss bugs have historically lived, to win under 0.4s. Rejected.
+Phase split for the record: prepare 0.40s, sweep 17.76s, verify 0.86s - consistent with the established ~92% sweep figure.
+
+### Still open
+
+- **A31-H4/H5 partially addressed.** `FreeSpaceReach` now has 7 tests covering the property the prune rests on (a wall is not crossed even where the straight line is short, budget refusal, multi-seed, solid-seed containment). `SnapTargetToGround` and the cache budget are covered. Still untested: `SolveForTarget` end to end, `FloorUnderHull`, `ExactOriginOnly`, and `RunTargetQuery`.
+- **A31-M1 partially addressed.** The physics GETs are rate-limited now but still not bounds-checked against the map AABB, so a throw aimed into open sky still runs the full 640-tick budget.
+- **A31-H3 (Dockerfile USER) deliberately NOT shipped.** `data/cache` on the prod host is owned by root:root because the container created it while running as root, so adding `USER $APP_UID` would make every cache write fail on the next `compose up`. The Dockerfile carries a comment with the exact chown that must happen first. Do the chown and the USER line together, in that order.
+- **A31-L4 (viewer smoke test) not automated.** A headless-Chrome pass was run by hand this session (page loads, zero JS errors, all overlay tiles carry aria-pressed, all 25 asset tokens on ?v=81) but nothing runs it in CI.
+- **Cloudflare rate-limiting rule not created.** The in-app limiter is the durable fix and is live in code; a CF rule on `POST /api/lineup` would shed that load at the edge before it reaches the box, and needs dashboard access.
+
+### New finding, not in the original 38
+
+`viewer/validation.html` loaded the SAME `app.css` as `index.html` under a different cache token (`?v=56` against `?v=81`) and its own script at `?v=3`. The frontend pass checked `index.html` and `viewer/js/**` and reported the tokens consistent, which they were - within that set. Any cache holding those entries served the validation page a stylesheet from many revisions ago, and no app.css change would ever have busted it. All 25 tokens across `viewer/` are now on one value.

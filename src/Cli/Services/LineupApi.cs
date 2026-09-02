@@ -463,7 +463,7 @@ public static class LineupApi
             : "all";
         // Bump when solver or sim behavior changes: cached answers from older code
         // must never be replayed as current results.
-        const int QueryVersion = 20;
+        const int QueryVersion = 22;
         // meshVersion is the content-hashed mesh identity (not just the game
         // build), so re-extracting a map - e.g. dropping the Retake tape - forces
         // a re-solve instead of replaying results computed against the old mesh.
@@ -597,6 +597,11 @@ public static class LineupApi
         {
             target = new[] { solve.Target.X, solve.Target.Y, solve.Target.Z },
             origins = solve.OriginCount,
+            // Present only when lineups is empty, and then it says which kind of
+            // empty this is. An empty array on its own has meant a target on a
+            // roof, a missing nav mesh, and an attribute filter that dropped the
+            // world, all indistinguishable from "nothing reaches there".
+            emptyReason = solve.EmptyReason,
             // Per evaluated origin: [x, y, raw option count, verified lineup
             // here, pin class (2 corner / 1 wall / 0 open)]. Zero-count cells
             // are the interesting ones - places a player can stand where no

@@ -2,18 +2,18 @@
 // import the feature modules; they call back into the orchestrators defined
 // here (setTarget, select, runQuery) via the init*/set*Callbacks hooks.
 
-import { state, filtered, esc, lowMemoryDevice, loadFavorites, setFavorite, isFavorite, DEFAULT_EYE_HEIGHT, EYE_HEIGHT_BY_TYPE } from "./state.js?v=80";
-import { loadMapList, loadMapData, runQuery as postLineupQuery, fetchTrajectory, fetchLineupOne, fetchSlack, fetchSpawns, fetchProSmokes, fetchMeshDiff, meshDiffExists, fetchLevels } from "./api.js?v=80";
-import { loadRadar, readColors, recolorRadar, draw, scheduleDraw, resize, resetView, initMap2d, screenOf } from "./map2d.js?v=80";
-import { ensure3d, resetEnsure3d, teardown3d, current3d, sync3d, syncProgress3d, syncMeshDiff3d, set3dCallbacks, applyTheme3d, verticalFovFromDesired } from "./view3d.js?v=80";
-import { resetEnsureTexturedScene } from "./textured-scene.js?v=80";
-import { capturePreview } from "./preview.js?v=80";
+import { state, filtered, esc, lowMemoryDevice, loadFavorites, setFavorite, isFavorite, DEFAULT_EYE_HEIGHT, EYE_HEIGHT_BY_TYPE } from "./state.js?v=81";
+import { loadMapList, loadMapData, runQuery as postLineupQuery, fetchTrajectory, fetchLineupOne, fetchSlack, fetchSpawns, fetchProSmokes, fetchMeshDiff, meshDiffExists, fetchLevels } from "./api.js?v=81";
+import { loadRadar, readColors, recolorRadar, draw, scheduleDraw, resize, resetView, initMap2d, screenOf } from "./map2d.js?v=81";
+import { ensure3d, resetEnsure3d, teardown3d, current3d, sync3d, syncProgress3d, syncMeshDiff3d, set3dCallbacks, applyTheme3d, verticalFovFromDesired } from "./view3d.js?v=81";
+import { resetEnsureTexturedScene } from "./textured-scene.js?v=81";
+import { capturePreview } from "./preview.js?v=81";
 // Every local import across viewer/js carries the SAME ?v= token, bumped
 // together on any change. The HTML is served no-cache, so a fresh load pulls
 // main.js?v=N, which pulls every module at ?v=N - the whole graph refreshes as
 // one consistent set past Cloudflare's 4h JS cache, with no duplicate module
 // instances (which a partial versioning would cause). Bump the token everywhere.
-import { renderLineups, initPanel, revealSelected, resultStatusText } from "./panel.js?v=80";
+import { renderLineups, initPanel, revealSelected, resultStatusText } from "./panel.js?v=81";
 
 (async () => {
   // Map switching means a failed load is no longer necessarily terminal (the
@@ -302,6 +302,15 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
   // so it is derived in one place rather than patched from each handler - which
   // is how "Target" ended up looking permanently pressed. A control that cannot
   // do anything yet is absent, not greyed out, so the card reads as a sequence.
+
+  // A toggle has to say it is on to the eye AND to a screen reader; these used
+  // to set only the class, so Collision/Top-down/Mesh diff/Spawns/Pro smokes
+  // announced nothing about their state.
+  const press = (el, on) => {
+    el.classList.toggle("active", on);
+    el.setAttribute("aria-pressed", String(on));
+  };
+
   function syncControls() {
     const hasTarget = !!state.target;
     const in3d = stage3d.style.display !== "none";
@@ -361,7 +370,7 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
     clearBtn.hidden = !hasTarget;
 
     heatBtn.hidden = !state.result?.coverage;
-    heatBtn.classList.toggle("active", state.heatOn);
+    press(heatBtn, state.heatOn);
     // The button walks off -> coverage -> stand spots -> off; its label names
     // the view it is currently showing so the cycle is legible.
     heatBtn.textContent = !state.heatOn ? "Heatmap" : state.heatSpots ? "Heatmap: stand spots" : "Heatmap: coverage";
@@ -376,16 +385,16 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
       b.setAttribute("aria-pressed", String(on));
     }
     spawnsBtn.hidden = !(state.spawns && (state.spawns.t.length || state.spawns.ct.length));
-    spawnsBtn.classList.toggle("active", state.spawnsOn);
+    press(spawnsBtn, state.spawnsOn);
     // 2D only: the pro-demo density heatmap is painted on the radar canvas and
     // has no 3D representation, so offering it in the 3D view would promise
     // something that cannot appear there.
     proSmokesBtn.hidden = in3d || !(state.prosmokes && (state.prosmokes.throws.length || state.prosmokes.lands.length));
-    proSmokesBtn.classList.toggle("active", state.prosmokesOn);
+    press(proSmokesBtn, state.prosmokesOn);
     // The T/CT filter only makes sense while the heatmap is on.
     proSideSeg.hidden = proSmokesBtn.hidden || !state.prosmokesOn;
     for (const b of proSideSeg.children) {
-      b.classList.toggle("active", b.dataset.side === state.proSide);
+      press(b, b.dataset.side === state.proSide);
     }
     // 2D's "recenter" is Reset view.
     resetViewBtn.hidden = in3d;
@@ -402,10 +411,10 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
       b.classList.toggle("active", on);
       b.setAttribute("aria-pressed", String(on));
     }
-    collisionBtn.classList.toggle("active", in3d && state.collisionOn);
-    topDownBtn.classList.toggle("active", state.topDownOn);
+    press(collisionBtn, in3d && state.collisionOn);
+    press(topDownBtn, state.topDownOn);
     meshdiffBtn.hidden = !(state.meshdiffAvailable || state.meshdiff?.cells.length);
-    meshdiffBtn.classList.toggle("active", state.meshdiffOn);
+    press(meshdiffBtn, state.meshdiffOn);
     document.body.classList.toggle("crosshair-3d", in3d && state.crosshairOn);
     rulerEl.hidden = !(in3d && state.reticleOn);
 
@@ -845,12 +854,12 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
   // answers; whoever wants bounce counts and miss distances on every line can
   // say so once and have it remembered.
   const rowDetailBtn = document.getElementById("row-detail");
-  rowDetailBtn.classList.toggle("active", state.expertRows);
+  press(rowDetailBtn, state.expertRows);
   rowDetailBtn.setAttribute("aria-pressed", String(state.expertRows));
   rowDetailBtn.addEventListener("click", () => {
     state.expertRows = !state.expertRows;
     try { localStorage.setItem("smoke.expertRows", state.expertRows ? "1" : "0"); } catch { /* private mode */ }
-    rowDetailBtn.classList.toggle("active", state.expertRows);
+    press(rowDetailBtn, state.expertRows);
     rowDetailBtn.setAttribute("aria-pressed", String(state.expertRows));
     renderLineups();
   });
@@ -942,11 +951,18 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
       }
       const next = data;
       if (next.lineups.length === 0) {
+        // The server knows WHICH kind of empty this is - a target resolved
+        // inside geometry reads nothing like "nothing reaches there" - so say
+        // what it said, and only fall back to guessing when it did not.
         // A single-origin probe checked one spot, not the map; saying "any of
         // N stand spots" for it would wrongly read as an exhaustive sweep.
-        statusEl.textContent = body.origin
-          ? `no throw from that spot reaches the target - "Search the whole map" sweeps every spot that can`
-          : `no throw reaches there from any of the ${next.origins} stand spots in range - try another target`;
+        statusEl.textContent = next.emptyReason
+          ? body.origin
+            ? `${next.emptyReason} - "Search the whole map" sweeps every spot that can`
+            : next.emptyReason
+          : body.origin
+            ? `no throw from that spot reaches the target - "Search the whole map" sweeps every spot that can`
+            : `no throw reaches there from any of the ${next.origins} stand spots in range - try another target`;
         return;
       }
       next.lineups.forEach((l, i) => { l._idx = i; l._favorite = isFavorite(l); });
@@ -1387,7 +1403,7 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
   resetViewBtn.addEventListener("click", resetView);
   spawnsBtn.addEventListener("click", () => {
     state.spawnsOn = !state.spawnsOn;
-    spawnsBtn.classList.toggle("active", state.spawnsOn);
+    press(spawnsBtn, state.spawnsOn);
     draw();
     sync3d();
   });

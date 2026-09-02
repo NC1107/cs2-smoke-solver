@@ -156,4 +156,39 @@ public class LineupApiTests
         var b = LineupApi.QueryCacheKey(Mesh, "build-1", Constants with { GravityScale = 0.41f }, doc.RootElement, "");
         Assert.NotEqual(a, b);
     }
+
+    // scope drives exactOrigin/spawnsOnly in the solver, and broken decides
+    // which collision groups the sweep treats as gone. Both reach the solver
+    // straight from the request body and neither had a single case here, so an
+    // unknown scope silently searching the whole map - or a malformed broken
+    // list reaching the grid - would have shipped green.
+    [Theory]
+    [InlineData("""{"target":[100,100],"scope":"teleport"}""", "scope must be \"spawns\" or \"exact\"")]
+    [InlineData("""{"target":[100,100],"scope":42}""", "scope must be \"spawns\" or \"exact\"")]
+    [InlineData("""{"target":[100,100],"scope":""}""", "scope must be \"spawns\" or \"exact\"")]
+    [InlineData("""{"target":[100,100],"scope":"exact"}""", "scope \"exact\" needs an origin")]
+    public void MalformedScopesAreRejected(string body, string expected) =>
+        Assert.Equal(expected, Validate(body));
+
+    [Theory]
+    [InlineData("""{"target":[100,100],"scope":"spawns"}""")]
+    [InlineData("""{"target":[100,100],"scope":"SPAWNS"}""")]
+    [InlineData("""{"target":[100,100],"scope":"exact","origin":[200,200]}""")]
+    [InlineData("""{"target":[100,100],"scope":"Exact","origin":[200,200]}""")]
+    public void ValidScopesPass(string body) => Assert.Null(Validate(body));
+
+    [Theory]
+    [InlineData("""{"target":[100,100],"broken":["windows"]}""")]
+    [InlineData("""{"target":[100,100],"broken":"glass"}""")]
+    [InlineData("""{"target":[100,100],"broken":[1]}""")]
+    [InlineData("""{"target":[100,100],"broken":["glass","doors","glass"]}""")]
+    public void MalformedBrokenStatesAreRejected(string body) =>
+        Assert.Equal("broken must be an array drawn from \"glass\", \"doors\"", Validate(body));
+
+    [Theory]
+    [InlineData("""{"target":[100,100],"broken":[]}""")]
+    [InlineData("""{"target":[100,100],"broken":["glass"]}""")]
+    [InlineData("""{"target":[100,100],"broken":["doors"]}""")]
+    [InlineData("""{"target":[100,100],"broken":["glass","doors"]}""")]
+    public void ValidBrokenStatesPass(string body) => Assert.Null(Validate(body));
 }

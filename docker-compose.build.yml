@@ -1,0 +1,14 @@
+# Local image builds, kept out of docker-compose.yml so that `up -d --build`
+# on the prod host cannot quietly deploy whatever source happens to be sitting
+# in its (stale, dirty) checkout instead of the CI-built image.
+#
+#     docker compose -f docker-compose.yml -f docker-compose.build.yml build
+#
+# Named rather than docker-compose.override.yml because compose loads an
+# override file automatically, which would put `build:` back everywhere the
+# file existed - the exact footgun this split removes.
+services:
+  smokesolver:
+    build:
+      context: .
+      dockerfile: Dockerfile

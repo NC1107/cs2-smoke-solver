@@ -130,7 +130,12 @@ public static class TargetSolver
             var probeMax = new Vector3(target.X + 200, target.Y + 200, meshMax.Z);
             var probeGrid = VoxelGrid.Build(mesh, voxelSize, probeMin, probeMax, attributeFilter);
             var (tx, ty, _) = probeGrid.CellOf(target with { Z = meshMin.Z + 100 });
-            target = SnapTargetToGround(probeGrid, tx, ty) ?? target with { Z = 0 };
+            // The nearest walkable area at ANY distance: too far to trust as the
+            // answer (that is what the 96u NavGroundZNearby above already
+            // refused), but it says which of the column's stacked floors the
+            // click meant, which is the whole question the scan cannot answer.
+            var anchor = LineupSolver.NavGroundZWithin(corners, target.X, target.Y, float.MaxValue);
+            target = SnapTargetToGround(probeGrid, tx, ty, anchor) ?? target with { Z = 0 };
         }
 
         var min = new Vector3(
@@ -169,11 +174,6 @@ public static class TargetSolver
             }
         }
 
-        if (zoneCrossings.Count == 0)
-        {
-            Console.Error.WriteLine($"target ({target.X:F0},{target.Y:F0},{target.Z:F0}) has no reachable landing cells (inside solid, or tolerance too small)");
-        }
-
         // Built before the origins, not after: they are snapped onto its triangles
         // so that the spot a lineup names is the spot the player actually stands on.
         var collider = brokenGroups is { Count: > 0 }
@@ -184,6 +184,19 @@ public static class TargetSolver
         // railings and ledges are exactly what pins feet in game, and they are
         // invisible to the grenade collider by design.
         var playerCollider = BuildPlayerCollider(mesh, min, max);
+
+        // Nowhere for a smoke to come to rest means no throw can possibly
+        // qualify, so sweeping every origin would burn a full solve - minutes of
+        // CPU - to arrive at the empty list we already have. It used to do
+        // exactly that, and say why only in the server's own log, leaving the
+        // caller unable to tell a broken target from an unreachable one.
+        if (zoneCrossings.Count == 0)
+        {
+            var why = $"target ({target.X:F0},{target.Y:F0},{target.Z:F0}) has no reachable landing cells - " +
+                "it resolved inside solid geometry, or the tolerance is too small";
+            Console.Error.WriteLine(why);
+            return new TargetSolve(target, 0, [], [], collider, playerCollider, why);
+        }
 
         // Prefer the precomputed hull-derived set when the map has one: it is
         // the only source that knows about crates and ledges (the nav mesh is
@@ -382,30 +395,69 @@ public static class TargetSolver
         Parallel.ForEach(origins, Cpu.Bound, o =>
             originPins.GetOrAdd(((int)MathF.Round(o.X), (int)MathF.Round(o.Y)), _ => LineupSolver.PositionPin(playerCollider, o)));
 
+        // Distinguishing "nowhere to throw from" from "nowhere that works" is
+        // the difference between a bug and an answer, and the two are identical
+        // from outside without this.
+        var emptyReason = lineups.Length > 0 ? null
+            : origins.Count == 0
+                ? "no stand spots in range of that throw position - try a wider search, or a spot on the ground"
+                : $"none of the {origins.Count} stand spots in range can land a smoke there";
+
         return new TargetSolve(
             target,
             origins.Count,
             [.. coverage.Select(kv => new[] { kv.Key.X, kv.Key.Y, kv.Value, originPins.GetValueOrDefault((kv.Key.X, kv.Key.Y)) })],
             [.. lineups],
             collider,
-            playerCollider);
+            playerCollider,
+            emptyReason);
     }
 
-    public static Vector3? SnapTargetToGround(VoxelGrid grid, int x, int y)
+    /// <summary>
+    /// Ground height for a 2D point straight from the geometry, for clicks the
+    /// nav mesh cannot answer for. <paramref name="expectedZ"/> is the height
+    /// the click most likely meant (the nearest walkable area, at any distance);
+    /// with one, the surface nearest it wins, otherwise the lowest does.
+    /// </summary>
+    // Never the TOPMOST surface. Scanning a column down from the sky and taking
+    // the first floor it meets is what put de_dust2's BombsiteA and BombsiteB
+    // ~900u in the air and returned zero lineups for the two most-thrown-at
+    // spots on the map (see NavGapReach). The 96u gap-bridging added then keeps
+    // most clicks away from this fallback but does not fix the fallback itself,
+    // which is still reached by any click further than that from a nav polygon:
+    // sparse-nav interiors, exterior ledges, rooftop-adjacent spots.
+    public static Vector3? SnapTargetToGround(VoxelGrid grid, int x, int y, float? expectedZ = null)
     {
         if (x < 0 || x >= grid.Nx || y < 0 || y >= grid.Ny)
         {
             return null;
         }
-        for (var z = grid.Nz - 2; z >= 1; z--)
+        float? best = null;
+        foreach (var z in Enumerable.Range(1, Math.Max(0, grid.Nz - 2)))
         {
-            if (!grid.IsSolid(grid.Index(x, y, z)) && grid.IsSolid(grid.Index(x, y, z - 1)))
+            if (grid.IsSolid(grid.Index(x, y, z)) || !grid.IsSolid(grid.Index(x, y, z - 1)))
             {
-                var c = grid.CellCenter(x, y, z);
-                return new Vector3(c.X, c.Y, c.Z - grid.VoxelSize / 2);
+                continue;
             }
+            var surface = grid.CellCenter(x, y, z).Z - grid.VoxelSize / 2;
+            if (best is not { } b)
+            {
+                best = surface;
+            }
+            else if (expectedZ is { } want)
+            {
+                if (MathF.Abs(surface - want) < MathF.Abs(b - want)) { best = surface; }
+            }
+            // No anchor to judge by: the lowest floor is the one a player stands
+            // on, matching NavGroundZ's "with stacked walkable areas the lowest
+            // wins". The scan runs upward, so the first hit already is it.
         }
-        return null;
+        if (best is not { } z0)
+        {
+            return null;
+        }
+        var column = grid.CellCenter(x, y, 0);
+        return new Vector3(column.X, column.Y, z0);
     }
 
     // Where to draw the in-sky aim X: the first surface the aim ray hits, pulled

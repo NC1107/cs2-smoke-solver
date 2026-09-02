@@ -120,9 +120,51 @@ function skyAllowed(l, setting) {
   return setting !== "off" && skyAngle(l) <= Number.parseFloat(setting);
 }
 
+// Memoized because the 2D map calls this on every pointermove to find the
+// marker under the cursor, and a map-wide sweep result is hundreds of lineups
+// against eight predicates - re-running that at pointer rate made hover stutter
+// on big results. The key is every input the filter reads; anything that could
+// change the answer changes the key, so a stale array cannot survive.
+let filterCacheKey = null;
+let filterCacheValue = [];
+
 // These pure helpers live here (not in a feature module) because map2d,
 // view3d, and panel all need them and are not allowed to cross-import.
 export function filtered() {
+  const key = filterSignature();
+  if (key !== null && key === filterCacheKey) {
+    return filterCacheValue;
+  }
+  const value = computeFiltered();
+  filterCacheKey = key;
+  filterCacheValue = value;
+  return value;
+}
+
+// `_removed` is mutated in place on the lineup objects, so the signature counts
+// removals rather than trusting the result object's identity alone.
+let resultSeq = 0;
+
+function filterSignature() {
+  const result = state.result;
+  if (!result) {
+    return "empty";
+  }
+  // Two different solves can return the same number of lineups, so identity
+  // has to be stamped rather than inferred from the contents.
+  result._filterId ??= ++resultSeq;
+  const f = state.filters;
+  const removed = result.lineups.reduce((n, l) => n + (l._removed ? 1 : 0), 0);
+  return [
+    result._filterId,
+    result.single ? 1 : 0,
+    removed,
+    f.type.value, f.strength.value, f.bounces.value, f.flight.value,
+    f.stability.value, f.sky.value, f.precision.value, f.pin.value,
+  ].join("|");
+}
+
+function computeFiltered() {
   if (!state.result) {
     return [];
   }

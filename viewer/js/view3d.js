@@ -3,10 +3,10 @@
 // wraps init/sync. Raycast picks route through callbacks that main.js
 // registers, so this module never imports the orchestrator.
 
-import { state, filtered, clickClass, lowMemoryDevice, SMOKE_BLOOM_RADIUS, EYE_HEIGHT_BY_TYPE, DEFAULT_EYE_HEIGHT } from "./state.js?v=80";
-import { fetchMesh } from "./api.js?v=80";
-import { createFlyCamera } from "./flycam.js?v=80";
-import { loadScript, ensureTexturedScene, currentTexturedScene, disposeSceneContents, disposeTexturedScene } from "./textured-scene.js?v=80";
+import { state, filtered, clickClass, lowMemoryDevice, SMOKE_BLOOM_RADIUS, EYE_HEIGHT_BY_TYPE, DEFAULT_EYE_HEIGHT } from "./state.js?v=81";
+import { fetchMesh } from "./api.js?v=81";
+import { createFlyCamera } from "./flycam.js?v=81";
+import { loadScript, ensureTexturedScene, currentTexturedScene, disposeSceneContents, disposeTexturedScene } from "./textured-scene.js?v=81";
 
 const stage3d = state.stage3d;
 // Warning tint for phantom blockers (grenade-clips, physics-clips, glass) - a
@@ -241,6 +241,11 @@ async function init3d() {
     mesh.renderOrder = 1;
     stateVisuals[key] = mesh;
     scene.add(mesh);
+  }
+  // Once, and only when there is one: this used to run per door/glass group,
+  // and phantomVisual is null unless the map has phantom-clip triangles, which
+  // three.js answers with a console error rather than a throw.
+  if (phantomVisual) {
     scene.add(phantomVisual);
   }
   scene.add(new THREE.HemisphereLight(0xffffff, 0x33302a, 0.95));

@@ -119,4 +119,10 @@ public sealed record TargetSolve(
     TriangleCollider Collider,
     // Player-solid variant (clips included): pin classification must run
     // against what stops FEET, not what bounces grenades.
-    TriangleCollider PlayerCollider);
+    TriangleCollider PlayerCollider,
+    // Why Lineups came back empty, when it did. Zero lineups is this project's
+    // signature bug - it has meant a target resolved onto a roof, nav data
+    // missing, an attribute filter that dropped the world, and a target off the
+    // nav mesh, at different times - and every one of those looked identical
+    // from outside: a 200 with an empty array. Null whenever there are lineups.
+    string? EmptyReason = null);

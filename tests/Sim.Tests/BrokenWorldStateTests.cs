@@ -115,4 +115,38 @@ public class BrokenWorldStateTests
         // Order must not fork the cache.
         Assert.Equal(both, Key("""{"target":[100,100],"broken":["doors","glass"]}"""));
     }
+
+    // The sweep and the verifier see the world through two different objects: a
+    // VoxelGrid built from `attributeFilter`, and an exact TriangleCollider
+    // built from the interactAs grenade filter. Everything above tests only the
+    // collider. If the grid ever stopped honouring the broken groups, the sweep
+    // would treat the glass as solid and prune every candidate through it
+    // BEFORE verification ran - a zero-lineup result specific to broken-state
+    // queries, with the collider tests still green.
+    [Fact]
+    public void BreakingGlassAlsoOpensItInTheSweepsVoxelGrid()
+    {
+        var mesh = RoomWithGlassRoof();
+        var min = new Vector3(0, 0, -32);
+        var max = new Vector3(512, 512, 256);
+
+        var intactGrid = VoxelGrid.Build(mesh, 16f, min, max, _ => true);
+        // Exactly the filter RunTargetQuery composes for broken:["glass"].
+        var excluded = mesh.GroupMask(["EntityBreakable"]);
+        var brokenGrid = VoxelGrid.Build(mesh, 16f, min, max, a => !excluded[a]);
+
+        var atGlass = new Vector3(256, 256, 128);
+        var (gx, gy, gz) = intactGrid.CellOf(atGlass);
+
+        Assert.True(intactGrid.IsSolid(intactGrid.Index(gx, gy, gz)),
+            "the intact pane must read solid to the sweep");
+        Assert.False(brokenGrid.IsSolid(brokenGrid.Index(gx, gy, gz)),
+            "breaking the glass must open it for the SWEEP, not only for the exact collider");
+
+        // And the floor is untouched either way - the filter must remove the
+        // named group and nothing else.
+        var (fx, fy, fz) = intactGrid.CellOf(new Vector3(256, 256, 0));
+        Assert.True(intactGrid.IsSolid(intactGrid.Index(fx, fy, fz)));
+        Assert.True(brokenGrid.IsSolid(brokenGrid.Index(fx, fy, fz)));
+    }
 }

@@ -245,9 +245,6 @@ public static partial class LineupSolver
         {
             var toZone = zoneCentroid - feet;
             var distance = new Vector2(toZone.X, toZone.Y).Length();
-            // Measured from the release point, not the feet, so a crouch throw
-            // is not credited with a standing eye height.
-            var zoneRise = toZone.Z - GrenadeTrajectory.CrouchEyeHeight;
             var yawCenter = MathF.Atan2(toZone.Y, toZone.X) * 180f / MathF.PI;
             var hits = 0;
 
@@ -279,6 +276,12 @@ public static partial class LineupSolver
             foreach (var type in types)
             {
                 var eye = feet + new Vector3(0, 0, GrenadeTrajectory.EyeHeight(type));
+                // How far the zone sits above THIS throw's release point. It
+                // has to use the same eye height the throw will actually launch
+                // from: charging every type the crouch height overstated the
+                // climb by 18u for the standing ones, and the prune below is
+                // only sound while it errs toward keeping candidates.
+                var zoneRise = toZone.Z - GrenadeTrajectory.EyeHeight(type);
                 foreach (var runOffset in type is ThrowType.RunJumpThrow ? RunYawOffsets : NoRunOffset)
                 {
                     foreach (var strength in strengths ?? AllStrengths)

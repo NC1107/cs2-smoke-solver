@@ -16,7 +16,7 @@ mkdir -p "$DEST"
 rsync -a --delete-after \
   "$SRC/CalibrationThrower.dll" "$SRC/CalibrationThrower.pdb" \
   "$SRC/CalibrationThrower.deps.json" "$SRC/CalibrationThrower.runtimeconfig.json" \
-  "$DEST/" 2>/dev/null || cp "$SRC"/CalibrationThrower.{dll,pdb,deps.json,runtimeconfig.json} "$DEST/"
+  "$DEST/" || cp "$SRC"/CalibrationThrower.{dll,pdb,deps.json,runtimeconfig.json} "$DEST/"
 
 cp "$RIG/server.cfg" "$CS2_RIG_DIR/server/game/csgo/cfg/server.cfg"
 
