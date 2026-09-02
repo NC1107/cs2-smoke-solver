@@ -3,8 +3,8 @@
 // actions (set target, select, run query) go through callbacks that main.js
 // registers, so this module never imports the orchestrator.
 
-import { cacheBust } from "./api.js?v=86";
-import { isDrag, state, filtered, clickWords, movementWords, clickClass, esc, SMOKE_BLOOM_RADIUS, PICK_RADIUS_PX, TOUCH_PICK_RADIUS_PX, HEAT_CELL } from "./state.js?v=86";
+import { cacheBust } from "./api.js?v=87";
+import { isDrag, state, filtered, clickWords, movementWords, clickClass, esc, SMOKE_BLOOM_RADIUS, PICK_RADIUS_PX, TOUCH_PICK_RADIUS_PX, HEAT_CELL } from "./state.js?v=87";
 
 const canvas = state.canvas;
 const ctx = canvas.getContext("2d");
@@ -158,27 +158,48 @@ export function draw() {
     }
   }
   // The real bloom, under the target ring: the volume a smoke landing here
-  // would actually fill, flooded through the map's own geometry. Drawn first so
-  // the target ring and markers stay on top of it. Squares rather than a blob
-  // because they are what the model is - one per 16u cell the smoke reaches -
-  // and pretending otherwise would imply a precision the voxel grid does not
-  // have. Collapsed to a footprint: the 2D view has no height to show.
+  // would actually fill, flooded through the map's own geometry.
+  //
+  // Drawn as a filled footprint with its OUTLINE picked out, because the edge
+  // is the thing being read - the question is "does this reach B doors", and
+  // that is answered by where the coverage stops. The first version drew the
+  // cells at the same low alpha the 3D volume uses and was invisible: in 3D
+  // the view ray passes through a dozen stacked cells and their alpha
+  // accumulates, while a flat top-down footprint gets exactly one layer, which
+  // measured 0.13% against the radar underneath it.
   if (state.coverageOn && state.coverage?.cells?.length) {
     const { cells, voxel } = state.coverage;
-    const seen = new Set();
-    ctx.fillStyle = colors.target;
-    ctx.globalAlpha = 0.16;
-    ctx.beginPath();
+    // Collapse to a footprint: the top-down view has no height to show.
+    const foot = new Set();
     for (let i = 0; i < cells.length; i += 3) {
-      const cx = cells[i], cy = cells[i + 1];
-      const key = `${cx},${cy}`;
-      if (seen.has(key)) {
-        continue;
-      }
-      seen.add(key);
+      foot.add(`${cells[i]},${cells[i + 1]}`);
+    }
+    ctx.fillStyle = colors.target;
+    ctx.globalAlpha = 0.26;
+    ctx.beginPath();
+    for (const key of foot) {
+      const [cx, cy] = key.split(",").map(Number);
       ctx.rect(cx - voxel / 2, -cy - voxel / 2, voxel, voxel);
     }
     ctx.fill();
+    // The boundary: a cell edge with no neighbour behind it. Cheap from the set
+    // we already built, and it gives the covered area a definite line to judge
+    // against rather than a haze that fades out somewhere.
+    ctx.globalAlpha = 0.95;
+    ctx.strokeStyle = colors.target;
+    ctx.lineWidth = Math.max(1.5 / scale, voxel * 0.09);
+    ctx.beginPath();
+    for (const key of foot) {
+      const [cx, cy] = key.split(",").map(Number);
+      const l = cx - voxel / 2, r = cx + voxel / 2;
+      const t = -cy - voxel / 2, b = -cy + voxel / 2;
+      if (!foot.has(`${cx - voxel},${cy}`)) { ctx.moveTo(l, t); ctx.lineTo(l, b); }
+      if (!foot.has(`${cx + voxel},${cy}`)) { ctx.moveTo(r, t); ctx.lineTo(r, b); }
+      // Screen y is flipped, so +cy is the upper edge.
+      if (!foot.has(`${cx},${cy + voxel}`)) { ctx.moveTo(l, t); ctx.lineTo(r, t); }
+      if (!foot.has(`${cx},${cy - voxel}`)) { ctx.moveTo(l, b); ctx.lineTo(r, b); }
+    }
+    ctx.stroke();
     ctx.globalAlpha = 1;
   }
   if (state.target) {
