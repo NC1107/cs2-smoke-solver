@@ -32,6 +32,20 @@ public static class ServeCommand
     // Lineup query bodies are a handful of numbers; anything bigger is abuse.
     const int MaxLineupBodyBytes = 4096;
 
+    // An execute carries several targets, so it gets more room - but not much:
+    // it is still only a list of coordinates.
+    const int MaxExecuteBodyBytes = 8192;
+    // A round has time for a handful of smokes, not a library of them, and each
+    // one is a real solve.
+    const int MaxExecuteTargets = 6;
+    // Only the best few per smoke. An execute is "which throw do I use for
+    // this one", not a catalogue - and 400 lineups per target across six
+    // targets would be a payload nobody reads.
+    const int MaxExecuteLineupsPerSmoke = 8;
+    // How far from the pinned spot a throw may be found. An execute means "from
+    // HERE", so this is a shuffle, not a search.
+    const float DefaultExecuteReach = 96f;
+
     // Per-IP budget for the solve endpoint. A human clicking targets sends one
     // request per click; this allows a burst of 20 and 10 per 30s after that.
     // The point is not to inconvenience a fast clicker but to make walking the
@@ -544,6 +558,168 @@ public static class ServeCommand
             context.Response.Headers.CacheControl = "public, max-age=604800";
             return Results.Bytes(payload, JsonContentType);
         }).RequireRateLimiting(PhysicsPolicy);
+
+        // An execute: one throw position, several smokes. "From outside B I want
+        // B doors and B window" is the shape players actually plan in, and doing
+        // it as separate searches loses the thing that makes it an execute -
+        // that every smoke comes from the SAME spot, so they can be thrown in
+        // one go without repositioning.
+        //
+        // Deliberately origin-scoped. A map-wide sweep per target would be
+        // minutes each; from a fixed spot a solve is a couple of seconds, which
+        // is what makes several of them in one request reasonable at all.
+        app.MapPost("/api/execute", async (HttpContext context) =>
+        {
+            if (maps.Count == 0)
+            {
+                await WriteApiError(context, StatusCodes.Status503ServiceUnavailable, "no maps extracted yet - run extract --map <name> first");
+                return;
+            }
+            if (context.Request.ContentType is not { } ct ||
+                !ct.StartsWith("application/json", StringComparison.OrdinalIgnoreCase))
+            {
+                await WriteApiError(context, StatusCodes.Status415UnsupportedMediaType, "Content-Type must be application/json");
+                return;
+            }
+            var buffer = new byte[MaxExecuteBodyBytes + 1];
+            var read = 0;
+            int n;
+            while ((n = await context.Request.Body.ReadAsync(buffer.AsMemory(read), context.RequestAborted)) > 0)
+            {
+                read += n;
+                if (read > MaxExecuteBodyBytes)
+                {
+                    await WriteApiError(context, StatusCodes.Status400BadRequest, "request body too large");
+                    return;
+                }
+            }
+            JsonDocument body;
+            try
+            {
+                body = JsonDocument.Parse(buffer.AsMemory(0, read));
+            }
+            catch (JsonException)
+            {
+                await WriteApiError(context, StatusCodes.Status400BadRequest, "body must be valid JSON");
+                return;
+            }
+            using (body)
+            {
+                var root = body.RootElement;
+                if (root.ValueKind != JsonValueKind.Object ||
+                    !root.TryGetProperty("map", out var mapEl) || mapEl.ValueKind != JsonValueKind.String ||
+                    !maps.TryGetValue(mapEl.GetString() ?? "", out var entry) || entry.NavAreas == null)
+                {
+                    await WriteApiError(context, StatusCodes.Status404NotFound, UnknownMapError);
+                    return;
+                }
+                if (!root.TryGetProperty("origin", out var originEl) || originEl.ValueKind != JsonValueKind.Array ||
+                    originEl.GetArrayLength() < 2)
+                {
+                    await WriteApiError(context, StatusCodes.Status400BadRequest, "an execute needs an origin - the one spot every smoke is thrown from");
+                    return;
+                }
+                if (!root.TryGetProperty("targets", out var targetsEl) || targetsEl.ValueKind != JsonValueKind.Array ||
+                    targetsEl.GetArrayLength() == 0)
+                {
+                    await WriteApiError(context, StatusCodes.Status400BadRequest, "targets must be a non-empty array of [x,y] or [x,y,z]");
+                    return;
+                }
+                if (targetsEl.GetArrayLength() > MaxExecuteTargets)
+                {
+                    await WriteApiError(context, StatusCodes.Status400BadRequest,
+                        $"an execute holds at most {MaxExecuteTargets} smokes - that is more than a round has time for");
+                    return;
+                }
+
+                // Each smoke is an ordinary origin-scoped query, so it goes
+                // through exactly the same validation, solver and ranking as a
+                // single search rather than a parallel implementation that can
+                // drift from it.
+                var originJson = JsonSerializer.Serialize(originEl);
+                var shared = new List<string>();
+                foreach (var key in new[] { "originReach", "tolerance", "minStability", "fineScan", "types", "strengths", "broken" })
+                {
+                    if (root.TryGetProperty(key, out var el))
+                    {
+                        shared.Add($"\"{key}\":{JsonSerializer.Serialize(el)}");
+                    }
+                }
+                if (!root.TryGetProperty("originReach", out _))
+                {
+                    shared.Add($"\"originReach\":{DefaultExecuteReach.ToString(CultureInfo.InvariantCulture)}");
+                }
+                var sharedJson = shared.Count > 0 ? "," + string.Join(",", shared) : "";
+
+                var queries = new List<string>();
+                foreach (var t in targetsEl.EnumerateArray())
+                {
+                    if (t.ValueKind != JsonValueKind.Array || t.GetArrayLength() < 2)
+                    {
+                        await WriteApiError(context, StatusCodes.Status400BadRequest, "each target must be [x,y] or [x,y,z]");
+                        return;
+                    }
+                    var q = $"{{\"target\":{JsonSerializer.Serialize(t)},\"origin\":{originJson}{sharedJson}}}";
+                    using var probe = JsonDocument.Parse(q);
+                    if (ValidateLineupQuery(probe.RootElement, entry.Mesh) is { } invalid)
+                    {
+                        await WriteApiError(context, StatusCodes.Status400BadRequest, invalid);
+                        return;
+                    }
+                    queries.Add(q);
+                }
+
+                // One gate for the whole execute, not one per smoke: half a
+                // finished execute is not a useful answer, and letting the
+                // smokes queue separately would interleave them with other
+                // people's solves and take far longer in wall time.
+                if (Interlocked.Increment(ref queuedSolves) > MaxQueuedSolves)
+                {
+                    Interlocked.Decrement(ref queuedSolves);
+                    await WriteApiError(context, StatusCodes.Status429TooManyRequests, "too many solves queued - try again in a moment");
+                    return;
+                }
+                try
+                {
+                    await SolveGate.WaitAsync(context.RequestAborted);
+                }
+                finally
+                {
+                    Interlocked.Decrement(ref queuedSolves);
+                }
+                var smokes = new List<string>();
+                try
+                {
+                    foreach (var q in queries)
+                    {
+                        context.RequestAborted.ThrowIfCancellationRequested();
+                        using var doc = JsonDocument.Parse(q);
+                        var solved = await Task.Run(() => RunTargetQuery(
+                            entry.Mesh, entry.AttributeFilter, entry.NavAreas!, doc.RootElement, entry.Constants,
+                            standSpots: entry.StandSpots), context.RequestAborted);
+                        smokes.Add(TrimToBest(solved, MaxExecuteLineupsPerSmoke));
+                    }
+                }
+                catch (OperationCanceledException)
+                {
+                    return;
+                }
+                catch (Exception e)
+                {
+                    Console.Error.WriteLine($"execute failed: {e}");
+                    await WriteApiError(context, StatusCodes.Status500InternalServerError, "solver failure - check server log");
+                    return;
+                }
+                finally
+                {
+                    SolveGate.Release();
+                }
+                context.Response.ContentType = JsonContentType;
+                await context.Response.WriteAsync(
+                    $"{{\"origin\":{originJson},\"smokes\":[{string.Join(",", smokes)}]}}",
+                    context.RequestAborted);
+            }
+        }).RequireRateLimiting(SolvePolicy);
 
         app.MapPost("/api/lineup", async (HttpContext context) =>
         {

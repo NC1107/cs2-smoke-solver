@@ -680,4 +680,30 @@ public static class LineupApi
             }),
         });
     }
+
+    /// <summary>
+    /// One smoke of an execute: the solve's result with only its best few
+    /// lineups kept.
+    /// </summary>
+    // The ranking has already put the most reproducible throw first, so "best"
+    // is simply the front of the list. An execute asks "which throw do I use
+    // for this smoke", and six targets times four hundred lineups is a payload
+    // nobody reads and a panel nobody can scan.
+    public static string TrimToBest(string solvedJson, int keep)
+    {
+        using var doc = JsonDocument.Parse(solvedJson);
+        var root = doc.RootElement;
+        var kept = root.GetProperty("lineups").EnumerateArray().Take(keep).ToList();
+        var target = JsonSerializer.Serialize(root.GetProperty("target"));
+        var reason = root.TryGetProperty("emptyReason", out var r) && r.ValueKind == JsonValueKind.String
+            ? JsonSerializer.Serialize(r.GetString())
+            : "null";
+        var origins = root.TryGetProperty("origins", out var o) ? o.GetInt32() : 0;
+        var lineups = string.Join(",", kept.Select(l => JsonSerializer.Serialize(l)));
+        // `found` is the count BEFORE trimming, so the viewer can say "8 of 63"
+        // rather than implying eight was all there was.
+        var found = root.GetProperty("lineups").GetArrayLength();
+        return $"{{\"target\":{target},\"origins\":{origins},\"found\":{found}," +
+               $"\"emptyReason\":{reason},\"lineups\":[{lineups}]}}";
+    }
 }
