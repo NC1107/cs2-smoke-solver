@@ -45,6 +45,12 @@ public static class ServeCommand
     // How far from the pinned spot a throw may be found. An execute means "from
     // HERE", so this is a shuffle, not a search.
     const float DefaultExecuteReach = 96f;
+    // "Where can I stand to throw all of these" runs a full map-wide solve per
+    // target, so it is capped tighter than the from-here endpoint.
+    const int MaxExecuteSpotTargets = 4;
+    const int MaxExecuteSpotResults = 12;
+    // How far apart two throws' feet may be and still be one stance.
+    const float DefaultSameSpot = 96f;
 
     // Per-IP budget for the solve endpoint. A human clicking targets sends one
     // request per click; this allows a burst of 20 and 10 per 30s after that.
@@ -109,6 +115,27 @@ public static class ServeCommand
 
     const string JsonContentType = "application/json";
     const string UnknownMapError = "unknown map (see /api/maps)";
+
+
+    // The solve cache, in the two operations both the streaming lineup endpoint
+    // and the execute endpoints need. Kept together so the "write to a temp
+    // sibling and rename" rule - which is what stops a kill mid-write leaving a
+    // truncated file that a later hit splices into its NDJSON stream as garbage
+    // - cannot be remembered in one place and forgotten in the other.
+    static string SolveCachePath(string root, string cacheKey) =>
+        Path.Combine(root, "data", "cache", cacheKey + ".json");
+
+    static async Task<string?> ReadSolveCacheAsync(string path, CancellationToken ct) =>
+        File.Exists(path) ? await File.ReadAllTextAsync(path, ct) : null;
+
+    static async Task WriteSolveCacheAsync(string root, string path, string json)
+    {
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        var temp = path + "." + Environment.CurrentManagedThreadId + ".tmp";
+        await File.WriteAllTextAsync(temp, json);
+        File.Move(temp, path, overwrite: true);
+        NoteCacheWrite(root, json.Length);
+    }
 
     public static int Run(Dictionary<string, string> options)
     {
@@ -568,6 +595,159 @@ public static class ServeCommand
         // Deliberately origin-scoped. A map-wide sweep per target would be
         // minutes each; from a fixed spot a solve is a couple of seconds, which
         // is what makes several of them in one request reasonable at all.
+        // The question a player building an execute actually starts from:
+        // "where can I stand to throw ALL of these?" /api/execute answers the
+        // follow-up once you know the spot; this one finds the spot.
+        //
+        // Each target gets a full map-wide solve - minutes on a cold map - so
+        // the results are cached exactly like a normal search, and the second
+        // execute over the same site is nearly free. The solve gate is taken
+        // and released per target rather than held for the whole request: an
+        // execute over four targets would otherwise lock everyone else out for
+        // the best part of ten minutes.
+        app.MapPost("/api/execute/spots", async (HttpContext context) =>
+        {
+            if (maps.Count == 0)
+            {
+                await WriteApiError(context, StatusCodes.Status503ServiceUnavailable, "no maps extracted yet - run extract --map <name> first");
+                return;
+            }
+            if (context.Request.ContentType is not { } ct2 ||
+                !ct2.StartsWith("application/json", StringComparison.OrdinalIgnoreCase))
+            {
+                await WriteApiError(context, StatusCodes.Status415UnsupportedMediaType, "Content-Type must be application/json");
+                return;
+            }
+            var buf = new byte[MaxExecuteBodyBytes + 1];
+            var got = 0;
+            int k;
+            while ((k = await context.Request.Body.ReadAsync(buf.AsMemory(got), context.RequestAborted)) > 0)
+            {
+                got += k;
+                if (got > MaxExecuteBodyBytes)
+                {
+                    await WriteApiError(context, StatusCodes.Status400BadRequest, "request body too large");
+                    return;
+                }
+            }
+            JsonDocument doc;
+            try
+            {
+                doc = JsonDocument.Parse(buf.AsMemory(0, got));
+            }
+            catch (JsonException)
+            {
+                await WriteApiError(context, StatusCodes.Status400BadRequest, "body must be valid JSON");
+                return;
+            }
+            using (doc)
+            {
+                var root2 = doc.RootElement;
+                if (root2.ValueKind != JsonValueKind.Object ||
+                    !root2.TryGetProperty("map", out var mEl) || mEl.ValueKind != JsonValueKind.String ||
+                    !maps.TryGetValue(mEl.GetString() ?? "", out var entry) || entry.NavAreas == null)
+                {
+                    await WriteApiError(context, StatusCodes.Status404NotFound, UnknownMapError);
+                    return;
+                }
+                if (!root2.TryGetProperty("targets", out var tEl) || tEl.ValueKind != JsonValueKind.Array ||
+                    tEl.GetArrayLength() < 2)
+                {
+                    await WriteApiError(context, StatusCodes.Status400BadRequest,
+                        "give at least two targets - with one, an ordinary search already answers this");
+                    return;
+                }
+                if (tEl.GetArrayLength() > MaxExecuteSpotTargets)
+                {
+                    await WriteApiError(context, StatusCodes.Status400BadRequest,
+                        $"at most {MaxExecuteSpotTargets} targets - each one is a full map-wide solve");
+                    return;
+                }
+                // How far apart two throws' feet may be and still count as "the
+                // same spot". A player shuffles; they do not walk across the map
+                // between smokes of one execute.
+                var within = root2.TryGetProperty("within", out var wEl) && wEl.ValueKind == JsonValueKind.Number
+                    ? Math.Clamp(wEl.GetSingle(), 0f, 256f)
+                    : DefaultSameSpot;
+
+                var perTarget = new List<List<JsonElement>>();
+                var docs = new List<JsonDocument>();
+                try
+                {
+                    foreach (var t in tEl.EnumerateArray())
+                    {
+                        if (t.ValueKind != JsonValueKind.Array || t.GetArrayLength() < 2)
+                        {
+                            await WriteApiError(context, StatusCodes.Status400BadRequest, "each target must be [x,y] or [x,y,z]");
+                            return;
+                        }
+                        var q = $"{{\"target\":{JsonSerializer.Serialize(t)}}}";
+                        using var probe = JsonDocument.Parse(q);
+                        if (ValidateLineupQuery(probe.RootElement, entry.Mesh) is { } bad)
+                        {
+                            await WriteApiError(context, StatusCodes.Status400BadRequest, bad);
+                            return;
+                        }
+                        var key = QueryCacheKey(entry.Mesh, entry.BuildETag.Trim('"'), entry.Constants, probe.RootElement, attrs);
+                        var path = SolveCachePath(root, key);
+                        var json = await ReadSolveCacheAsync(path, context.RequestAborted);
+                        if (json is null)
+                        {
+                            if (Interlocked.Increment(ref queuedSolves) > MaxQueuedSolves)
+                            {
+                                Interlocked.Decrement(ref queuedSolves);
+                                await WriteApiError(context, StatusCodes.Status429TooManyRequests, "too many solves queued - try again in a moment");
+                                return;
+                            }
+                            try
+                            {
+                                await SolveGate.WaitAsync(context.RequestAborted);
+                            }
+                            finally
+                            {
+                                Interlocked.Decrement(ref queuedSolves);
+                            }
+                            try
+                            {
+                                json = await Task.Run(() => RunTargetQuery(
+                                    entry.Mesh, entry.AttributeFilter, entry.NavAreas!, probe.RootElement, entry.Constants,
+                                    standSpots: entry.StandSpots,
+                                    spawnFronts: SpawnFronts(root, entry.Mesh.MapName),
+                                    spawnPoints: SpawnPoints(root, entry.Mesh.MapName)), context.RequestAborted);
+                            }
+                            finally
+                            {
+                                SolveGate.Release();
+                            }
+                            await WriteSolveCacheAsync(root, path, json);
+                        }
+                        var solved = JsonDocument.Parse(json);
+                        docs.Add(solved);
+                        perTarget.Add([.. solved.RootElement.GetProperty("lineups").EnumerateArray()]);
+                    }
+
+                    var spots = ExecuteSpots.Find(perTarget, within, MaxExecuteSpotResults);
+                    context.Response.ContentType = JsonContentType;
+                    await context.Response.WriteAsync(spots, context.RequestAborted);
+                }
+                catch (OperationCanceledException)
+                {
+                }
+                catch (Exception e)
+                {
+                    Console.Error.WriteLine($"execute/spots failed: {e}");
+                    await WriteApiError(context, StatusCodes.Status500InternalServerError, "solver failure - check server log");
+                }
+                finally
+                {
+                    foreach (var d in docs)
+                    {
+                        d.Dispose();
+                    }
+                }
+            }
+        }).RequireRateLimiting(SolvePolicy);
+
         app.MapPost("/api/execute", async (HttpContext context) =>
         {
             if (maps.Count == 0)
@@ -790,7 +970,7 @@ public static class ServeCommand
                 // Rooted like every other data path: a relative "data" here would
                 // split the cache from the directory PruneCache sweeps whenever
                 // --root is not the working directory.
-                var cachePath = Path.Combine(root, "data", "cache", cacheKey + ".json");
+                var cachePath = SolveCachePath(root, cacheKey);
 
                 // Progress streams as NDJSON so the viewer can paint each evaluated
                 // origin live: phase lines, then batches of checked [x, y, z, hits]
@@ -827,9 +1007,8 @@ public static class ServeCommand
                     }
                 }
 
-                if (File.Exists(cachePath))
+                if (await ReadSolveCacheAsync(cachePath, context.RequestAborted) is { } cached)
                 {
-                    var cached = await File.ReadAllTextAsync(cachePath, context.RequestAborted);
                     await WriteLine("{\"result\":" + cached + "}");
                     return;
                 }
@@ -857,10 +1036,9 @@ public static class ServeCommand
                     // A double-submit of the same query (two tabs, a re-click)
                     // may have solved and cached while this request waited at
                     // the gate; answering from that file skips a redundant solve.
-                    if (File.Exists(cachePath))
+                    if (await ReadSolveCacheAsync(cachePath, context.RequestAborted) is { } raced)
                     {
-                        var cached = await File.ReadAllTextAsync(cachePath, context.RequestAborted);
-                        await WriteLine("{\"result\":" + cached + "}");
+                        await WriteLine("{\"result\":" + raced + "}");
                         return;
                     }
                     var events = new System.Collections.Concurrent.ConcurrentQueue<(string Kind, int[] Data)>();
@@ -893,15 +1071,7 @@ public static class ServeCommand
                         await WriteLine("{\"error\":\"solver failure - check server log\"}");
                         return;
                     }
-                    Directory.CreateDirectory(Path.GetDirectoryName(cachePath)!);
-                    // Via a per-writer temp file and rename, like the brotli mesh
-                    // cache: a kill mid-write, or two solves racing the same key,
-                    // must never leave a truncated file that a later cache hit
-                    // would splice into its NDJSON stream as garbage.
-                    var temp = cachePath + "." + Environment.CurrentManagedThreadId + ".tmp";
-                    await File.WriteAllTextAsync(temp, response);
-                    File.Move(temp, cachePath, overwrite: true);
-                    NoteCacheWrite(root, response.Length);
+                    await WriteSolveCacheAsync(root, cachePath, response);
                     foreach (var line in DrainProgress(events))
                     {
                         await WriteLine(line);

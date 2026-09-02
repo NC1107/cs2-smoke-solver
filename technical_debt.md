@@ -1586,3 +1586,58 @@ It wants its own calibration pass against the game.
 The headless browser became unusable partway through - 87 orphaned Chrome processes from repeated sessions had taken the machine to 22 of 30 GB.
 
 QueryVersion 22 -> 26 across this work. Viewer token 81 -> 86. 210 tests, 18 new.
+
+
+## Executes (2026-09-02, later)
+
+Two endpoints, because an execute has two questions and only one of them was
+answerable before.
+
+**`/api/execute`** - from THIS spot, solve these smokes. Origin-scoped on
+purpose: measured, a map-wide solve is 60-90s while a solve from a fixed spot is
+2.3s at 64u reach and 6.4s at 200u, which is what makes several in one request
+reasonable. Six smokes maximum, best eight throws each, and the pre-trim count
+rides along so the viewer can say "best 8 of 45" instead of implying 8 was all
+there was. Each smoke goes through the ordinary origin-scoped query path rather
+than a parallel implementation free to drift from it.
+
+**`/api/execute/spots`** - where can I stand to throw ALL of these? This is the
+question a player building an execute actually starts from; the first endpoint
+answers the follow-up once the spot is known. It runs a full map-wide solve per
+target (cached like any other search, so the second execute over the same site
+is nearly free - measured 0.09s warm) and intersects the per-target answers
+spatially. The solve gate is taken and released PER TARGET rather than held for
+the whole request: four targets would otherwise lock every other user out for
+the best part of ten minutes.
+
+Ranking is by the WORST smoke in the set, not the average. An execute carrying
+one throw nobody can reproduce is not an execute however easy the other three
+are, and a mean would hide exactly that behind them.
+
+Verified on the real case. "Where can I stand to smoke B doors and the hole on
+de_dust2" returns 12 distinct places, best first, including one that throws B
+doors from a standing position. From the spot it names, `/api/execute` produces
+both throws with console commands in 7 seconds.
+
+**A bug this found in itself.** The first version deduplicated candidate stances
+by rounding feet into cells, and returned spots 16u apart as separate answers -
+twelve rows describing about five actual places. Cell boundaries split
+neighbours. It now thins greedily over the RANKED list (keep the best, refuse
+anything within `within` of one already kept), which is boundary-free and keeps
+the best member of each cluster. Re-measured: 12 distinct spots, closest pair
+116u apart. Both behaviours are pinned by tests.
+
+The disk solve cache moved into three shared helpers (`SolveCachePath`,
+`ReadSolveCacheAsync`, `WriteSolveCacheAsync`) so the streaming lineup endpoint
+and both execute endpoints cannot drift on the write-to-temp-then-rename rule -
+the thing that stops a kill mid-write leaving a truncated file that a later hit
+splices into its NDJSON stream as garbage.
+
+### Still missing
+
+No viewer for either endpoint yet: both are reachable only by API. The natural
+UI is pin a position, add targets, and show the smokes in order with their
+combined coverage - the coverage overlay is already the other half of "does my
+execute actually cover the site".
+
+237 tests.
