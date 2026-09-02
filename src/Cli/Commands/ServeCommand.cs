@@ -57,11 +57,23 @@ public static class ServeCommand
     static readonly TimeSpan PhysicsRefillPeriod = TimeSpan.FromSeconds(30);
 
     // Behind the reverse proxy every request arrives from the same socket
-    // address, so the forwarded client is the only thing that distinguishes one
-    // caller from another. Falls back to the socket for a direct connection.
-    static string ClientKey(HttpContext context) =>
-        context.Request.Headers["X-Forwarded-For"].ToString() is { Length: > 0 } forwarded
-            ? forwarded.Split(',')[0].Trim()
+    // address, so a forwarded header is the only thing that tells one caller
+    // from another - but only a header the client cannot write itself will do.
+    //
+    // X-Forwarded-For is NOT that header. Both Cloudflare and traefik APPEND to
+    // it rather than replacing it, so a client-supplied value survives as the
+    // first entry: sending a fresh X-Forwarded-For per request bought a fresh
+    // rate-limit bucket every time and defeated the limiter completely. That
+    // was measured against production, not reasoned about.
+    //
+    // CF-Connecting-IP is written by Cloudflare on every proxied request and
+    // overwrites whatever the client sent, so it cannot be forged from outside.
+    // With no Cloudflare in front (local runs, direct traefik), this falls back
+    // to the socket address, which over-limits rather than under-limits - the
+    // right way round for a fallback.
+    public static string ClientKey(HttpContext context) =>
+        context.Request.Headers["CF-Connecting-IP"].ToString() is { Length: > 0 } cloudflare
+            ? cloudflare.Trim()
             : context.Connection.RemoteIpAddress?.ToString() ?? "unknown";
 
     // Spawn lists parsed from data/<map>.entities.json, once per map for the
