@@ -1,3 +1,4 @@
+using System.Net;
 using System.Globalization;
 using System.Numerics;
 using System.Text.Json;
@@ -130,8 +131,17 @@ public static class ServeCommand
         context.Response.ContentType = JsonContentType;
         while (await Task.WhenAny(work, Task.Delay(GateKeepalive, context.RequestAborted)) != work)
         {
-            await context.Response.WriteAsync("\n", CancellationToken.None);
-            await context.Response.Body.FlushAsync(CancellationToken.None);
+            try
+            {
+                await context.Response.WriteAsync("\n", CancellationToken.None);
+                await context.Response.Body.FlushAsync(CancellationToken.None);
+            }
+            catch (Exception e) when (e is IOException or ObjectDisposedException)
+            {
+                // The client left: a disconnect, not a failure. The work is
+                // cancelled through RequestAborted; report it that way.
+                throw new OperationCanceledException("client disconnected", e, context.RequestAborted);
+            }
         }
         await work;
     }
@@ -140,6 +150,41 @@ public static class ServeCommand
     // the error must be the body instead.
     static Task WriteInBandError(HttpContext context, string message) =>
         context.Response.WriteAsync(JsonSerializer.Serialize(new { error = message }), CancellationToken.None);
+
+    // What the viewer is allowed to fetch from data/: per-map viewer assets
+    // and the validation reports, by exact name shape. No directories except
+    // validation/, no secrets, no databases, no logs.
+    public static bool PublicDataFile(string relative)
+    {
+        if (relative.Contains("..", StringComparison.Ordinal) || relative.Contains('\\'))
+        {
+            return false;
+        }
+        if (relative.StartsWith("validation/", StringComparison.Ordinal))
+        {
+            var name = relative["validation/".Length..];
+            return !name.Contains('/') && (name.EndsWith(".json", StringComparison.Ordinal) || name.EndsWith(".md", StringComparison.Ordinal));
+        }
+        if (relative.Contains('/'))
+        {
+            return false;
+        }
+        foreach (var suffix in PublicDataSuffixes)
+        {
+            if (relative.EndsWith(suffix, StringComparison.Ordinal) && relative.Length > suffix.Length)
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    static readonly string[] PublicDataSuffixes =
+    [
+        ".viewer-map.json", ".viewer-map.png", ".thumb.png",
+        ".entities.json", ".targets.json", ".prosmokes.json", ".protargets.json", ".meshdiff.json",
+        "_textured.glb", "_textured.mobile.glb",
+    ];
 
     static string? AssetVersionOrNull(string path) => File.Exists(path) ? StaticAssetServer.AssetVersion(path) : null;
 
@@ -234,18 +279,22 @@ public static class ServeCommand
     // data/admins.txt. A file rather than config so the list lives with the
     // data it protects and survives redeploys; missing file means nobody.
     static readonly TimeSpan AdminsTtl = TimeSpan.FromSeconds(30);
+    static readonly object adminsLock = new();
     static (HashSet<string> Ids, DateTimeOffset At) adminsCache = ([], DateTimeOffset.MinValue);
     static bool IsAdmin(string root, string steamId)
     {
-        if (DateTimeOffset.UtcNow - adminsCache.At > AdminsTtl)
+        lock (adminsLock)
         {
-            var path = Path.Combine(root, "data", "admins.txt");
-            var ids = File.Exists(path)
-                ? File.ReadAllLines(path).Select(l => l.Trim()).Where(l => l.Length == 17 && l.All(char.IsAsciiDigit)).ToHashSet(StringComparer.Ordinal)
-                : new HashSet<string>(StringComparer.Ordinal);
-            adminsCache = (ids, DateTimeOffset.UtcNow);
+            if (DateTimeOffset.UtcNow - adminsCache.At > AdminsTtl)
+            {
+                var path = Path.Combine(root, "data", "admins.txt");
+                var ids = File.Exists(path)
+                    ? File.ReadAllLines(path).Select(l => l.Trim()).Where(l => l.Length == 17 && l.All(char.IsAsciiDigit)).ToHashSet(StringComparer.Ordinal)
+                    : new HashSet<string>(StringComparer.Ordinal);
+                adminsCache = (ids, DateTimeOffset.UtcNow);
+            }
+            return adminsCache.Ids.Contains(steamId);
         }
-        return adminsCache.Ids.Contains(steamId);
     }
 
     static string? SignedInSteamId(HttpContext context, byte[] secret) =>
@@ -257,14 +306,43 @@ public static class ServeCommand
     public static int Run(Dictionary<string, string> options)
     {
         var port = int.Parse(options.GetValueOrDefault("port", "8137"), CultureInfo.InvariantCulture);
-        var root = Path.GetFullPath(options.GetValueOrDefault("root", "."));
-        var attrs = options.GetValueOrDefault("attrs", "");
         var bind = options.GetValueOrDefault("bind", "localhost");
         if (bind is not ("localhost" or "any"))
         {
             Console.Error.WriteLine($"error: --bind must be 'localhost' or 'any', got '{bind}'");
             return 1;
         }
+        using var app = Build(options);
+        try
+        {
+            app.Start();
+        }
+        catch (IOException e)
+        {
+            Console.Error.WriteLine($"error: cannot listen on port {port} ({e.Message}) - is another serve instance running? Use --port to pick a different one.");
+            return 1;
+        }
+        Console.WriteLine($"serving {Path.GetFullPath(options.GetValueOrDefault("root", "."))} at http://localhost:{port}/  (ctrl-c to stop)");
+        // The host intercepts SIGINT/ctrl-c, drains in-flight requests, and
+        // returns here instead of throwing.
+        app.WaitForShutdown();
+        return 0;
+    }
+
+    /// <summary>
+    /// The configured server, not yet listening: what <see cref="Run"/> starts,
+    /// and what a test starts on a free port against a temporary root.
+    /// </summary>
+    // The seam exists for the endpoint tests. Every wiring bug this server has
+    // shipped - a counter that drifted, a header that was not set, an auth
+    // check on the wrong path - was invisible to the solver's unit tests and
+    // found by a person clicking; this is what lets a test click instead.
+    public static WebApplication Build(Dictionary<string, string> options)
+    {
+        var port = int.Parse(options.GetValueOrDefault("port", "8137"), CultureInfo.InvariantCulture);
+        var root = Path.GetFullPath(options.GetValueOrDefault("root", "."));
+        var attrs = options.GetValueOrDefault("attrs", "");
+        var bind = options.GetValueOrDefault("bind", "localhost");
 
         var maps = LoadMaps(root, options);
         if (maps.Count == 0)
@@ -274,8 +352,9 @@ public static class ServeCommand
         StartBrotliPrecompress(maps, root);
         PruneCache(root, maps);
         var sessionSecret = SteamAuth.LoadOrCreateSecret(root);
-        using var votes = new VoteStore(Path.Combine(root, "data", "votes.db"));
-        using var steamHttp = new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
+        // Owned by the app: disposed when it stops, not when this returns.
+        var votes = new VoteStore(Path.Combine(root, "data", "votes.db"));
+        var steamHttp = new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
 
         // A solve occupies one pool thread per core (see Cpu.Bound). The pool's
         // default floor is exactly that many, so everything else the request
@@ -311,6 +390,12 @@ public static class ServeCommand
             if (bind == "any")
             {
                 kestrel.ListenAnyIP(port);
+            }
+            else if (port == 0)
+            {
+                // A free port, for tests: Kestrel refuses "localhost:0", so
+                // the loopback address is named explicitly.
+                kestrel.Listen(IPAddress.Loopback, 0);
             }
             else
             {
@@ -353,7 +438,7 @@ public static class ServeCommand
                     AutoReplenishment = true,
                 }));
         });
-        using var app = builder.Build();
+        var app = builder.Build();
         app.UseRateLimiter();
 
         // Baseline hardening headers on every response: block MIME sniffing,
@@ -1190,7 +1275,8 @@ public static class ServeCommand
                                             entry.Mesh, entry.AttributeFilter, entry.NavAreas!, probe.RootElement, entry.Constants,
                                             standSpots: entry.StandSpots,
                                             spawnFronts: SpawnFronts(root, entry.Mesh.MapName),
-                                            spawnPoints: SpawnPoints(root, entry.Mesh.MapName)), context.RequestAborted);
+                                            spawnPoints: SpawnPoints(root, entry.Mesh.MapName),
+                                            ct: context.RequestAborted), context.RequestAborted);
                                     }
                                     finally
                                     {
@@ -1374,7 +1460,7 @@ public static class ServeCommand
                             using var doc = JsonDocument.Parse(q);
                             var solved = await Task.Run(() => RunTargetQuery(
                                 entry.Mesh, entry.AttributeFilter, entry.NavAreas!, doc.RootElement, entry.Constants,
-                                standSpots: entry.StandSpots), context.RequestAborted);
+                                standSpots: entry.StandSpots, ct: context.RequestAborted), context.RequestAborted);
                             smokes.Add(TrimToBest(solved, MaxExecuteLineupsPerSmoke));
                         }
                     }
@@ -1658,34 +1744,24 @@ public static class ServeCommand
         app.MapMethods("/data/{**rest}", ["GET", "HEAD"], (HttpContext context, string? rest) =>
         {
             var r = rest ?? "";
-            // The viewer only ever fetches map JSON/PNG/GLB and the validation
-            // reports. Everything else under data/ is a dev artifact - the
-            // calibration tree, the mesh cache, run logs (which can carry local
-            // paths), OBJ dumps - and has no business at a public URL.
-            if (r.EndsWith(".log", StringComparison.OrdinalIgnoreCase) ||
-                r.EndsWith(".obj", StringComparison.OrdinalIgnoreCase) ||
-                r.StartsWith("calib/", StringComparison.OrdinalIgnoreCase) ||
-                r.StartsWith("cache/", StringComparison.OrdinalIgnoreCase))
+            // An allowlist, not a blocklist. The viewer fetches exactly these
+            // shapes; everything else under data/ is either a dev artifact or
+            // - as a review found live on prod - a secret: the session-signing
+            // key, the admin list, the votes database and every account's
+            // saved set all sat one GET away. A blocklist that has to name
+            // each new private file will miss the next one too.
+            if (!PublicDataFile(r))
             {
                 return Results.NotFound();
             }
             return ServeStatic(context, root, "data/" + r);
         });
-
-        try
+        app.Lifetime.ApplicationStopped.Register(() =>
         {
-            app.Start();
-        }
-        catch (IOException e)
-        {
-            Console.Error.WriteLine($"error: cannot listen on port {port} ({e.Message}) - is another serve instance running? Use --port to pick a different one.");
-            return 1;
-        }
-        Console.WriteLine($"serving {root} at http://localhost:{port}/  (ctrl-c to stop)");
-        // The host intercepts SIGINT/ctrl-c, drains in-flight requests, and
-        // returns here instead of throwing.
-        app.WaitForShutdown();
-        return 0;
+            votes.Dispose();
+            steamHttp.Dispose();
+        });
+        return app;
     }
 
     // Consecutive origin events collapse into one checked-batch line per drain

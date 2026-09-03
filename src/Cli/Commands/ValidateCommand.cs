@@ -70,7 +70,10 @@ public static class ValidateCommand
         Console.WriteLine($"solving target ({target.X:F0},{target.Y:F0}{(hasTargetZ ? $",{target.Z:F0}" : "")}) tolerance {tolerance:F0}u ...");
         var started = System.Diagnostics.Stopwatch.StartNew();
         var solve = SolveForTarget(mesh, attributeFilter, navAreas, target, hasTargetZ, null, 3100f, tolerance, constants);
-        var lineups = limit > 0 ? solve.Lineups.Take(limit).ToList() : solve.Lineups;
+        // In the API's order, so a limited run throws what a player sees
+        // first - the solver's own order put the top of the list last.
+        var ordered = LineupApi.Ranked(solve);
+        var lineups = limit > 0 ? ordered.Take(limit).ToList() : ordered;
         Console.WriteLine($"{solve.Lineups.Count} lineups solved in {started.Elapsed.TotalSeconds:F0}s ({lineups.Count} selected, {solve.OriginCount} origins)");
         if (lineups.Count == 0)
         {

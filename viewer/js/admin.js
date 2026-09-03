@@ -4,8 +4,8 @@
 //
 // A separate module because the rest of the viewer never edits map data, and
 // the one card that does should not be mixed into the code that reads it.
-import { state } from "./state.js?v=106";
-import { putTargets } from "./api.js?v=106";
+import { state } from "./state.js?v=107";
+import { putTargets } from "./api.js?v=107";
 
 let callbacks = {
   onSetTarget: () => {},
@@ -46,7 +46,9 @@ export function initAdmin(cb) {
     const t = state.targets[Number(row.dataset.index)];
     if (e.target.matches("input[type=text]")) {
       t.name = e.target.value;
-      // A name typed by a person is a name, not a guess.
+      // Typed by a person: this is the name the server gets, and it is a
+      // name, not a guess.
+      t.serverName = e.target.value;
       t.named = e.target.value.trim().length > 0;
       row.querySelector("input[type=checkbox]").checked = t.named;
     } else if (e.target.matches("input[type=checkbox]")) {

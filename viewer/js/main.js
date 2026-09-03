@@ -2,19 +2,19 @@
 // import the feature modules; they call back into the orchestrators defined
 // here (setTarget, select, runQuery) via the init*/set*Callbacks hooks.
 
-import { state, filtered, esc, lowMemoryDevice, loadFavorites, setFavorite, isFavorite, DEFAULT_EYE_HEIGHT, EYE_HEIGHT_BY_TYPE, TARGET_SNAP_RADIUS, favoriteHooks, loadSavedLocal, persistSavedLocal} from "./state.js?v=106";
-import { loadMapList, loadMapData, runQuery as postLineupQuery, fetchTrajectory, fetchLineupOne, fetchSlack, fetchSpawns, fetchProSmokes, fetchMeshDiff, meshDiffExists, fetchLevels, fetchSmokeCoverage, runExecute, findExecuteSpots, fetchTargets, fetchMe, signOut, fetchSavedLineups, putSavedLineups, fetchVotes, castVote} from "./api.js?v=106";
-import { loadRadar, readColors, recolorRadar, draw, scheduleDraw, resize, resetView, initMap2d, screenOf } from "./map2d.js?v=106";
-import { ensure3d, resetEnsure3d, teardown3d, current3d, sync3d, syncProgress3d, syncMeshDiff3d, set3dCallbacks, applyTheme3d, verticalFovFromDesired } from "./view3d.js?v=106";
-import { initAdmin, renderAdmin, syncAdminMode } from "./admin.js?v=106";
-import { resetEnsureTexturedScene } from "./textured-scene.js?v=106";
-import { capturePreview } from "./preview.js?v=106";
+import { state, filtered, esc, lowMemoryDevice, loadFavorites, setFavorite, isFavorite, DEFAULT_EYE_HEIGHT, EYE_HEIGHT_BY_TYPE, TARGET_SNAP_RADIUS, favoriteHooks, loadSavedLocal, persistSavedLocal} from "./state.js?v=107";
+import { loadMapList, loadMapData, runQuery as postLineupQuery, fetchTrajectory, fetchLineupOne, fetchSlack, fetchSpawns, fetchProSmokes, fetchMeshDiff, meshDiffExists, fetchLevels, fetchSmokeCoverage, runExecute, findExecuteSpots, fetchTargets, fetchMe, signOut, fetchSavedLineups, putSavedLineups, fetchVotes, castVote} from "./api.js?v=107";
+import { loadRadar, readColors, recolorRadar, draw, scheduleDraw, resize, resetView, initMap2d, screenOf } from "./map2d.js?v=107";
+import { ensure3d, resetEnsure3d, teardown3d, current3d, sync3d, syncProgress3d, syncMeshDiff3d, set3dCallbacks, applyTheme3d, verticalFovFromDesired } from "./view3d.js?v=107";
+import { initAdmin, renderAdmin, syncAdminMode } from "./admin.js?v=107";
+import { resetEnsureTexturedScene } from "./textured-scene.js?v=107";
+import { capturePreview } from "./preview.js?v=107";
 // Every local import across viewer/js carries the SAME ?v= token, bumped
 // together on any change. The HTML is served no-cache, so a fresh load pulls
 // main.js?v=N, which pulls every module at ?v=N - the whole graph refreshes as
 // one consistent set past Cloudflare's 4h JS cache, with no duplicate module
 // instances (which a partial versioning would cause). Bump the token everywhere.
-import { renderLineups, initPanel, revealSelected, resultStatusText } from "./panel.js?v=106";
+import { renderLineups, initPanel, revealSelected, resultStatusText } from "./panel.js?v=107";
 
 (async () => {
   // Map switching means a failed load is no longer necessarily terminal (the
@@ -315,11 +315,16 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
       if (!el || !controls.contains(el) || !el.title) {
         return;
       }
-      if (held === null) {
+      // Capture what the status said unless it is currently showing a hint
+      // (moving between two controls); a control that re-rendered itself
+      // out from under the pointer never sent its mouseout, and holding on
+      // to that stale text would restore it later over a real message.
+      if (held === null || !statusIsAHint()) {
         held = statusEl.textContent;
       }
       statusEl.textContent = el.title;
     });
+    const statusIsAHint = () => [...controls.querySelectorAll("[title]")].some(c => c.title === statusEl.textContent);
     controls.addEventListener("mouseout", e => {
       const el = e.target.closest("[title]");
       const to = e.relatedTarget instanceof Element ? e.relatedTarget.closest("[title]") : null;
@@ -1573,11 +1578,14 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
   // it selected, bypassing the filters since it is an explicit pick. "Search
   // map" is still one click away for anyone who wants the alternatives.
   async function showSingleLineup(spec) {
+    const gen = state.mapGeneration;
     state.busy = true;
     statusEl.textContent = "loading the shared lineup…";
     syncControls();
     try {
       const { points, lineup } = await fetchLineupOne(state.currentMap, state.target, spec, brokenParam());
+      // A map switch while this was in flight owns the state now.
+      if (state.mapGeneration !== gen) { return; }
       lineup._idx = 0;
       lineup._path = points; // pre-set so select() draws without a second fetch
       state.result = { target: [...state.target], origins: 0, coverage: null, lineups: [lineup], single: true };
@@ -1620,9 +1628,14 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
   // MidDoors" tell nobody which is which, in the list or on the map. Until a
   // person names them, the later ones get a number. Ids are untouched, so
   // votes and saved lineups still land on the right pin.
+  // The number is a display device only: `serverName` keeps what the file
+  // says, and a save sends that unless the admin actually typed a new name.
+  // Without it, confirming a pin without retyping it would have written
+  // "near MidDoors 2" into the map data as its real name.
   function disambiguateTargetNames(targets) {
     const seen = new Map();
     for (const t of targets) {
+      t.serverName = t.name;
       const n = (seen.get(t.name) ?? 0) + 1;
       seen.set(t.name, n);
       if (n > 1 && !t.named) {

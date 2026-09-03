@@ -3,10 +3,10 @@
 // wraps init/sync. Raycast picks route through callbacks that main.js
 // registers, so this module never imports the orchestrator.
 
-import { state, filtered, clickClass, lowMemoryDevice, SMOKE_BLOOM_RADIUS, EYE_HEIGHT_BY_TYPE, DEFAULT_EYE_HEIGHT } from "./state.js?v=106";
-import { fetchMesh } from "./api.js?v=106";
-import { createFlyCamera } from "./flycam.js?v=106";
-import { loadScript, ensureTexturedScene, currentTexturedScene, disposeSceneContents, disposeTexturedScene } from "./textured-scene.js?v=106";
+import { state, filtered, clickClass, lowMemoryDevice, SMOKE_BLOOM_RADIUS, EYE_HEIGHT_BY_TYPE, DEFAULT_EYE_HEIGHT } from "./state.js?v=107";
+import { fetchMesh } from "./api.js?v=107";
+import { createFlyCamera } from "./flycam.js?v=107";
+import { loadScript, ensureTexturedScene, currentTexturedScene, disposeSceneContents, disposeTexturedScene } from "./textured-scene.js?v=107";
 
 const stage3d = state.stage3d;
 // Warning tint for phantom blockers (grenade-clips, physics-clips, glass) - a
@@ -807,6 +807,8 @@ export function applyTheme3d() {
   three.targetMat.color.set(colors.target);
   three.namedPinMat.color.set(colors.target);
   three.throwSpotMat.color.set(colors["heat-ok"]);
+  // The coverage material is built lazily and lives at module scope.
+  coverageMat?.color.set(colors.target);
   three.namedPinDimMat.color.set(colors.target);
   // The plates were rasterised in the old theme's colours.
   labelCache.clear();

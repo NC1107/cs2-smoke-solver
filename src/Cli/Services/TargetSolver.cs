@@ -189,7 +189,7 @@ public static class TargetSolver
         // grenade's width out from any wall it is touching.
         if (hasTargetZ)
         {
-            target = SettleTarget(collider, target);
+            target = SettleTarget(collider, grid, target);
         }
 
         // The "zone" for a two-click query is simply resting close enough to the target.
@@ -514,7 +514,7 @@ public static class TargetSolver
     /// A 3D-clicked target moved to where a grenade could actually rest: onto
     /// the floor under it, and a grenade's width out from any wall it touches.
     /// </summary>
-    public static Vector3 SettleTarget(TriangleCollider collider, Vector3 target)
+    public static Vector3 SettleTarget(TriangleCollider collider, VoxelGrid grid, Vector3 target)
     {
         var p = target;
         // Off the surface first, then down: a click on a wall is a point ON
@@ -565,11 +565,36 @@ public static class TargetSolver
                 }
             }
         }
-        var top = new Vector3(p.X, p.Y, probe.Z + 6f);
-        var bottom = new Vector3(p.X, p.Y, probe.Z - TargetFloorDrop);
-        if (collider.FirstHit(top, bottom) is { } floor && floor.Normal.Z >= GrenadeTrajectory.FloorNormalZ)
+        // The floor at or below the point, found through the grid first: a
+        // ray started a few units above a click on the UNDERSIDE of a balcony
+        // begins inside the slab, and its first crossing - leaving the slab
+        // through that same underside - reads as a floor because the
+        // raycaster faces every normal toward the ray. So the exact probe is
+        // fired only from a cell the grid knows to be free, sitting directly
+        // over a solid one, no higher than the click. A click on a floor
+        // finds its own floor; a click under an overhang finds the ground.
+        // From one cell above the click: a floor lying exactly on a cell
+        // boundary marks both cells beside it solid, so the free cell over
+        // the click's own is where such a floor's probe has to start.
+        var (cx, cy, cz) = grid.CellOf(p + new Vector3(0, 0, 1f));
+        if (grid.InBounds(cx, cy, Math.Clamp(cz, 1, grid.Nz - 1)))
         {
-            p = p with { Z = float.Lerp(top.Z, bottom.Z, floor.T) };
+            var lowest = Math.Max(1, cz - (int)MathF.Ceiling(TargetFloorDrop / grid.VoxelSize));
+            for (var k = Math.Clamp(cz + 1, 1, grid.Nz - 1); k >= lowest; k--)
+            {
+                if (grid.IsSolid(grid.Index(cx, cy, k)) || !grid.IsSolid(grid.Index(cx, cy, k - 1)))
+                {
+                    continue;
+                }
+                var boundary = grid.CellCenter(cx, cy, k).Z - grid.VoxelSize / 2;
+                var top = new Vector3(p.X, p.Y, boundary + 2f);
+                var bottom = new Vector3(p.X, p.Y, boundary - grid.VoxelSize - 2f);
+                if (collider.FirstHit(top, bottom) is { } floor && floor.Normal.Z >= GrenadeTrajectory.FloorNormalZ)
+                {
+                    p = p with { Z = float.Lerp(top.Z, bottom.Z, floor.T) };
+                    return p;
+                }
+            }
         }
         return p;
     }

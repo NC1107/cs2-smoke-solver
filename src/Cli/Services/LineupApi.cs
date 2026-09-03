@@ -472,7 +472,7 @@ public static class LineupApi
             : "all";
         // Bump when solver or sim behavior changes: cached answers from older code
         // must never be replayed as current results.
-        const int QueryVersion = 33;
+        const int QueryVersion = 34;
         // meshVersion is the content-hashed mesh identity (not just the game
         // build), so re-extracting a map - e.g. dropping the Retake tape - forces
         // a re-solve instead of replaying results computed against the old mesh.
@@ -615,15 +615,7 @@ public static class LineupApi
         var humanError = solve.Lineups.ToDictionary(
             l => l,
             l => HumanError.Estimate(l, pins[l], aimRefs[l].Band));
-        int Reproducibility(Lineup l) => (int)(humanError[l] / 8f);
-
-        var bySky = solve.Lineups
-            .OrderBy(Reproducibility)
-            .ThenBy(l => l.DirectLos ? 1 : 0);
-        var ranked = (originClick is { } click
-                ? bySky.ThenBy(l => (int)(Vector2.Distance(new Vector2(l.Feet.X, l.Feet.Y), click) / 32f)).ThenByDescending(l => pins[l]).ThenBy(l => (int)l.Type)
-                : bySky.ThenByDescending(l => pins[l]).ThenBy(l => (int)l.Type))
-            .ToList();
+        var ranked = Rank(solve.Lineups, originClick, l => humanError[l], l => pins[l]);
 
         return JsonSerializer.Serialize(new
         {
@@ -692,6 +684,35 @@ public static class LineupApi
                 console = SetposCommand(l.Feet, l.PitchDeg, l.YawDeg),
             }),
         });
+    }
+
+    /// <summary>
+    /// The order the API hands lineups out in: the landing error a person adds
+    /// (HumanError, in 8u bands) first, concealed before exposed, then nearest
+    /// the clicked spot for a probe, then pinned before open, then the easier
+    /// movement. Shared with the validation rig so what it throws first is
+    /// what a player sees first.
+    /// </summary>
+    public static List<Lineup> Rank(IReadOnlyList<Lineup> lineups, Vector2? originClick, Func<Lineup, float> humanError, Func<Lineup, int> pin)
+    {
+        int Reproducibility(Lineup l) => (int)(humanError(l) / 8f);
+        var bySky = lineups
+            .OrderBy(Reproducibility)
+            .ThenBy(l => l.DirectLos ? 1 : 0);
+        return (originClick is { } click
+                ? bySky.ThenBy(l => (int)(Vector2.Distance(new Vector2(l.Feet.X, l.Feet.Y), click) / 32f)).ThenByDescending(pin).ThenBy(l => (int)l.Type)
+                : bySky.ThenByDescending(pin).ThenBy(l => (int)l.Type))
+            .ToList();
+    }
+
+    /// <summary>The API's order for a whole solve, computed from its colliders.</summary>
+    public static List<Lineup> Ranked(TargetSolve solve, Vector2? originClick = null)
+    {
+        var pins = solve.Lineups.ToDictionary(l => l, l => LineupSolver.PositionStance(solve.PlayerCollider, l.Feet).Pin);
+        var errors = solve.Lineups.ToDictionary(
+            l => l,
+            l => HumanError.Estimate(l, pins[l], AimReference.Analyze(solve.Collider, l.Feet, l.Type, l.PitchDeg, l.YawDeg).Band));
+        return Rank(solve.Lineups, originClick, l => errors[l], l => pins[l]);
     }
 
     /// <summary>

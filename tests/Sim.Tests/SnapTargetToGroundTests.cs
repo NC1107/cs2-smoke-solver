@@ -127,18 +127,23 @@ public class SettleTargetTests
     static readonly Vector3 Min = new(-64, -64, -32);
     static readonly Vector3 Max = new(512, 512, 256);
 
-    static TriangleCollider Room() => new(SyntheticMeshes.FromQuads(
+    static readonly CollisionMesh RoomMesh = SyntheticMeshes.FromQuads(
     [
         SyntheticMeshes.Ground(-64, 512, 0),
         SyntheticMeshes.WallY(-64, 512, 200, 0, 128),
-    ]), Min, Max);
+        // A balcony slab over the far corner: underside at 96, top at 112.
+        ([300f, 300f, 96f], [500f, 300f, 96f], [500f, 500f, 96f], [300f, 500f, 96f]),
+        ([300f, 300f, 112f], [500f, 300f, 112f], [500f, 500f, 112f], [300f, 500f, 112f]),
+    ]);
+    static TriangleCollider Room() => new(RoomMesh, Min, Max);
+    static VoxelGrid Grid() => VoxelGrid.Build(RoomMesh, 16f, Min, Max);
 
     [Fact]
     public void AClickHalfwayUpAWallGoesToItsFoot()
     {
         // Clicking the same corner twice and getting nothing: the click had
         // landed on the crate's side, forty units up, where no smoke rests.
-        var settled = TargetSolver.SettleTarget(Room(), new Vector3(100, 200, 40));
+        var settled = TargetSolver.SettleTarget(Room(), Grid(), new Vector3(100, 200, 40));
 
         Assert.Equal(0f, settled.Z, 1f);
         Assert.True(MathF.Abs(settled.Y - 200) >= 6f, $"still against the wall at y={settled.Y:F1}");
@@ -148,15 +153,36 @@ public class SettleTargetTests
     [Fact]
     public void AClickOnOpenFloorStaysWhereItIs()
     {
-        var settled = TargetSolver.SettleTarget(Room(), new Vector3(100, 100, 0));
+        var settled = TargetSolver.SettleTarget(Room(), Grid(), new Vector3(100, 100, 0));
 
-        Assert.Equal(new Vector3(100, 100, 0), settled);
+        Assert.Equal(100f, settled.X, 0.01f);
+        Assert.Equal(100f, settled.Y, 0.01f);
+        Assert.Equal(0f, settled.Z, 0.01f);
+    }
+
+    [Fact]
+    public void AClickOnTheUndersideOfABalconyGoesToTheGroundBeneathIt()
+    {
+        // The raycaster faces every normal toward the ray, so a probe fired
+        // from inside the slab saw the underside as a floor and left the
+        // target at ceiling height (review finding).
+        var settled = TargetSolver.SettleTarget(Room(), Grid(), new Vector3(400, 400, 96));
+
+        Assert.Equal(0f, settled.Z, 1f);
+    }
+
+    [Fact]
+    public void AClickOnTopOfTheBalconyStaysOnIt()
+    {
+        var settled = TargetSolver.SettleTarget(Room(), Grid(), new Vector3(400, 400, 112));
+
+        Assert.Equal(112f, settled.Z, 1f);
     }
 
     [Fact]
     public void AClickOnTheFloorAgainstAWallIsNudgedOut()
     {
-        var settled = TargetSolver.SettleTarget(Room(), new Vector3(100, 197, 0));
+        var settled = TargetSolver.SettleTarget(Room(), Grid(), new Vector3(100, 197, 0));
 
         Assert.True(settled.Y <= 192.5f, $"y={settled.Y:F1}");
         Assert.Equal(0f, settled.Z, 1f);

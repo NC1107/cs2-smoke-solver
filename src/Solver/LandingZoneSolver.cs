@@ -95,7 +95,10 @@ public static class LandingZoneSolver
     static List<int> FindCandidateRestCells(VoxelGrid grid, IReadOnlyList<SightlineSpec> sightlines, SmokeParams p)
     {
         var halfDiagonal = grid.VoxelSize * 0.87f;
-        var maxDistance = p.MaxRadius + halfDiagonal;
+        // The fill may reach MaxRadius * ContainedStretch when boxed in, so
+        // the candidate prune must too, or confined rest cells that could
+        // seal the line are never offered to it.
+        var maxDistance = p.MaxRadius * p.ContainedStretch + halfDiagonal;
         var candidates = new List<int>();
         for (var z = 1; z < grid.Nz; z++)
         {
