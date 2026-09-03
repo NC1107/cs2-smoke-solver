@@ -285,8 +285,13 @@ public static class ServeCommand
         // multi-second lumps and concurrent requests hung for the duration of
         // somebody else's solve. Headroom above the solve's own ceiling means
         // those threads are there the moment they are needed.
+        // Two solves run at once (SolveGate), each wanting a thread per core,
+        // plus the request pipeline: cores + 4 covered one solve, and the
+        // second one - measured on prod, a person's solve behind the cache
+        // warm - spent 290 seconds in "prepare" waiting for threads the pool
+        // was handing out one a second.
         ThreadPool.GetMinThreads(out _, out var minIo);
-        ThreadPool.SetMinThreads(Environment.ProcessorCount + 4, minIo);
+        ThreadPool.SetMinThreads(Environment.ProcessorCount * 2 + 8, minIo);
 
         var builder = WebApplication.CreateSlimBuilder();
         // Keep CLI output as quiet as the old server: warnings and errors only.
