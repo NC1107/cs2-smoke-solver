@@ -4,7 +4,7 @@
 // selecting a lineup route through the callbacks main.js registers.
 
 import { state, filtered, clickShort, clickClass, esc, skyAngle, proMatched, scoreBreakdown, referenceBand, referenceFallback,
-  movementWords, clickWords, aimWords, difficultyWords, TARGET_SNAP_RADIUS, humanError } from "./state.js?v=107";
+  movementWords, clickWords, aimWords, difficultyWords, TARGET_SNAP_RADIUS, humanError } from "./state.js?v=108";
 
 const statusEl = state.statusEl;
 const PAGE_SIZE = 50;

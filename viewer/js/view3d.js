@@ -3,10 +3,10 @@
 // wraps init/sync. Raycast picks route through callbacks that main.js
 // registers, so this module never imports the orchestrator.
 
-import { state, filtered, clickClass, lowMemoryDevice, SMOKE_BLOOM_RADIUS, EYE_HEIGHT_BY_TYPE, DEFAULT_EYE_HEIGHT } from "./state.js?v=107";
-import { fetchMesh } from "./api.js?v=107";
-import { createFlyCamera } from "./flycam.js?v=107";
-import { loadScript, ensureTexturedScene, currentTexturedScene, disposeSceneContents, disposeTexturedScene } from "./textured-scene.js?v=107";
+import { state, filtered, clickClass, lowMemoryDevice, SMOKE_BLOOM_RADIUS, EYE_HEIGHT_BY_TYPE, DEFAULT_EYE_HEIGHT } from "./state.js?v=108";
+import { fetchMesh } from "./api.js?v=108";
+import { createFlyCamera } from "./flycam.js?v=108";
+import { loadScript, ensureTexturedScene, currentTexturedScene, disposeSceneContents, disposeTexturedScene } from "./textured-scene.js?v=108";
 
 const stage3d = state.stage3d;
 // Warning tint for phantom blockers (grenade-clips, physics-clips, glass) - a
@@ -487,25 +487,43 @@ async function init3d() {
       return null;
     }
     const p = hit.point;
-    const onWall = hit.normal ? Math.abs(hit.normal.z) < 0.35 : false;
+    // The face normal comes from the triangle's winding, not from which side
+    // was looked at, and the mesh is drawn double-sided: seen from behind, it
+    // points away from the camera. Face it toward the ray, or "step off the
+    // wall" steps INTO it and the drop lands the target inside the world
+    // ("setpos into world, use noclip to unstick yourself").
+    const n = hit.normal ? hit.normal.clone() : null;
+    if (n && n.dot(raycaster.ray.direction) > 0) {
+      n.negate();
+    }
+    const onWall = n ? Math.abs(n.z) < 0.35 : false;
     if (!onWall) {
+      // A floor seen from below is a ceiling: nothing to land on here.
+      if (n && n.z < 0) {
+        return { point: [p.x, p.y, p.z], kind: "void" };
+      }
       return { point: [p.x, p.y, p.z], kind: "floor" };
     }
-    // Step off the wall along its normal so the drop does not hit it.
-    const n = hit.normal;
+    // Step off the wall along its (camera-facing) normal so the drop does
+    // not hit it.
     const off = new THREE.Vector3(p.x + n.x * 4, p.y + n.y * 4, p.z + 2);
     dropRay.set(off, straightDown);
     dropRay.far = 160;
     const floor = dropRay.intersectObject(meshObj, false);
     dropRay.far = Infinity;
-    return floor.length > 0
-      ? { point: [off.x, off.y, floor[0].point.z], kind: "wall" }
+    // The floor has to face up: a drop that starts inside something
+    // finds that something's far side first, normal facing the ray.
+    const f = floor.find(h => h.face && (h.face.normal.z > 0.7 || h.face.normal.z < -0.7) && h.point.z <= off.z);
+    return f
+      ? { point: [off.x, off.y, f.point.z], kind: "wall" }
       : { point: [p.x, p.y, p.z], kind: "void" };
   }
 
   function setTargetAt(clientX, clientY) {
     const s = settledPointAt(clientX, clientY);
-    if (s) {
+    // Nothing to land on (a ceiling, a wall with no floor under it): the
+    // ghost was red, and a target there would be a setpos into the world.
+    if (s && s.kind !== "void") {
       const [x, y, z] = s.point;
       callbacks.onSetTarget([x, y, z], `target ${x.toFixed(0)}, ${y.toFixed(0)}, ${z.toFixed(0)} (3D)`);
     }
