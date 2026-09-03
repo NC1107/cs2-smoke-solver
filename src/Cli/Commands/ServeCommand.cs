@@ -85,6 +85,10 @@ public static class ServeCommand
 
     // A saved set is a few kilobytes; anything bigger is not a set of lineups.
     const int MaxSavedSetBytes = 256 * 1024;
+    // Fewer flooded cells than this is not a smoke, it is a pocket: a full
+    // bloom at 16u voxels is over a thousand.
+    const int MinPlausibleBloomCells = 48;
+
     // How close a target may be to a named spot and still vote under its name.
     // Matches the viewer's click snap, so what you clicked and what you voted
     // on are the same spot.
@@ -373,7 +377,23 @@ public static class ServeCommand
             {
                 return ApiError(StatusCodes.Status400BadRequest, "point is outside the map bounds");
             }
+            // A target can sit inside geometry: the canonical targets are pro
+            // landing centroids, and landings on both sides of a crate average
+            // to a point inside it. The flood then starts in a sealed pocket
+            // and stops at a handful of cells - measured 4 at the dust2 xbox
+            // spot against 1,330 from 16u higher. A real bloom is never that
+            // small, so a tiny result means "started inside something"; lift
+            // the start until the volume is a smoke's worth, up to a smoke's
+            // own height above the point asked for.
             var smoke = SmokeFloodFill.Fill(grid, at, p);
+            for (var lift = voxel; smoke.Cells.Length < MinPlausibleBloomCells && lift <= SmokeParams.CoverageRadius; lift += voxel)
+            {
+                var lifted = SmokeFloodFill.Fill(grid, at + new Vector3(0, 0, lift), p);
+                if (lifted.Cells.Length > smoke.Cells.Length)
+                {
+                    smoke = lifted;
+                }
+            }
             // Flat triples rather than nested arrays: a full bloom is a few
             // thousand cells and the nesting roughly doubles the payload for
             // nothing the client needs.
@@ -430,11 +450,16 @@ public static class ServeCommand
             return Results.Redirect("/?signin=ok");
         }).RequireRateLimiting(AccountPolicy);
 
-        app.MapGet("/auth/me", (HttpContext context) =>
-            SignedInSteamId(context, sessionSecret) is { } id
-                ? Results.Json(new { steamId = id })
-                : Results.StatusCode(StatusCodes.Status401Unauthorized))
-            .RequireRateLimiting(AccountPolicy);
+        app.MapGet("/auth/me", async (HttpContext context) =>
+        {
+            if (SignedInSteamId(context, sessionSecret) is not { } id)
+            {
+                return Results.StatusCode(StatusCodes.Status401Unauthorized);
+            }
+            var profile = await SteamAuth.ProfileAsync(steamHttp, id);
+            context.Response.Headers.CacheControl = "no-store";
+            return Results.Json(new { steamId = profile.SteamId, name = profile.Name, avatar = profile.Avatar });
+        }).RequireRateLimiting(AccountPolicy);
 
         app.MapPost("/auth/logout", (HttpContext context) =>
         {

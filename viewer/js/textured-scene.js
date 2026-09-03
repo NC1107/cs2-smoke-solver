@@ -3,8 +3,8 @@
 // previews. Loading, axis conversion, and material sanitization live here;
 // the interactive view and the preview path only consume the finished scene.
 
-import { state, lowMemoryDevice } from "./state.js?v=97";
-import { cacheBust } from "./api.js?v=97";
+import { state, lowMemoryDevice } from "./state.js?v=98";
+import { cacheBust } from "./api.js?v=98";
 
 const scriptPromises = {};
 export function loadScript(src) {
@@ -58,16 +58,27 @@ export function ensureTexturedScene(url) {
     draco.setDecoderPath("viewer/lib/draco/");
     const loader = new THREE.GLTFLoader();
     loader.setDRACOLoader(draco);
+    // The first preview or Textured click starts a one-time per-map download
+    // (tens of MB); without numbers it reads as a hang on a slow connection.
+    // The progress borrows the status line and hands back what was there once
+    // the download is done, so "37 / 37 MB" does not sit over the message the
+    // download interrupted for the rest of the session.
     const load = src => new Promise((resolve, reject) => {
-      loader.load(cacheBust(src), resolve, progress => {
-        // The first preview or Textured click starts a one-time per-map
-        // download (tens of MB); without numbers it reads as a hang on a slow
-        // connection.
+      let before = null;
+      const restore = () => {
+        if (before !== null && state.statusEl.textContent.startsWith("loading map textures")) {
+          state.statusEl.textContent = before;
+        }
+      };
+      loader.load(cacheBust(src), g => { restore(); resolve(g); }, progress => {
         if (progress.lengthComputable) {
+          if (before === null) {
+            before = state.statusEl.textContent;
+          }
           state.statusEl.textContent =
             `loading map textures: ${(progress.loaded / 1e6).toFixed(0)} / ${(progress.total / 1e6).toFixed(0)} MB (one-time per map)`;
         }
-      }, reject);
+      }, e => { restore(); reject(e); });
     });
     // Low-memory devices load the smaller mobile tier (256-cap textures +
     // decimated geometry, ~120-200MB decoded vs 0.5-1.4GB) so the tab does not

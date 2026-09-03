@@ -4,7 +4,7 @@
 // selecting a lineup route through the callbacks main.js registers.
 
 import { state, filtered, clickShort, clickClass, esc, skyAngle, proMatched, scoreBreakdown, referenceBand, referenceFallback,
-  movementWords, clickWords, aimWords, difficultyWords } from "./state.js?v=97";
+  movementWords, clickWords, aimWords, difficultyWords, TARGET_SNAP_RADIUS } from "./state.js?v=98";
 
 const statusEl = state.statusEl;
 const PAGE_SIZE = 50;
@@ -77,6 +77,8 @@ let callbacks = {
   onRemove: () => {},
   onShare: () => {},
   onVote: () => {},
+  onOpenSaved: () => {},
+  onForgetSaved: () => {},
 };
 
 // One result, said the way a lineup guide says it: which button, how you are
@@ -236,10 +238,20 @@ export function resultStatusText(shown) {
 }
 
 export function renderLineups() {
-  // The panel earns its screen space only once there are results to show;
-  // empty it reads as a stray bar of chrome (worst on phones, where it
-  // anchors to the bottom edge like a footer).
-  document.getElementById("panel").hidden = !state.result;
+  const saved = state.panelMode === "saved";
+  // The panel earns its screen space only once there is something to show:
+  // results, or the saved list. Empty it reads as a stray bar of chrome
+  // (worst on phones, where it anchors to the bottom edge like a footer).
+  document.getElementById("panel").hidden = !(state.result || saved);
+  for (const b of document.querySelectorAll("#panel-mode .tile")) {
+    const on = b.dataset.mode === state.panelMode;
+    b.classList.toggle("active", on);
+    b.setAttribute("aria-pressed", String(on));
+  }
+  // The sort and the detailed toggle describe a result list; they have no
+  // meaning over the saved one.
+  document.getElementById("sort-by").hidden = saved;
+  document.getElementById("row-detail").hidden = saved;
   const list = document.getElementById("lineup-list");
   const focusIdx = list.contains(document.activeElement)
     ? document.activeElement.dataset.idx : undefined;
@@ -248,6 +260,12 @@ export function renderLineups() {
   // render shows it for a non-empty result, so it never lingers over an
   // empty or cleared panel.
   document.getElementById("list-pager").hidden = true;
+  if (saved) {
+    // The render belongs to a selected result, not to the saved list.
+    document.getElementById("preview-pane").hidden = true;
+    renderSaved(list);
+    return;
+  }
   if (!state.result) {
     return;
   }
@@ -328,8 +346,8 @@ export function renderLineups() {
         ? state.result.lineups.filter(x => x._smoke === l._smoke).length
         : 0;
       const more = smoke && smoke.found > kept ? ` \u00b7 best ${kept} of ${smoke.found}` : "";
-      head.textContent = `Smoke ${l._smoke + 1} of ${exec.smokes.length}` +
-        (t.length ? ` \u00b7 ${t[0].toFixed(0)}, ${t[1].toFixed(0)}` : "") + more;
+      head.textContent = `Smoke ${l._smoke + 1} \u00b7 ${smokeName(t)}` + more;
+      head.title = t.length ? `${t[0].toFixed(0)}, ${t[1].toFixed(0)}` : "";
       box.appendChild(head);
     }
     // The selected lineup expands where it sits. Rendering its detail card at
@@ -344,7 +362,7 @@ export function renderLineups() {
       if (smoke.found === 0) {
         const head = document.createElement("div");
         head.className = "exec-head exec-empty";
-        head.textContent = `Smoke ${i + 1} of ${exec.smokes.length} \u00b7 nothing from this spot`;
+        head.textContent = `Smoke ${i + 1} \u00b7 ${smokeName(smoke.target ?? [])} \u00b7 nothing from this spot`;
         head.title = smoke.emptyReason ?? "";
         box.appendChild(head);
       }
@@ -372,6 +390,90 @@ export function renderLineups() {
 // the scrolling list. Turning a page re-renders but deliberately does not touch
 // the selection, so a lineup selected on another page stays selected. Prev/next
 // are wired once in initPanel; this only refreshes the labels and disabled state.
+// A smoke in an execute is called by the named target it sits on, as the
+// sidebar list calls it, so the two stay attributable to each other.
+function smokeName(t) {
+  if (t.length < 2) {
+    return "";
+  }
+  let best = null;
+  let bestD = TARGET_SNAP_RADIUS;
+  for (const nt of state.targets) {
+    const d = Math.hypot(nt.pos[0] - t[0], nt.pos[1] - t[1]);
+    if (d < bestD) { bestD = d; best = nt; }
+  }
+  return best ? best.name : `${t[0].toFixed(0)}, ${t[1].toFixed(0)}`;
+}
+
+// Your saved lineups, across every map: the "My Lineups" view. Each row is the
+// throw as it was saved - reopened through the single-lineup path, so nothing
+// here needs the solve that found it. Grouped by map, the current map first,
+// because that is the one you can act on right now.
+function renderSaved(list) {
+  const all = [...state.saved].sort((a, b) =>
+    (a.map === state.currentMap ? 0 : 1) - (b.map === state.currentMap ? 0 : 1) ||
+    a.map.localeCompare(b.map) ||
+    (b.savedAt ?? 0) - (a.savedAt ?? 0));
+  document.getElementById("head-count").textContent =
+    all.length === 0 ? "nothing saved yet" : `${all.length} saved`;
+  if (all.length === 0) {
+    const empty = document.createElement("p");
+    empty.className = "saved-empty";
+    empty.innerHTML = state.account
+      ? "Star a lineup in the results and it will be kept here, on your account."
+      : "Star a lineup in the results to keep it here. <a href=\"/auth/steam\">Sign in with Steam</a> and your saved lineups follow you to any browser.";
+    list.appendChild(empty);
+    return;
+  }
+  const box = document.createElement("div");
+  box.className = "lineup-options";
+  box.setAttribute("role", "group");
+  box.setAttribute("aria-label", `${all.length} saved lineups`);
+  let lastMap = null;
+  for (const spec of all) {
+    if (spec.map !== lastMap) {
+      lastMap = spec.map;
+      const head = document.createElement("div");
+      head.className = "exec-head";
+      head.textContent = spec.map + (spec.map === state.currentMap ? " \u00b7 this map" : "");
+      box.appendChild(head);
+    }
+    box.appendChild(savedRow(spec));
+  }
+  list.appendChild(box);
+}
+
+function savedRow(spec) {
+  const b = document.createElement("button");
+  b.type = "button";
+  b.className = "lineup-option saved-row";
+  const fake = { type: spec.type, strength: spec.strength, runDeg: spec.runDeg, aimRef: null, pin: null };
+  // Named from this map's targets when it is this map (names can change under
+  // a saved lineup); the name recorded at save time stands in for other maps.
+  const target = !spec.target ? ""
+    : spec.map === state.currentMap ? smokeName(spec.target)
+    : spec.targetName ?? `${spec.target[0].toFixed(0)}, ${spec.target[1].toFixed(0)}`;
+  b.innerHTML =
+    `<span class="lu-head">` +
+    `<b class="${clickClass(spec.strength)}">${clickWords(spec.strength)}</b>` +
+    `<span class="lu-move">${movementWords(fake)}</span>` +
+    (target ? `<span class="lu-nums">\u2192 ${esc(target)}</span>` : "") +
+    `<span role="button" tabindex="0" class="saved-drop" data-drop="1" aria-label="Remove from saved" title="Remove from saved">\u00d7</span>` +
+    `</span>`;
+  b.title = spec.map === state.currentMap
+    ? "Open this lineup on the map"
+    : `Open this lineup - switches to ${spec.map}`;
+  b.addEventListener("click", e => {
+    if (e.target.closest("[data-drop]")) {
+      e.stopPropagation();
+      callbacks.onForgetSaved(spec);
+      return;
+    }
+    callbacks.onOpenSaved(spec);
+  });
+  return b;
+}
+
 function optionButton(l) {
   const b = document.createElement("button");
   b.type = "button";

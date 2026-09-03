@@ -150,9 +150,9 @@
   /* Filters are the one card that stays collapsible on desktop: there is nothing
      to filter until a search has returned something, so it starts closed and has
      to be openable. The actions card has no summary to click, so it must not. */
-  :is(#card-filters, #card-advanced) > summary { display: list-item; }
-  :is(#card-filters, #card-advanced)[open] > .card-body { margin-top: 6px; }
-  :is(#card-filters, #card-advanced) .filter-count {
+  :is(#card-filters, #card-execute, #card-advanced) > summary { display: list-item; }
+  :is(#card-filters, #card-execute, #card-advanced)[open] > .card-body { margin-top: 6px; }
+  :is(#card-filters, #card-execute, #card-advanced) .filter-count {
     color: var(--accent);
     font-weight: 600;
   }
@@ -936,7 +936,9 @@
   /* Account controls in the toolbar: the id is a quiet monospace tag, not a
      headline - it exists so you can tell which account, nothing more. */
   .account { display: inline-flex; align-items: center; gap: 8px; }
-  #whoami { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 12px; color: var(--muted); }
+  .whoami { display: inline-flex; align-items: center; gap: 7px; font-size: 13px; color: var(--fg); }
+  .whoami[hidden] { display: none; }
+  .whoami img { width: 24px; height: 24px; border-radius: 4px; display: block; }
   /* Community votes: beside the score, styled as a separate instrument. The
      arrows are quiet until pressed; the tally is the number that matters. */
   .lu-votes {
@@ -980,7 +982,17 @@
     display: flex; align-items: center; gap: 6px;
     font-variant-numeric: tabular-nums; font-size: 0.9em; color: var(--muted);
   }
-  .exec-row span { flex: 1; }
+  .exec-row { counter-increment: exec; }
+  .exec-row::before {
+    content: counter(exec);
+    min-width: 1.4em; height: 1.4em; border-radius: 50%;
+    display: inline-grid; place-items: center;
+    background: var(--accent); color: var(--panel); font-size: 0.85em; font-weight: 700;
+  }
+  #execute-list { counter-reset: exec; }
+  .exec-row .exec-name { flex: 1; color: var(--fg); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .exec-hint { margin: 0 0 6px; color: var(--muted); font-size: 0.88em; line-height: 1.35; }
+  #execute-add { width: 100%; margin-bottom: 6px; }
   .exec-drop {
     border: var(--border); background: none; color: var(--muted);
     cursor: pointer; line-height: 1; padding: 1px 6px; border-radius: 4px;
@@ -998,10 +1010,23 @@
     padding: 3px 7px; border-radius: 4px; cursor: pointer;
     font-variant-numeric: tabular-nums; font-size: 0.9em; text-align: left;
   }
-  .exec-spot em { color: var(--muted); font-style: normal; font-size: 0.92em; }
+  .exec-spot span { white-space: nowrap; }
+  .exec-spot em { color: var(--muted); font-style: normal; font-size: 0.92em; white-space: nowrap; }
   .exec-spot:hover { border-color: var(--accent); }
   /* The ranking already put the most reproducible spot first; say so. */
   .exec-spot.best { border-color: var(--accent); font-weight: 700; }
+
+  /* The Saved view: one row per kept lineup, the map heading reusing the
+     execute rule so the two grouped lists read alike. */
+  .saved-empty { margin: 8px 4px; color: var(--muted); font-size: 0.92em; line-height: 1.4; }
+  .saved-empty a { color: var(--accent); }
+  .saved-row .lu-head { align-items: center; }
+  .saved-row .lu-nums { color: var(--muted); font-variant-numeric: tabular-nums; }
+  .saved-drop {
+    margin-left: auto; border: var(--border); border-radius: 4px; padding: 0 6px;
+    color: var(--muted); line-height: 1.3; cursor: pointer;
+  }
+  .saved-drop:hover, .saved-drop:focus-visible { color: var(--danger); border-color: var(--danger); }
   .ref.pin { color: var(--click-left); border: 1px solid var(--click-left); font-weight: 600; }
   /* Near a wall but NOT touching. Deliberately not the pin colour: the whole
      point is that this one looks like a wall spot on the map and is not one,
@@ -1394,7 +1419,23 @@
      absolutely positioned tooltip is clipped by that container, and it showed
      alongside the native one rather than instead of it. */
 
+  /* One header row that wraps to two on a narrow panel: what the panel
+     shows and how many, then how it is ordered and where you are in it. */
+  .panel-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 5px 6px;
+    padding-bottom: 6px;
+    border-bottom: var(--border);
+  }
   .panel-head .head-count { white-space: nowrap; }
+  /* Results | Saved: a two-way switch in the header, so it is a compact pair
+     of word tiles rather than the sidebar's icon-over-label thirds. */
+  .panel-head .seg-mode { display: inline-flex; width: auto; gap: 0; flex: 0 0 auto; }
+  .panel-head .seg-mode .tile { padding: 3px 10px; font-size: 11px; border-radius: 0; }
+  .panel-head .seg-mode .tile:first-child { border-radius: var(--btn-radius) 0 0 var(--btn-radius); }
+  .panel-head .seg-mode .tile:last-child { border-radius: 0 var(--btn-radius) var(--btn-radius) 0; margin-left: -1px; }
   .panel-head .head-sort {
     --btn-pad: 2px 6px;
     --btn-font-size: 11px;
@@ -1408,7 +1449,9 @@
     gap: 2px;
     padding: 0;
     border: none;
+    margin-left: auto;
   }
+  .panel-head .list-pager[hidden] { display: none; }
   .panel-head .pager-label { font-variant-numeric: tabular-nums; min-width: 26px; text-align: center; }
   /* Pros throw from this spot: earns the accent, unlike the neutral badges. */
   .ref.pro {

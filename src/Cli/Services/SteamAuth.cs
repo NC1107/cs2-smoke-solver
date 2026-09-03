@@ -104,6 +104,50 @@ public static partial class SteamAuth
         return await response.Content.ReadAsStringAsync();
     }
 
+    // ---- profile: the name and picture to show for a signed-in account ----
+
+    public sealed record Profile(string SteamId, string Name, string? Avatar);
+
+    // Steam's OpenID hands back only the id. The persona name and avatar come
+    // from the public XML profile, which needs no API key - it is the same
+    // document a browser gets at steamcommunity.com/profiles/<id>?xml=1, and
+    // the name and picture are public even on a private profile. Cached, since
+    // it is a network call and the answer changes about never.
+    static readonly System.Collections.Concurrent.ConcurrentDictionary<string, (Profile Profile, DateTimeOffset At)> ProfileCache = new(StringComparer.Ordinal);
+    static readonly TimeSpan ProfileTtl = TimeSpan.FromHours(6);
+
+    public static async Task<Profile> ProfileAsync(HttpClient http, string steamId)
+    {
+        if (ProfileCache.TryGetValue(steamId, out var hit) && DateTimeOffset.UtcNow - hit.At < ProfileTtl)
+        {
+            return hit.Profile;
+        }
+        var profile = new Profile(steamId, "Steam \u2026" + steamId[^5..], null);
+        try
+        {
+            var xml = await http.GetStringAsync($"https://steamcommunity.com/profiles/{steamId}?xml=1");
+            var doc = System.Xml.Linq.XDocument.Parse(xml);
+            var name = doc.Root?.Element("steamID")?.Value;
+            var avatar = doc.Root?.Element("avatarMedium")?.Value;
+            if (!string.IsNullOrWhiteSpace(name))
+            {
+                // Only Steam's own CDN hosts are ever handed to the browser as
+                // an image source; anything else in that field is not trusted.
+                var safeAvatar = avatar is not null && Uri.TryCreate(avatar, UriKind.Absolute, out var u) &&
+                    u.Scheme == "https" && u.Host.EndsWith(".steamstatic.com", StringComparison.OrdinalIgnoreCase)
+                    ? avatar : null;
+                profile = new Profile(steamId, name.Trim(), safeAvatar);
+            }
+        }
+        catch (Exception e) when (e is HttpRequestException or TaskCanceledException or System.Xml.XmlException)
+        {
+            // Steam being slow or the profile being odd is not a reason to fail
+            // sign-in; the id-based fallback name above is fine for a while.
+        }
+        ProfileCache[steamId] = (profile, DateTimeOffset.UtcNow);
+        return profile;
+    }
+
     // ---- session cookie: steamid.expiry.hmac ----
 
     public static string MintSession(byte[] secret, string steamId, DateTimeOffset now)

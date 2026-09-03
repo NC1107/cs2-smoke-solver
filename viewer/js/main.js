@@ -2,18 +2,18 @@
 // import the feature modules; they call back into the orchestrators defined
 // here (setTarget, select, runQuery) via the init*/set*Callbacks hooks.
 
-import { state, filtered, esc, lowMemoryDevice, loadFavorites, setFavorite, isFavorite, DEFAULT_EYE_HEIGHT, EYE_HEIGHT_BY_TYPE, TARGET_SNAP_RADIUS, favoriteHooks} from "./state.js?v=97";
-import { loadMapList, loadMapData, runQuery as postLineupQuery, fetchTrajectory, fetchLineupOne, fetchSlack, fetchSpawns, fetchProSmokes, fetchMeshDiff, meshDiffExists, fetchLevels, fetchSmokeCoverage, runExecute, findExecuteSpots, fetchTargets, fetchMe, signOut, fetchSavedLineups, putSavedLineups, fetchVotes, castVote} from "./api.js?v=97";
-import { loadRadar, readColors, recolorRadar, draw, scheduleDraw, resize, resetView, initMap2d, screenOf } from "./map2d.js?v=97";
-import { ensure3d, resetEnsure3d, teardown3d, current3d, sync3d, syncProgress3d, syncMeshDiff3d, set3dCallbacks, applyTheme3d, verticalFovFromDesired } from "./view3d.js?v=97";
-import { resetEnsureTexturedScene } from "./textured-scene.js?v=97";
-import { capturePreview } from "./preview.js?v=97";
+import { state, filtered, esc, lowMemoryDevice, loadFavorites, setFavorite, isFavorite, DEFAULT_EYE_HEIGHT, EYE_HEIGHT_BY_TYPE, TARGET_SNAP_RADIUS, favoriteHooks, loadSavedLocal, persistSavedLocal} from "./state.js?v=98";
+import { loadMapList, loadMapData, runQuery as postLineupQuery, fetchTrajectory, fetchLineupOne, fetchSlack, fetchSpawns, fetchProSmokes, fetchMeshDiff, meshDiffExists, fetchLevels, fetchSmokeCoverage, runExecute, findExecuteSpots, fetchTargets, fetchMe, signOut, fetchSavedLineups, putSavedLineups, fetchVotes, castVote} from "./api.js?v=98";
+import { loadRadar, readColors, recolorRadar, draw, scheduleDraw, resize, resetView, initMap2d, screenOf } from "./map2d.js?v=98";
+import { ensure3d, resetEnsure3d, teardown3d, current3d, sync3d, syncProgress3d, syncMeshDiff3d, set3dCallbacks, applyTheme3d, verticalFovFromDesired } from "./view3d.js?v=98";
+import { resetEnsureTexturedScene } from "./textured-scene.js?v=98";
+import { capturePreview } from "./preview.js?v=98";
 // Every local import across viewer/js carries the SAME ?v= token, bumped
 // together on any change. The HTML is served no-cache, so a fresh load pulls
 // main.js?v=N, which pulls every module at ?v=N - the whole graph refreshes as
 // one consistent set past Cloudflare's 4h JS cache, with no duplicate module
 // instances (which a partial versioning would cause). Bump the token everywhere.
-import { renderLineups, initPanel, revealSelected, resultStatusText } from "./panel.js?v=97";
+import { renderLineups, initPanel, revealSelected, resultStatusText } from "./panel.js?v=98";
 
 (async () => {
   // Map switching means a failed load is no longer necessarily terminal (the
@@ -78,11 +78,19 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
   const collisionBtn = overlayBtn("collision");
   const meshdiffBtn = overlayBtn("meshdiff");
   const coverageBtn = overlayBtn("coverage");
-  const executeLabel = document.getElementById("execute-label");
+  const cardExecute = document.getElementById("card-execute");
+  const executeCount = document.getElementById("execute-count");
+  const executeClear = document.getElementById("execute-clear");
+  const executeHint = document.getElementById("execute-hint");
   const executeList = document.getElementById("execute-list");
   const executeAdd = document.getElementById("execute-add");
+  const executeSolveLabel = document.getElementById("execute-solve-label");
   const executeSeg = document.getElementById("execute-seg");
+  const executeSpotsLabel = document.getElementById("execute-spots-label");
   const executeSpots = document.getElementById("execute-spots");
+  const openSavedBtn = document.getElementById("open-saved");
+  const savedCountEl = document.getElementById("saved-count");
+  const panelModeEl = document.getElementById("panel-mode");
   const rulerEl = document.getElementById("lineup-ruler");
   const clearBtn = document.getElementById("clear");
   const panelEl = document.getElementById("panel");
@@ -185,11 +193,12 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
     whoamiEl.hidden = !me;
     signoutBtn.hidden = !me;
     if (me) {
-      // Steam's OpenID hands back only the id; a persona name needs a Web API
-      // key this server deliberately does not hold. The last digits are
-      // enough to see which account this is.
-      whoamiEl.textContent = `Steam \u2026${me.steamId.slice(-5)}`;
-      whoamiEl.title = `Signed in as SteamID ${me.steamId}. Saved lineups are kept on this account.`;
+      const avatar = document.getElementById("avatar");
+      const persona = document.getElementById("persona");
+      persona.textContent = me.name ?? `Steam \u2026${me.steamId.slice(-5)}`;
+      avatar.hidden = !me.avatar;
+      if (me.avatar) { avatar.src = me.avatar; }
+      whoamiEl.title = `Signed in as ${me.name ?? me.steamId} (SteamID ${me.steamId}). Saved lineups and votes are kept on this account.`;
     }
   }
 
@@ -230,6 +239,7 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
         byKey.set(`${l.map}|${l.id}`, l);
       }
       state.saved = [...byKey.values()];
+      persistSavedLocal();
       // And the star state for the current map reflects the merged set.
       for (const l of state.saved) {
         if (l.map === state.currentMap) {
@@ -238,8 +248,9 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
       }
       if (state.result?.lineups) {
         for (const l of state.result.lineups) { l._favorite = isFavorite(l); }
-        renderLineups();
       }
+      renderLineups();
+      syncControls();
       scheduleAccountSave();
     } catch (err) {
       statusEl.textContent = `signed in, but your saved lineups did not load: ${err.message}`;
@@ -264,6 +275,9 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
       history.replaceState(null, "", location.pathname + (params.toString() ? "?" + params : "") + location.hash);
     }
   }
+  // What this browser saved comes first, so the account merge below has it to
+  // merge into, and so Saved works at all for someone who never signs in.
+  loadSavedLocal();
   loadAccount();
 
   // The live state, reachable from devtools. Nothing here is secret - it is
@@ -313,13 +327,23 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
 
   // ---- executes: several smokes from one stance ----
 
+  // What a smoke in the list is called: the named target it sits on when
+  // there is one, otherwise its coordinates. The number leads because that
+  // is how the results and the map markers refer back to it.
+  function executeTargetLabel(t) {
+    const named = nearestNamedTarget(t);
+    return named ? named.name : `${t[0].toFixed(0)}, ${t[1].toFixed(0)}`;
+  }
+
   function renderExecuteList() {
     executeList.innerHTML = "";
     state.executeTargets.forEach((t, i) => {
       const li = document.createElement("li");
       li.className = "exec-row";
       const label = document.createElement("span");
-      label.textContent = `${i + 1}. ${t[0].toFixed(0)}, ${t[1].toFixed(0)}`;
+      label.className = "exec-name";
+      label.textContent = executeTargetLabel(t);
+      label.title = `${t[0].toFixed(0)}, ${t[1].toFixed(0)}`;
       const drop = document.createElement("button");
       drop.className = "exec-drop";
       drop.type = "button";
@@ -342,6 +366,7 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
     executeSpots.innerHTML = "";
     const found = state.executeSpots?.spots ?? [];
     executeSpots.hidden = found.length === 0;
+    executeSpotsLabel.hidden = found.length === 0;
     // The label says what "worst" means, because a spot is only as good as its
     // hardest smoke and ranking on the average would hide exactly that.
     // What the HARDEST smoke of the set has to aim against - the thing that
@@ -353,11 +378,12 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
       const btn = document.createElement("button");
       btn.type = "button";
       btn.className = "exec-spot" + (i === 0 ? " best" : "");
-      btn.textContent = `${spot.feet[0].toFixed(0)}, ${spot.feet[1].toFixed(0)} `;
+      const where = document.createElement("span");
+      where.textContent = `${i === 0 ? "best" : `#${i + 1}`} \u00b7 ${spot.feet[0].toFixed(0)}, ${spot.feet[1].toFixed(0)}`;
       const note = document.createElement("em");
       note.textContent = worstWords[Math.min(spot.worst, 6)] ?? "";
-      btn.append(note);
-      btn.title = `Solve all ${state.executeTargets.length} smokes from here. Hardest of them lines up against: ${note.textContent}`;
+      btn.append(where, note);
+      btn.title = `Solve all ${state.executeTargets.length} smokes from here. The hardest of them lines up against: ${worstWords[Math.min(spot.worst, 6)] ?? ""}`;
       btn.addEventListener("click", () => solveExecuteFrom([spot.feet[0], spot.feet[1]]));
       li.append(btn);
       executeSpots.append(li);
@@ -420,7 +446,22 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
     }
     state.executeTargets.push([...state.target]);
     state.executeSpots = null;
+    cardExecute.open = true;
     statusEl.textContent = `${state.executeTargets.length} smoke${state.executeTargets.length === 1 ? "" : "s"} in this execute - pick the next target, or solve it`;
+    syncControls();
+    scheduleDraw();
+    sync3d();
+  });
+
+  executeClear.addEventListener("click", e => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (state.executeTargets.length === 0) {
+      return;
+    }
+    state.executeTargets = [];
+    state.executeSpots = null;
+    statusEl.textContent = "execute cleared";
     syncControls();
     scheduleDraw();
     sync3d();
@@ -762,14 +803,23 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
     // The execute block appears once there is a target to add, and the solve
     // row once there is something to solve.
     const anyExec = state.executeTargets.length > 0;
-    executeLabel.hidden = !(hasTarget || anyExec);
-    executeAdd.hidden = !hasTarget;
-    executeAdd.disabled = state.busy;
+    executeCount.textContent = anyExec ? `(${state.executeTargets.length})` : "";
+    executeClear.hidden = !anyExec;
+    executeHint.hidden = anyExec;
+    executeAdd.disabled = state.busy || !hasTarget;
+    executeAdd.textContent = hasTarget
+      ? `Add ${state.targetName ?? "current target"}`
+      : "Add current target";
+    executeAdd.title = hasTarget
+      ? "Add the current target as the next smoke of this execute"
+      : "Click the map to set a target first";
     executeList.hidden = !anyExec;
+    executeSolveLabel.hidden = !anyExec;
     executeSeg.hidden = !anyExec;
     for (const b of executeSeg.children) { b.disabled = state.busy; }
     renderExecuteList();
     renderExecuteSpots();
+    savedCountEl.textContent = state.saved.length ? `(${state.saved.length})` : "";
     document.body.classList.toggle("crosshair-3d", in3d && state.crosshairOn);
     rulerEl.hidden = !(in3d && state.reticleOn);
 
@@ -893,7 +943,14 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
     state.targets = [];
     state.targetName = null;
     fetchTargets(name).then(t => {
-      if (state.mapGeneration === gen) { state.targets = Array.isArray(t) ? t : []; scheduleDraw(); }
+      if (state.mapGeneration !== gen) { return; }
+      state.targets = Array.isArray(t) ? t : [];
+      // A target that arrived by link, before the names did, gets its name now.
+      if (state.target && !state.targetName) {
+        state.targetName = nearestNamedTarget(state.target)?.name ?? null;
+        syncControls();
+      }
+      scheduleDraw();
     }).catch(e => console.warn("targets unavailable for", name, e));
     fetchProSmokes(name).then(d => {
       if (state.mapGeneration === gen) { state.prosmokes = d; syncControls(); }
@@ -1948,6 +2005,60 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
     // a re-solve, a filter change and a reload.
     setFavorite(state.currentMap, l, !l._favorite);
     renderLineups();
+    syncControls();
+  }
+
+  // ---- the Saved view: your lineups, across maps ----
+
+  function setPanelMode(mode) {
+    state.panelMode = mode;
+    // Leaving the saved list without any results underneath would leave a
+    // panel with nothing in it; collapse it instead.
+    renderLineups();
+  }
+
+  panelModeEl.addEventListener("click", e => {
+    const btn = e.target.closest("[data-mode]");
+    if (btn) {
+      setPanelMode(btn.dataset.mode);
+    }
+  });
+
+  openSavedBtn.addEventListener("click", () => {
+    setPanelMode(state.panelMode === "saved" ? "results" : "saved");
+  });
+
+  // Reopen a saved lineup: switch maps if it lives on another one, put its
+  // target back, then load it through the same path a shared link uses.
+  async function openSaved(spec) {
+    if (state.busy) {
+      return;
+    }
+    if (spec.map !== state.currentMap) {
+      mapSelect.value = spec.map;
+      if (!(await loadMap(spec.map))) {
+        return;
+      }
+    }
+    if (!spec.target) {
+      statusEl.textContent = "this saved lineup has no target recorded - it was saved by an older version";
+      return;
+    }
+    state.panelMode = "results";
+    setTarget([...spec.target]);
+    await showSingleLineup(spec);
+  }
+
+  function forgetSaved(spec) {
+    state.saved = state.saved.filter(s => !(s.map === spec.map && s.id === spec.id));
+    if (spec.map === state.currentMap) {
+      state.favorites.delete(spec.id);
+      for (const l of state.result?.lineups ?? []) { l._favorite = isFavorite(l); }
+    }
+    persistSavedLocal();
+    favoriteHooks.onChange?.();
+    renderLineups();
+    syncControls();
   }
 
   function removeLineup(l) {
@@ -2043,6 +2154,7 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
     onSetTarget: setTarget, onSelect: select, onPreview: loadPreviewThumb,
     onGoTo: goToLineup, onFavorite: toggleFavorite, onRemove: removeLineup,
     onShare: shareLineup, onVote: voteOn,
+    onOpenSaved: openSaved, onForgetSaved: forgetSaved,
   });
   initMap2d({ onSetTarget: setTarget, onSelect: select, onRunQuery: runQuery, onPickOrigin: pickOrigin, onPickThrowSpot: useThrowSpot });
   set3dCallbacks({ onSetTarget: setTarget, onSelect: select, onRunQuery: runQuery, onPickOrigin: pickOrigin, onPickThrowSpot: useThrowSpot });

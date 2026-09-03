@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Smoke Solver</title>
 <link rel="icon" href="viewer/favicon.svg" type="image/svg+xml">
-<link rel="stylesheet" href="viewer/app.css?v=97">
+<link rel="stylesheet" href="viewer/app.css?v=98">
 </head>
 <body>
 
@@ -17,7 +17,8 @@
   <span id="readout"></span>
   <span id="account" class="account">
     <a id="signin" class="btn" href="/auth/steam" title="Sign in with Steam so your saved lineups follow you to any browser. Browsing and solving never need an account">Sign in with Steam</a>
-    <span id="whoami" hidden></span>
+    <span id="whoami" class="whoami" hidden><img id="avatar" alt="" width="24" height="24" hidden><span id="persona"></span></span>
+    <button id="open-saved" class="btn" title="Your saved lineups">Saved <span id="saved-count"></span></button>
     <button id="signout" class="btn" hidden title="Sign out of this browser">Sign out</button>
   </span>
   <a class="btn nav-link" href="viewer/validation.html" title="Simulation accuracy: automated in-game validation runs">Accuracy</a>
@@ -66,20 +67,6 @@
             <button class="tile" data-search="spot" title="The throw position above and the stand spots around it, including the ones a wall pins your feet against">Spot</button>
             <button class="tile" data-search="map" title="Every spot on the map that can throw this smoke">Map</button>
             <button class="tile" data-search="spawns" title="Only the T and CT spawn positions themselves - what you can throw standing where the round puts you">Spawns</button>
-          </div>
-
-          <!-- An execute: several smokes from one stance. Two questions, and
-               which one you ask depends on what you already know - the spot,
-               or the smokes. Both live here rather than in a mode of their
-               own, because you get to them from the same two positions the
-               card is already about. -->
-          <span class="action-label key-subhead" id="execute-label" hidden>execute</span>
-          <ul id="execute-list" hidden aria-label="Smokes in this execute"></ul>
-          <button id="execute-add" class="btn" hidden title="Add the current target to this execute, then pick another one">Add this smoke</button>
-          <ul id="execute-spots" hidden aria-label="Spots that can throw every smoke"></ul>
-          <div class="tile-row" id="execute-seg" role="group" aria-label="Solve this execute" hidden>
-            <button class="tile" data-execute="here" title="Solve every smoke in the list from the throw position above">From here</button>
-            <button class="tile" data-execute="spots" title="Find the places on the map where one player can throw every smoke in the list without repositioning">Find a spot</button>
           </div>
         </div>
 
@@ -194,6 +181,26 @@
           <option value="">any angle</option>
           <option value="off">none - wall aim only</option>
         </select>
+      </div>
+    </details>
+    <!-- An execute: several smokes thrown from one stance. Its own card, not a
+         block inside the actions card: it is a different activity from placing
+         one target, has its own list, and grew large enough to push the view
+         controls off the bottom of the card it was in. -->
+    <details class="card" id="card-execute">
+      <summary>execute <span class="filter-count" id="execute-count"></span><button type="button" class="card-reset" id="execute-clear" title="Clear every smoke from this execute" aria-label="Clear execute">
+        <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M15.5 7.5a6 6 0 1 0 .8 4"/><path d="M15.9 3.4v4.3h-4.3"/></svg></button></summary>
+      <div class="card-body">
+        <p class="exec-hint" id="execute-hint">Several smokes from one spot. Set a target, then add it here; repeat for each smoke.</p>
+        <ol id="execute-list" aria-label="Smokes in this execute"></ol>
+        <button id="execute-add" class="btn" title="Add the current target as the next smoke of this execute">Add current target</button>
+        <span class="action-label key-subhead" id="execute-solve-label" hidden>solve it</span>
+        <div class="tile-row" id="execute-seg" role="group" aria-label="Solve this execute" hidden>
+          <button class="tile" data-execute="here" title="Throw every smoke in the list from the throw position set in the actions card"><svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="14" r="2.2"/><path d="M10 12V4M7 7l3-3 3 3"/></svg><span class="tile-label">From here</span></button>
+          <button class="tile" data-execute="spots" title="Find every place on the map where one player can throw all of these without moving"><svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="6.5"/><path d="M10 3.5v3M10 13.5v3M3.5 10h3M13.5 10h3"/></svg><span class="tile-label">Find a spot</span></button>
+        </div>
+        <span class="action-label key-subhead" id="execute-spots-label" hidden title="Ranked by the hardest smoke of the set: a spot is only as good as its worst aim">spots that throw all · hardest aim</span>
+        <ul id="execute-spots" hidden aria-label="Spots that can throw every smoke"></ul>
       </div>
     </details>
     <details class="card" id="card-advanced">
@@ -346,6 +353,10 @@ give weapon_smokegrenade<button data-copy="cmd-setup" class="btn">copy</button><
     <div class="panel-head">
       <button id="panel-collapse" class="panel-collapse" title="Hide results" aria-label="Hide results" aria-expanded="true">
         <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M8 5l5 5-5 5"/></svg></button>
+      <div class="tile-row seg-mode" id="panel-mode" role="group" aria-label="What the panel shows">
+        <button class="tile active" data-mode="results" aria-pressed="true" title="The lineups the solver found for the current target">Results</button>
+        <button class="tile" data-mode="saved" aria-pressed="false" title="Lineups you starred, across every map. With Steam sign-in they follow you to any browser">Saved</button>
+      </div>
       <span class="head-count" id="head-count"></span>
       <select id="sort-by" class="head-sort" title="Order the results" aria-label="Sort results by">
         <option value="score">best score</option>
@@ -402,6 +413,6 @@ give weapon_smokegrenade<button data-copy="cmd-setup" class="btn">copy</button><
      4h, so bumping ?v= here is what busts that cache. Bump on any change to a
      directly-referenced asset. (The permanent cure is CF Browser Cache TTL ->
      "Respect Existing Headers", after which this is belt-and-suspenders.) -->
-<script type="module" src="viewer/js/main.js?v=97"></script>
+<script type="module" src="viewer/js/main.js?v=98"></script>
 </body>
 </html>

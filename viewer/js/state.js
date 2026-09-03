@@ -54,6 +54,8 @@ export const state = {
   // The account's saved lineups as full throw specs, so they can be shown and
   // reopened without re-solving. Mirrors `favorites` once signed in.
   saved: [],
+  // Which list the panel shows: the solver's results, or the lineups you saved.
+  panelMode: "results",
   // Community votes for the current result's spot: { target, tallies, mine }.
   // Held apart from the solver's score on purpose - one is a measurement of
   // the throw, the other an opinion about it, and blended they are both
@@ -332,6 +334,7 @@ export function lineupSpec(map, l) {
     feet: l.feet.map(v => Math.round(v * 10) / 10),
     pitch: Math.round(l.pitch * 100) / 100, yaw: Math.round(l.yaw * 100) / 100,
     target: state.result?.target ? state.result.target.map(v => Math.round(v * 10) / 10) : null,
+    targetName: state.targetName ?? null,
     savedAt: Date.now(),
   };
 }
@@ -339,6 +342,25 @@ export function lineupSpec(map, l) {
 // Called after every favourite change; main.js points it at the account sync
 // once someone is signed in. Kept here so state.js stays import-free.
 export const favoriteHooks = { onChange: null };
+
+// The saved specs live in this browser too, not only on the account: Saved has
+// to work for someone who never signs in, and it is what a sign-in merges.
+const SAVED_KEY = "smokesolver.saved";
+export function loadSavedLocal() {
+  try {
+    const raw = localStorage.getItem(SAVED_KEY);
+    state.saved = raw ? JSON.parse(raw) : [];
+  } catch {
+    state.saved = [];
+  }
+}
+export function persistSavedLocal() {
+  try {
+    localStorage.setItem(SAVED_KEY, JSON.stringify(state.saved));
+  } catch {
+    // Not persisting is survivable.
+  }
+}
 
 export function setFavorite(map, l, on) {
   const key = favKey(l);
@@ -356,11 +378,13 @@ export function setFavorite(map, l, on) {
   } catch {
     // Not persisting is survivable; the in-session flag above still holds.
   }
-  // The account's copy carries the whole throw, not just its key.
+  // The saved copy carries the whole throw, not just its key, so it can be
+  // shown and reopened without the solve that found it.
   state.saved = state.saved.filter(s => !(s.map === map && s.id === key));
   if (on) {
     state.saved.push(lineupSpec(map, l));
   }
+  persistSavedLocal();
   favoriteHooks.onChange?.();
 }
 
