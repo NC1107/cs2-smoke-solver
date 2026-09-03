@@ -6,8 +6,26 @@ namespace SmokeSolver.Sim;
 /// conservative values are a deliberate underestimate so blocked verdicts are precision-safe
 /// without any calibration (see DESIGN.md, Conservative Bloom Mode).
 /// </summary>
-public sealed record SmokeParams(float MaxRadius, int CellBudget)
+public sealed record SmokeParams(float MaxRadius, int CellBudget, float ContainedStretch = 1f)
 {
+    /// <summary>How much further than <see cref="MaxRadius"/> the fill may
+    /// reach when walls keep it from spending its budget nearby.</summary>
+    // A real smoke is a fixed amount of gas. In the open that gas is a ball of
+    // the documented radius and the radius cap alone describes it. Boxed in -
+    // mid doors on de_dust2, a stairwell - the same gas has nowhere to go but
+    // further along and up, and a hard sphere stopped the fill exactly where
+    // the game keeps going. The stretch lets the budget, not the sphere, be
+    // what runs out in a confined space; in the open the budget is spent
+    // before the stretched sphere is ever reached, so nothing changes there.
+    public const float GameContainedStretch = 1.75f;
+    /// <summary>How much nearer a cell below the landing counts than one the
+    /// same distance beside it, when the fill decides what to claim next.</summary>
+    // Smoke is denser than air and CS2's volumetric smoke settles: it spills
+    // off a ledge (cat onto CT on de_dust2) far more readily than it spreads.
+    // Scaling the downward distance makes the fill reach down before out,
+    // without modelling gas. On flat ground there is no "down", so the open
+    // bloom is untouched.
+    public const float DownwardPull = 0.8f;
     /// <summary>The real grenade's reach: CS:GO shipped a 288-unit-diameter
     /// smoke and CS2 kept it.</summary>
     // The one sourced number in this file. UncalibratedDefault below is 165 and
@@ -35,10 +53,10 @@ public sealed record SmokeParams(float MaxRadius, int CellBudget)
     public static SmokeParams UncalibratedDefault { get; } = new(MaxRadius: 165f, CellBudget: GameCellBudget);
 
     /// <summary>The bloom the viewer's coverage overlay shows.</summary>
-    public static SmokeParams Coverage { get; } = new(CoverageRadius, GameCellBudget);
+    public static SmokeParams Coverage { get; } = new(CoverageRadius, GameCellBudget, GameContainedStretch);
 
     /// <summary>The bloom at the grenade's full documented reach.</summary>
-    public static SmokeParams FullReach { get; } = new(GameRadius, GameCellBudget);
+    public static SmokeParams FullReach { get; } = new(GameRadius, GameCellBudget, GameContainedStretch);
 
     public static SmokeParams Conservative { get; } = new(MaxRadius: 100f, CellBudget: int.MaxValue);
 }

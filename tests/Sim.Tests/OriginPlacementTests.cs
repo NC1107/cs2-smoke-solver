@@ -95,6 +95,44 @@ public class OriginPlacementTests
         Assert.Equal(seed.Y, origins[0].Y, 0.01f);
     }
 
+    // A gentle slope (6%, well inside the walkable limit), the kind de_dust2's
+    // A site is paved with. Under a 32u hull the floor rises about a unit from
+    // centre to corner - more than the hull test's skin.
+    static CollisionMesh SlopedGround() => SyntheticMeshes.FromQuads(
+    [
+        ([-64f, -64f, 0f], [512f, -64f, 34.6f], [512f, 512f, 34.6f], [-64f, 512f, 0f]),
+    ]);
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void AGetposTakenOnASlopeIsAcceptedAsTheSpotItIs(bool exactOnly)
+    {
+        // The regression: a real getpos, wedged against a crate on dust2's
+        // sloped A-site ground, came back "no stand spots in range". The game
+        // had the player's feet a unit under the centre-ray floor (the hull
+        // rests on the highest point beneath it, and the engine's own floor
+        // differs by a hair), and the point-snapped floor then failed the
+        // hull test too because the slope pokes through the hull's skin.
+        var mesh = SlopedGround();
+        var collider = ColliderFor(mesh);
+        var x = 200f;
+        var y = 200f;
+        var slopeZ = (x + 64f) / 576f * 34.6f;
+        var seed = new Vector3(x, y, slopeZ - 1f);
+
+        var origins = exactOnly
+            ? LineupSolver.ExactOriginOnly(GridFor(mesh), collider, seed)
+            : LineupSolver.ExactOriginWithPins(GridFor(mesh), collider, seed);
+
+        Assert.NotEmpty(origins);
+        var o = origins[0];
+        Assert.Equal(seed.X, o.X, 0.01f);
+        Assert.Equal(seed.Y, o.Y, 0.01f);
+        Assert.True(MathF.Abs(o.Z - slopeZ) < 3f, $"feet should rest on the slope near z={slopeZ:F1}, got {o.Z:F1}");
+        Assert.NotEqual(StandSpots.Stance.None, StandSpots.StanceAt(collider, o));
+    }
+
     [Fact]
     public void AFloatingSeedIsBroughtDownToTheFloor()
     {

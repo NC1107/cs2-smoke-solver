@@ -446,6 +446,33 @@ public static partial class LineupSolver
     // keeps between feet and floor, tight enough that a point in mid-air fails.
     const float SupportProbe = 4f;
 
+    /// <summary>
+    /// The feet height the player hull actually rests at in this column,
+    /// nearest to <paramref name="seed"/>'s own, or null when no floor within a
+    /// step of it holds the hull up.
+    /// </summary>
+    // A point ray finds the floor under the column's centre; the hull rests
+    // on the HIGHEST floor point under its whole 32x32 footprint. On a slope
+    // the two differ by up to a unit, and the hull test - which has half a
+    // unit of skin - then rejects the click as "inside the floor". That is
+    // exactly what happened to a real getpos taken wedged against a crate on
+    // de_dust2's sloped A-site ground: the spot a player was standing on
+    // came back "no stand spots in range".
+    static Vector3? HullRestHeight(TriangleCollider collider, Vector3 seed)
+    {
+        var heights = StandSpots.SupportedHeights(
+            collider, seed.X, seed.Y, seed.Z - StandSpots.StepHeight, seed.Z + StandSpots.StepHeight + StandSpots.StandingHeight);
+        float? best = null;
+        foreach (var h in heights)
+        {
+            if (MathF.Abs(h - seed.Z) <= StandSpots.StepHeight && (best is not { } b || MathF.Abs(h - seed.Z) < MathF.Abs(b - seed.Z)))
+            {
+                best = h;
+            }
+        }
+        return best is { } z ? seed with { Z = z } : null;
+    }
+
     public static List<Vector3> ExactOriginOnly(VoxelGrid grid, TriangleCollider? collider, Vector3 seed, List<Vector3>? crouchOnlyOut = null)
     {
         if (collider == null)
@@ -463,9 +490,17 @@ public static partial class LineupSolver
         // where nobody is standing.
         var supported = collider.FirstHit(
             seed + new Vector3(0, 0, SupportProbe), seed - new Vector3(0, 0, SupportProbe)) != null;
-        foreach (var candidate in supported
-                     ? new[] { seed, SnapToGround(grid, collider, seed) }
-                     : new[] { SnapToGround(grid, collider, seed) })
+        var candidates = new List<Vector3>();
+        if (supported)
+        {
+            candidates.Add(seed);
+        }
+        if (HullRestHeight(collider, seed) is { } resting)
+        {
+            candidates.Add(resting);
+        }
+        candidates.Add(SnapToGround(grid, collider, seed));
+        foreach (var candidate in candidates)
         {
             var stance = StandSpots.StanceAt(collider, candidate);
             if (stance == StandSpots.Stance.None)
@@ -493,6 +528,17 @@ public static partial class LineupSolver
         // few units from a wall names a spot the player hull cannot occupy - in
         // game they are simply pushed out of it. Handing back a setpos for a
         // position nobody can stand in is worse than saying nothing.
+        // Where the hull really rests beats the voxel-derived floor whenever
+        // the seed's own height is within a step of a real floor: the grid
+        // answer can sit a whole voxel above a sloped floor (a floating origin
+        // passes the hull test) or, snapped by a point ray, inside it (see
+        // HullRestHeight). A seed further than a step from any floor - a nav
+        // height under a crate - keeps the grid's answer.
+        if (HullRestHeight(collider, seed) is { } resting &&
+            StandSpots.StanceAt(collider, resting) != StandSpots.Stance.None)
+        {
+            snapped = resting;
+        }
         var stance = StandSpots.StanceAt(collider, snapped);
         if (stance != StandSpots.Stance.None)
         {
