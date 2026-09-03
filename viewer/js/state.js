@@ -108,13 +108,19 @@ export const state = {
     precision: document.getElementById("f-precision"),
     pin: document.getElementById("f-pin"),
     reference: document.getElementById("f-reference"),
+    stance: document.getElementById("f-stance"),
   },
 };
 
-// True when the reference filter hid everything and we showed the list anyway.
+// Which opinionated default filters had to be dropped to show anything at all.
 // A solver that hides its only answer is worse than one that qualifies it, so
-// the fallback is deliberate - but the panel has to be able to say it happened.
-export const referenceFallback = { active: false };
+// the fallback is deliberate - but the panel has to be able to say it happened,
+// and say WHICH preference it gave up on.
+export const referenceFallback = { active: false, dropped: [] };
+
+// Throws that leave the ground. Shared by the stance filter and the difficulty
+// word, which must agree on what "airborne" means.
+export const AIRBORNE = new Set(["JumpThrow", "CrouchJumpThrow", "RunJumpThrow"]);
 
 // How far above the horizon a throw aims, in degrees. Source's pitch is
 // negative upwards (setang), so this is the sign flip.
@@ -178,7 +184,7 @@ function filterSignature() {
     result.single ? 1 : 0,
     removed,
     f.type.value, f.strength.value, f.bounces.value, f.flight.value,
-    f.stability.value, f.sky.value, f.precision.value, f.pin.value, f.reference.value,
+    f.stability.value, f.sky.value, f.precision.value, f.pin.value, f.reference.value, f.stance.value,
   ].join("|");
 }
 
@@ -215,18 +221,36 @@ function computeFiltered() {
     (!filters.pin.value || (filters.pin.value === "corner" ? l.pin === "corner" : !!l.pin));
 
   const rest = state.result.lineups.filter(passesRest);
-  const band = filters.reference.value;
-  if (band === "") {
-    referenceFallback.active = false;
-    return rest;
+
+  // The two opinionated defaults - a real reference, and feet on the ground -
+  // are preferences, not requirements. "Never hide, always label": when a
+  // target genuinely has nothing that clears a bar, showing none of its answers
+  // is worse than showing them qualified, so each is dropped in turn until
+  // something remains. The rows badge themselves, so a weak reference or an
+  // airborne throw is visibly that rather than silently absent.
+  const prefs = [];
+  if (filters.stance.value === "ground") {
+    prefs.push({ name: "feet on the ground", keep: l => !AIRBORNE.has(l.type) });
   }
-  // "Never hide, always label": when a target genuinely has nothing that clears
-  // the bar, showing none of its answers is worse than showing them qualified.
-  // The rows badge themselves by band, so a weak reference is visibly weak
-  // rather than silently absent.
-  const withReference = rest.filter(l => referenceBand(l) <= Number.parseInt(band));
-  referenceFallback.active = rest.length > 0 && withReference.length === 0;
-  return referenceFallback.active ? rest : withReference;
+  if (filters.reference.value !== "") {
+    const band = Number.parseInt(filters.reference.value);
+    prefs.push({ name: "a reference near the crosshair", keep: l => referenceBand(l) <= band });
+  }
+  let shown = rest;
+  const dropped = [];
+  // Apply all, then relax from the least important (last) backwards.
+  for (let n = prefs.length; n >= 0; n--) {
+    const active = prefs.slice(0, n);
+    const candidate = rest.filter(l => active.every(p => p.keep(l)));
+    if (candidate.length > 0 || n === 0) {
+      shown = candidate;
+      dropped.push(...prefs.slice(n).map(p => p.name));
+      break;
+    }
+  }
+  referenceFallback.active = rest.length > 0 && dropped.length > 0;
+  referenceFallback.dropped = dropped;
+  return shown;
 }
 
 // How reproducible a lineup's aim is: 0 best, 6 nothing to line up against.
@@ -484,7 +508,7 @@ const MOVEMENT_CEILING = {
   JumpThrow: 1, CrouchJumpThrow: 1,
   RunJumpThrow: 1,
 };
-const AIRBORNE = new Set(["JumpThrow", "CrouchJumpThrow", "RunJumpThrow"]);
+
 // And the best an aim with this much to line up against can be called.
 const AIM_CEILING = { edge: 3, reticle: 3, flat: 1, sky: 0 };
 

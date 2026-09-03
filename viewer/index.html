@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Smoke Solver</title>
 <link rel="icon" href="viewer/favicon.svg" type="image/svg+xml">
-<link rel="stylesheet" href="viewer/app.css?v=91">
+<link rel="stylesheet" href="viewer/app.css?v=92">
 </head>
 <body>
 
@@ -117,6 +117,11 @@
       <summary>filters <span class="filter-count" id="filter-count"></span><button type="button" class="card-reset" id="filters-reset" title="Reset filters to defaults" aria-label="Reset filters">
         <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M15.5 7.5a6 6 0 1 0 .8 4"/><path d="M15.9 3.4v4.3h-4.3"/></svg></button></summary>
       <div class="card-body" id="filter-body">
+        <select id="f-stance" aria-label="Feet on the ground" data-default="ground"
+                data-label="Stance" data-desc="Prefer throws made standing still. A jump adds a timing to hit and a release to judge while the body is moving, and a run-jump adds your own run speed straight into the grenade - measured against the real game, run-jumps land within 3 units only 71% of the time against 90% for a crouching throw. Airborne throws are still shown when a target has nothing else; this only decides what leads.">
+          <option value="ground" selected>feet on the ground (recommended)</option>
+          <option value="">any, including jumps</option>
+        </select>
         <select id="f-type" aria-label="Movement type"
                 data-label="Movement" data-desc="Your throw style: standing, crouching, jumping, etc.">
           <option value="">any movement</option>
@@ -391,6 +396,6 @@ give weapon_smokegrenade<button data-copy="cmd-setup" class="btn">copy</button><
      4h, so bumping ?v= here is what busts that cache. Bump on any change to a
      directly-referenced asset. (The permanent cure is CF Browser Cache TTL ->
      "Respect Existing Headers", after which this is belt-and-suspenders.) -->
-<script type="module" src="viewer/js/main.js?v=91"></script>
+<script type="module" src="viewer/js/main.js?v=92"></script>
 </body>
 </html>

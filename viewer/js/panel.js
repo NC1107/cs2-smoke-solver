@@ -4,7 +4,7 @@
 // selecting a lineup route through the callbacks main.js registers.
 
 import { state, filtered, clickShort, clickClass, esc, skyAngle, proMatched, scoreBreakdown, referenceBand, referenceFallback,
-  movementWords, clickWords, aimWords, difficultyWords } from "./state.js?v=91";
+  movementWords, clickWords, aimWords, difficultyWords } from "./state.js?v=92";
 
 const statusEl = state.statusEl;
 const PAGE_SIZE = 50;
@@ -209,7 +209,7 @@ export function resultStatusText(shown) {
   // so when it would have emptied the list and we showed everything anyway, say
   // that plainly - otherwise the badges look like the filter simply failed.
   const fallback = referenceFallback.active
-    ? " · nothing here has a reference near the crosshair, showing all of them"
+    ? ` · nothing here has ${referenceFallback.dropped.join(" or ")}, so those are shown too`
     : "";
   return `${shown} lineups - click a marker or use the list` +
     (hidden > 0 ? ` · ${hidden} hidden by filters` : "") + fallback + scope;
