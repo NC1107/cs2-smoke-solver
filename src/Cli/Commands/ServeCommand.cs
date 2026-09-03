@@ -21,6 +21,10 @@ public static class ServeCommand
     // Cap concurrent solves at two so cached lookups, mesh, and static file
     // requests keep flowing while solves are in flight.
     static readonly SemaphoreSlim SolveGate = new(2);
+    // How often a request waiting for a solver slot, or waiting on a solve it
+    // cannot stream, sends a byte so the connection is not judged dead. Well
+    // inside Cloudflare's 100s origin timeout.
+    static readonly TimeSpan GateKeepalive = TimeSpan.FromSeconds(10);
 
     // How many requests may WAIT for one of those two slots. The gate bounds
     // concurrency but not arrival rate, so without this an attacker's queue
@@ -107,6 +111,29 @@ public static class ServeCommand
         }).ToList();
         return (Drop(s.T), Drop(s.Ct));
     }
+
+    /// <summary>
+    /// Runs <paramref name="work"/> while the response stays alive: the JSON
+    /// content type goes out at once and a newline follows every
+    /// <see cref="GateKeepalive"/> until the work is done. The body the caller
+    /// then writes is still one JSON document - leading whitespace is legal
+    /// JSON - but a failure after this point can only travel in-band.
+    /// </summary>
+    static async Task KeepAliveWhile(HttpContext context, Task work)
+    {
+        context.Response.ContentType = JsonContentType;
+        while (await Task.WhenAny(work, Task.Delay(GateKeepalive, context.RequestAborted)) != work)
+        {
+            await context.Response.WriteAsync("\n", CancellationToken.None);
+            await context.Response.Body.FlushAsync(CancellationToken.None);
+        }
+        await work;
+    }
+
+    // Once the response has started, a status code is no longer available and
+    // the error must be the body instead.
+    static Task WriteInBandError(HttpContext context, string message) =>
+        context.Response.WriteAsync(JsonSerializer.Serialize(new { error = message }), CancellationToken.None);
 
     // A saved set is a few kilobytes; anything bigger is not a set of lineups.
     const int MaxSavedSetBytes = 256 * 1024;
@@ -983,64 +1010,94 @@ public static class ServeCommand
                     ? Math.Clamp(wEl.GetSingle(), 0f, 256f)
                     : DefaultSameSpot;
 
+                // Validate every target before a byte goes out: after that,
+                // refusals can only be in-band.
+                var probes = new List<string>();
+                foreach (var t in tEl.EnumerateArray())
+                {
+                    if (t.ValueKind != JsonValueKind.Array || t.GetArrayLength() < 2)
+                    {
+                        await WriteApiError(context, StatusCodes.Status400BadRequest, "each target must be [x,y] or [x,y,z]");
+                        return;
+                    }
+                    var q = $"{{\"target\":{JsonSerializer.Serialize(t)}}}";
+                    using var probe = JsonDocument.Parse(q);
+                    if (ValidateLineupQuery(probe.RootElement, entry.Mesh) is { } bad)
+                    {
+                        await WriteApiError(context, StatusCodes.Status400BadRequest, bad);
+                        return;
+                    }
+                    probes.Add(q);
+                }
+                if (Interlocked.Increment(ref queuedSolves) > MaxQueuedSolves)
+                {
+                    Interlocked.Decrement(ref queuedSolves);
+                    await WriteApiError(context, StatusCodes.Status429TooManyRequests, "too many solves queued - try again in a moment");
+                    return;
+                }
+
                 var perTarget = new List<List<JsonElement>>();
                 var docs = new List<JsonDocument>();
                 try
                 {
-                    foreach (var t in tEl.EnumerateArray())
+                    // Each target is a full map-wide solve the first time, so a
+                    // cold execute runs for minutes: the response has to stay
+                    // alive the whole way (KeepAliveWhile) or the edge gives up.
+                    async Task SolveAll()
                     {
-                        if (t.ValueKind != JsonValueKind.Array || t.GetArrayLength() < 2)
+                        var queued = true;
+                        try
                         {
-                            await WriteApiError(context, StatusCodes.Status400BadRequest, "each target must be [x,y] or [x,y,z]");
-                            return;
+                            foreach (var q in probes)
+                            {
+                                using var probe = JsonDocument.Parse(q);
+                                var key = QueryCacheKey(entry.Mesh, entry.BuildETag.Trim('"'), entry.Constants, probe.RootElement, attrs);
+                                var path = SolveCachePath(root, key);
+                                var json = await ReadSolveCacheAsync(path, context.RequestAborted);
+                                if (json is null)
+                                {
+                                    await SolveGate.WaitAsync(context.RequestAborted);
+                                    if (queued) { Interlocked.Decrement(ref queuedSolves); queued = false; }
+                                    try
+                                    {
+                                        json = await Task.Run(() => RunTargetQuery(
+                                            entry.Mesh, entry.AttributeFilter, entry.NavAreas!, probe.RootElement, entry.Constants,
+                                            standSpots: entry.StandSpots,
+                                            spawnFronts: SpawnFronts(root, entry.Mesh.MapName),
+                                            spawnPoints: SpawnPoints(root, entry.Mesh.MapName)), context.RequestAborted);
+                                    }
+                                    finally
+                                    {
+                                        SolveGate.Release();
+                                    }
+                                    await WriteSolveCacheAsync(root, path, json);
+                                }
+                                var solved = JsonDocument.Parse(json);
+                                docs.Add(solved);
+                                perTarget.Add([.. solved.RootElement.GetProperty("lineups").EnumerateArray()]);
+                            }
                         }
-                        var q = $"{{\"target\":{JsonSerializer.Serialize(t)}}}";
-                        using var probe = JsonDocument.Parse(q);
-                        if (ValidateLineupQuery(probe.RootElement, entry.Mesh) is { } bad)
+                        finally
                         {
-                            await WriteApiError(context, StatusCodes.Status400BadRequest, bad);
-                            return;
+                            if (queued) { Interlocked.Decrement(ref queuedSolves); }
                         }
-                        var key = QueryCacheKey(entry.Mesh, entry.BuildETag.Trim('"'), entry.Constants, probe.RootElement, attrs);
-                        var path = SolveCachePath(root, key);
-                        var json = await ReadSolveCacheAsync(path, context.RequestAborted);
-                        if (json is null)
-                        {
-                            if (Interlocked.Increment(ref queuedSolves) > MaxQueuedSolves)
-                            {
-                                Interlocked.Decrement(ref queuedSolves);
-                                await WriteApiError(context, StatusCodes.Status429TooManyRequests, "too many solves queued - try again in a moment");
-                                return;
-                            }
-                            try
-                            {
-                                await SolveGate.WaitAsync(context.RequestAborted);
-                            }
-                            finally
-                            {
-                                Interlocked.Decrement(ref queuedSolves);
-                            }
-                            try
-                            {
-                                json = await Task.Run(() => RunTargetQuery(
-                                    entry.Mesh, entry.AttributeFilter, entry.NavAreas!, probe.RootElement, entry.Constants,
-                                    standSpots: entry.StandSpots,
-                                    spawnFronts: SpawnFronts(root, entry.Mesh.MapName),
-                                    spawnPoints: SpawnPoints(root, entry.Mesh.MapName)), context.RequestAborted);
-                            }
-                            finally
-                            {
-                                SolveGate.Release();
-                            }
-                            await WriteSolveCacheAsync(root, path, json);
-                        }
-                        var solved = JsonDocument.Parse(json);
-                        docs.Add(solved);
-                        perTarget.Add([.. solved.RootElement.GetProperty("lineups").EnumerateArray()]);
+                    }
+                    try
+                    {
+                        await KeepAliveWhile(context, SolveAll());
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        return;
+                    }
+                    catch (Exception e)
+                    {
+                        Console.Error.WriteLine($"execute spots failed: {e}");
+                        await WriteInBandError(context, "solver failure - check server log");
+                        return;
                     }
 
                     var spots = ExecuteSpots.Find(perTarget, within, MaxExecuteSpotResults);
-                    context.Response.ContentType = JsonContentType;
                     await context.Response.WriteAsync(spots, context.RequestAborted);
                 }
                 catch (OperationCanceledException)
@@ -1172,26 +1229,39 @@ public static class ServeCommand
                     await WriteApiError(context, StatusCodes.Status429TooManyRequests, "too many solves queued - try again in a moment");
                     return;
                 }
-                try
-                {
-                    await SolveGate.WaitAsync(context.RequestAborted);
-                }
-                finally
-                {
-                    Interlocked.Decrement(ref queuedSolves);
-                }
                 var smokes = new List<string>();
+                async Task SolveAll()
+                {
+                    try
+                    {
+                        await SolveGate.WaitAsync(context.RequestAborted);
+                    }
+                    finally
+                    {
+                        Interlocked.Decrement(ref queuedSolves);
+                    }
+                    try
+                    {
+                        foreach (var q in queries)
+                        {
+                            context.RequestAborted.ThrowIfCancellationRequested();
+                            using var doc = JsonDocument.Parse(q);
+                            var solved = await Task.Run(() => RunTargetQuery(
+                                entry.Mesh, entry.AttributeFilter, entry.NavAreas!, doc.RootElement, entry.Constants,
+                                standSpots: entry.StandSpots), context.RequestAborted);
+                            smokes.Add(TrimToBest(solved, MaxExecuteLineupsPerSmoke));
+                        }
+                    }
+                    finally
+                    {
+                        SolveGate.Release();
+                    }
+                }
                 try
                 {
-                    foreach (var q in queries)
-                    {
-                        context.RequestAborted.ThrowIfCancellationRequested();
-                        using var doc = JsonDocument.Parse(q);
-                        var solved = await Task.Run(() => RunTargetQuery(
-                            entry.Mesh, entry.AttributeFilter, entry.NavAreas!, doc.RootElement, entry.Constants,
-                            standSpots: entry.StandSpots), context.RequestAborted);
-                        smokes.Add(TrimToBest(solved, MaxExecuteLineupsPerSmoke));
-                    }
+                    // Five spot solves behind a queue can outlast the edge's
+                    // patience; the response stays alive while they run.
+                    await KeepAliveWhile(context, SolveAll());
                 }
                 catch (OperationCanceledException)
                 {
@@ -1200,14 +1270,9 @@ public static class ServeCommand
                 catch (Exception e)
                 {
                     Console.Error.WriteLine($"execute failed: {e}");
-                    await WriteApiError(context, StatusCodes.Status500InternalServerError, "solver failure - check server log");
+                    await WriteInBandError(context, "solver failure - check server log");
                     return;
                 }
-                finally
-                {
-                    SolveGate.Release();
-                }
-                context.Response.ContentType = JsonContentType;
                 await context.Response.WriteAsync(
                     $"{{\"origin\":{originJson},\"smokes\":[{string.Join(",", smokes)}]}}",
                     context.RequestAborted);
@@ -1338,7 +1403,17 @@ public static class ServeCommand
                 }
                 try
                 {
-                    await SolveGate.WaitAsync(context.RequestAborted);
+                    // Waiting for a solver slot is silent from the outside, and
+                    // Cloudflare returns 524 to anything silent for 100s. Two
+                    // cold solves ahead in the queue is all it takes. Say
+                    // "queued" straight away and keep saying it, so the wait
+                    // is a message on screen rather than an error page.
+                    var ahead = Math.Max(0, queuedSolves - 1);
+                    await WriteLine($"{{\"phase\":\"queued\",\"count\":{ahead}}}");
+                    while (!await SolveGate.WaitAsync(GateKeepalive, context.RequestAborted))
+                    {
+                        await WriteLine($"{{\"phase\":\"queued\",\"count\":{Math.Max(0, queuedSolves - 1)}}}");
+                    }
                 }
                 finally
                 {

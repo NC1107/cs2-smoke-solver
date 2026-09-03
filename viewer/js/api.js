@@ -1,6 +1,6 @@
 // Fetch wrappers. No DOM access here; callers own status text and overlays.
 
-import { state } from "./state.js?v=101";
+import { state } from "./state.js?v=102";
 
 // Cache-bust a data URL with the map build: re-processed radars/GLBs change
 // content without changing name, and the query string gets a fresh copy past
@@ -240,10 +240,19 @@ export async function runExecute(map, origin, targets) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ map, origin, targets }),
   });
+  return executeReply(res);
+}
+
+// An execute's answer is one JSON document, but it arrives late: the server
+// keeps the connection alive with blank lines while the solves run, and a
+// failure after that can only be reported in the body, so a 200 may still
+// carry an error.
+async function executeReply(res) {
   if (!res.ok) {
     return { error: (await res.json().catch(() => ({}))).error ?? `error ${res.status}` };
   }
-  return { data: await res.json() };
+  const data = await res.json();
+  return data.error ? { error: data.error } : { data };
 }
 
 // The other half: where can one player stand and throw all of them. Each target
@@ -255,10 +264,7 @@ export async function findExecuteSpots(map, targets) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ map, targets }),
   });
-  if (!res.ok) {
-    return { error: (await res.json().catch(() => ({}))).error ?? `error ${res.status}` };
-  }
-  return { data: await res.json() };
+  return executeReply(res);
 }
 
 // Who is signed in, or null. Never throws: an anonymous visitor is the normal

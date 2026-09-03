@@ -3,9 +3,9 @@
 // user's own browser against the shared camera/canvas the interactive view
 // owns - no server round-trip.
 
-import { EYE_HEIGHT_BY_TYPE, DEFAULT_EYE_HEIGHT } from "./state.js?v=101";
-import { ensure3d, current3d, verticalFovFromDesired, ensureCrosshair } from "./view3d.js?v=101";
-import { ensureTexturedScene, currentTexturedScene } from "./textured-scene.js?v=101";
+import { EYE_HEIGHT_BY_TYPE, DEFAULT_EYE_HEIGHT } from "./state.js?v=102";
+import { ensure3d, current3d, verticalFovFromDesired, ensureCrosshair } from "./view3d.js?v=102";
+import { ensureTexturedScene, currentTexturedScene } from "./textured-scene.js?v=102";
 
 // Renders one first-person frame from a lineup's exact throw position and
 // angle - what the player would line their crosshair against, not the
