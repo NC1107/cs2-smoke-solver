@@ -2,19 +2,19 @@
 // import the feature modules; they call back into the orchestrators defined
 // here (setTarget, select, runQuery) via the init*/set*Callbacks hooks.
 
-import { state, filtered, esc, lowMemoryDevice, loadFavorites, setFavorite, isFavorite, DEFAULT_EYE_HEIGHT, EYE_HEIGHT_BY_TYPE, TARGET_SNAP_RADIUS, favoriteHooks, loadSavedLocal, persistSavedLocal} from "./state.js?v=105";
-import { loadMapList, loadMapData, runQuery as postLineupQuery, fetchTrajectory, fetchLineupOne, fetchSlack, fetchSpawns, fetchProSmokes, fetchMeshDiff, meshDiffExists, fetchLevels, fetchSmokeCoverage, runExecute, findExecuteSpots, fetchTargets, fetchMe, signOut, fetchSavedLineups, putSavedLineups, fetchVotes, castVote} from "./api.js?v=105";
-import { loadRadar, readColors, recolorRadar, draw, scheduleDraw, resize, resetView, initMap2d, screenOf } from "./map2d.js?v=105";
-import { ensure3d, resetEnsure3d, teardown3d, current3d, sync3d, syncProgress3d, syncMeshDiff3d, set3dCallbacks, applyTheme3d, verticalFovFromDesired } from "./view3d.js?v=105";
-import { initAdmin, renderAdmin } from "./admin.js?v=105";
-import { resetEnsureTexturedScene } from "./textured-scene.js?v=105";
-import { capturePreview } from "./preview.js?v=105";
+import { state, filtered, esc, lowMemoryDevice, loadFavorites, setFavorite, isFavorite, DEFAULT_EYE_HEIGHT, EYE_HEIGHT_BY_TYPE, TARGET_SNAP_RADIUS, favoriteHooks, loadSavedLocal, persistSavedLocal} from "./state.js?v=106";
+import { loadMapList, loadMapData, runQuery as postLineupQuery, fetchTrajectory, fetchLineupOne, fetchSlack, fetchSpawns, fetchProSmokes, fetchMeshDiff, meshDiffExists, fetchLevels, fetchSmokeCoverage, runExecute, findExecuteSpots, fetchTargets, fetchMe, signOut, fetchSavedLineups, putSavedLineups, fetchVotes, castVote} from "./api.js?v=106";
+import { loadRadar, readColors, recolorRadar, draw, scheduleDraw, resize, resetView, initMap2d, screenOf } from "./map2d.js?v=106";
+import { ensure3d, resetEnsure3d, teardown3d, current3d, sync3d, syncProgress3d, syncMeshDiff3d, set3dCallbacks, applyTheme3d, verticalFovFromDesired } from "./view3d.js?v=106";
+import { initAdmin, renderAdmin, syncAdminMode } from "./admin.js?v=106";
+import { resetEnsureTexturedScene } from "./textured-scene.js?v=106";
+import { capturePreview } from "./preview.js?v=106";
 // Every local import across viewer/js carries the SAME ?v= token, bumped
 // together on any change. The HTML is served no-cache, so a fresh load pulls
 // main.js?v=N, which pulls every module at ?v=N - the whole graph refreshes as
 // one consistent set past Cloudflare's 4h JS cache, with no duplicate module
 // instances (which a partial versioning would cause). Bump the token everywhere.
-import { renderLineups, initPanel, revealSelected, resultStatusText } from "./panel.js?v=105";
+import { renderLineups, initPanel, revealSelected, resultStatusText } from "./panel.js?v=106";
 
 (async () => {
   // Map switching means a failed load is no longer necessarily terminal (the
@@ -241,7 +241,8 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
     const me = await fetchMe().catch(() => null);
     state.account = me;
     syncAccountUi();
-    renderAdmin();
+    syncAdminMode();
+    renderLineups();
     if (!me) {
       return;
     }
@@ -300,7 +301,7 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
   // what the page is already showing - and being able to inspect it is how
   // "the chip is not rendering" gets diagnosed in a minute instead of an hour.
   window.smokeState = state;
-  window.smokeRenderAdmin = renderAdmin;
+  window.smokeRenderAdmin = () => { syncAdminMode(); renderLineups(); };
 
   // Hover help: the sidebar's controls explain themselves in the status line
   // the moment the pointer is over them. The browser's own tooltip is the
@@ -1011,7 +1012,7 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
     fetchTargets(name).then(t => {
       if (state.mapGeneration !== gen) { return; }
       state.targets = disambiguateTargetNames(Array.isArray(t) ? t : []);
-      renderAdmin();
+      if (state.panelMode === "targets") { renderLineups(); }
       // A target that arrived by link, before the names did, gets its name now.
       if (state.target && !state.targetName) {
         state.targetName = nearestNamedTarget(state.target)?.name ?? null;
@@ -2291,6 +2292,7 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
     onGoTo: goToLineup, onFavorite: toggleFavorite, onRemove: removeLineup,
     onShare: shareLineup, onVote: voteOn,
     onOpenSaved: openSaved, onForgetSaved: forgetSaved,
+    onRenderTargets: renderAdmin,
   });
   initMap2d({ onSetTarget: setTarget, onSelect: select, onRunQuery: runQuery, onPickOrigin: pickOrigin, onPickThrowSpot: useThrowSpot });
   set3dCallbacks({ onSetTarget: setTarget, onSelect: select, onRunQuery: runQuery, onPickOrigin: pickOrigin, onPickThrowSpot: useThrowSpot });

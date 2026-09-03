@@ -3,10 +3,10 @@
 // wraps init/sync. Raycast picks route through callbacks that main.js
 // registers, so this module never imports the orchestrator.
 
-import { state, filtered, clickClass, lowMemoryDevice, SMOKE_BLOOM_RADIUS, EYE_HEIGHT_BY_TYPE, DEFAULT_EYE_HEIGHT } from "./state.js?v=105";
-import { fetchMesh } from "./api.js?v=105";
-import { createFlyCamera } from "./flycam.js?v=105";
-import { loadScript, ensureTexturedScene, currentTexturedScene, disposeSceneContents, disposeTexturedScene } from "./textured-scene.js?v=105";
+import { state, filtered, clickClass, lowMemoryDevice, SMOKE_BLOOM_RADIUS, EYE_HEIGHT_BY_TYPE, DEFAULT_EYE_HEIGHT } from "./state.js?v=106";
+import { fetchMesh } from "./api.js?v=106";
+import { createFlyCamera } from "./flycam.js?v=106";
+import { loadScript, ensureTexturedScene, currentTexturedScene, disposeSceneContents, disposeTexturedScene } from "./textured-scene.js?v=106";
 
 const stage3d = state.stage3d;
 // Warning tint for phantom blockers (grenade-clips, physics-clips, glass) - a
@@ -315,6 +315,9 @@ async function init3d() {
   namedStemGeo.rotateX(Math.PI / 2);
   namedStemGeo.translate(0, 0, 14);
   const namedPinMat = new THREE.MeshBasicMaterial({ color: colors.target });
+  const throwSpotMat = new THREE.MeshBasicMaterial({ color: colors["heat-ok"], transparent: true, opacity: 0.9, depthWrite: false, side: THREE.DoubleSide });
+  const throwRingGeo = new THREE.RingGeometry(9, 13, 28);
+  const throwStemGeo = new THREE.CylinderGeometry(1, 1, 40, 6).rotateX(Math.PI / 2).translate(0, 0, 20);
   const namedPinDimMat = new THREE.MeshBasicMaterial({ color: colors.target, transparent: true, opacity: 0.55 });
   const meshdiffGroup = new THREE.Group();
   meshdiffGroup.visible = false;
@@ -640,6 +643,7 @@ async function init3d() {
     meshdiffRenderMat, meshdiffPhysicsMat,
     spawnEdgeGeo, spawnEdgeT, spawnEdgeCt, spawnHeldMat,
     namedGroup, namedPinGeo, namedStemGeo, namedPinMat, namedPinDimMat,
+    throwSpotMat, throwRingGeo, throwStemGeo,
     get isLive() { return live; },
     get isTextured() { return activeScene !== scene; },
     start() {
@@ -802,6 +806,7 @@ export function applyTheme3d() {
   three.markerMats.right.color.set(colors["click-right"]);
   three.targetMat.color.set(colors.target);
   three.namedPinMat.color.set(colors.target);
+  three.throwSpotMat.color.set(colors["heat-ok"]);
   three.namedPinDimMat.color.set(colors.target);
   // The plates were rasterised in the old theme's colours.
   labelCache.clear();
@@ -1084,6 +1089,18 @@ export function sync3d() {
   clearGroup(three.namedGroup);
   if (state.targetsOn) {
     addNamedTargets3d();
+  }
+  // The throw spot, standing where the feet go: the same ring-and-stem the
+  // ghost pin uses, in the "throw from here" colour, so the spot you set is
+  // visible once the pointer has moved on.
+  const throwSpot = state.pendingOrigin ?? state.lastOrigin;
+  if (throwSpot) {
+    const z = throwSpot.length > 2 ? throwSpot[2] : (three.surfaceZAt(throwSpot[0], throwSpot[1]) ?? 0);
+    const ring = new THREE.Mesh(three.throwRingGeo, three.throwSpotMat);
+    ring.position.set(throwSpot[0], throwSpot[1], z + 0.6);
+    const stem = new THREE.Mesh(three.throwStemGeo, three.throwSpotMat);
+    stem.position.set(throwSpot[0], throwSpot[1], z);
+    targetGroup.add(ring, stem);
   }
   const target = state.target;
   if (target) {

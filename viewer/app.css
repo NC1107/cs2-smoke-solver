@@ -1028,10 +1028,12 @@
      execute rule so the two grouped lists read alike. */
   .score-row.score-repro { display: block; margin-bottom: 4px; padding-bottom: 4px; border-bottom: var(--border); line-height: 1.35; }
   .score-row.score-repro b { color: var(--accent); }
-  /* The admin target editor. */
-  #card-targets[hidden] { display: none; }
-  #card-targets > summary { display: list-item; }
-  #target-list { margin: 0 0 6px; padding: 0; list-style: none; display: grid; gap: 4px; max-height: 320px; overflow-y: auto; }
+  /* The admin target editor, a panel mode. */
+  #target-editor { display: flex; flex-direction: column; gap: 6px; min-height: 0; }
+  #target-editor[hidden] { display: none; }
+  #target-editor .exec-hint { margin: 0; }
+  #target-list { margin: 0; padding: 0; list-style: none; display: grid; gap: 4px; overflow-y: auto; min-height: 0; }
+  #target-list .exec-head { margin-top: 6px; }
   /* Two lines per pin in a 200px card: the name and its confirmation, then
      where it is and what you can do to it. */
   #target-list .target-row { display: grid; gap: 3px; padding: 4px; border: var(--border); border-radius: 4px; font-size: 0.88em; }

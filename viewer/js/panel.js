@@ -4,7 +4,7 @@
 // selecting a lineup route through the callbacks main.js registers.
 
 import { state, filtered, clickShort, clickClass, esc, skyAngle, proMatched, scoreBreakdown, referenceBand, referenceFallback,
-  movementWords, clickWords, aimWords, difficultyWords, TARGET_SNAP_RADIUS, humanError } from "./state.js?v=105";
+  movementWords, clickWords, aimWords, difficultyWords, TARGET_SNAP_RADIUS, humanError } from "./state.js?v=106";
 
 const statusEl = state.statusEl;
 const PAGE_SIZE = 50;
@@ -84,6 +84,7 @@ let callbacks = {
   onVote: () => {},
   onOpenSaved: () => {},
   onForgetSaved: () => {},
+  onRenderTargets: () => {},
 };
 
 // One result, said the way a lineup guide says it: which button, how you are
@@ -246,10 +247,11 @@ export function resultStatusText(shown) {
 
 export function renderLineups() {
   const saved = state.panelMode === "saved";
+  const targets = state.panelMode === "targets";
   // The panel earns its screen space only once there is something to show:
-  // results, or the saved list. Empty it reads as a stray bar of chrome
-  // (worst on phones, where it anchors to the bottom edge like a footer).
-  document.getElementById("panel").hidden = !(state.result || saved);
+  // results, the saved list, or the target editor. Empty it reads as a stray
+  // bar of chrome (worst on phones, where it anchors to the bottom edge).
+  document.getElementById("panel").hidden = !(state.result || saved || targets);
   for (const b of document.querySelectorAll("#panel-mode .tile")) {
     const on = b.dataset.mode === state.panelMode;
     b.classList.toggle("active", on);
@@ -257,7 +259,9 @@ export function renderLineups() {
   }
   // The sort and the detailed toggle describe a result list; they have no
   // meaning over the saved one.
-  document.querySelector(".panel-head .head-tools").hidden = saved;
+  document.querySelector(".panel-head .head-tools").hidden = saved || targets;
+  document.getElementById("target-editor").hidden = !targets;
+  document.getElementById("lineup-list").hidden = targets;
   const list = document.getElementById("lineup-list");
   const focusIdx = list.contains(document.activeElement)
     ? document.activeElement.dataset.idx : undefined;
@@ -266,6 +270,11 @@ export function renderLineups() {
   // render shows it for a non-empty result, so it never lingers over an
   // empty or cleared panel.
   document.getElementById("list-pager").hidden = true;
+  if (targets) {
+    document.getElementById("preview-pane").hidden = true;
+    callbacks.onRenderTargets();
+    return;
+  }
   if (saved) {
     // The render belongs to a selected result, not to the saved list.
     document.getElementById("preview-pane").hidden = true;

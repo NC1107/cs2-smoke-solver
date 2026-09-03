@@ -3,8 +3,8 @@
 // actions (set target, select, run query) go through callbacks that main.js
 // registers, so this module never imports the orchestrator.
 
-import { cacheBust } from "./api.js?v=105";
-import { isDrag, state, filtered, clickWords, movementWords, clickClass, esc, SMOKE_BLOOM_RADIUS, PICK_RADIUS_PX, TOUCH_PICK_RADIUS_PX, HEAT_CELL } from "./state.js?v=105";
+import { cacheBust } from "./api.js?v=106";
+import { isDrag, state, filtered, clickWords, movementWords, clickClass, esc, SMOKE_BLOOM_RADIUS, PICK_RADIUS_PX, TOUCH_PICK_RADIUS_PX, HEAT_CELL } from "./state.js?v=106";
 
 const canvas = state.canvas;
 const ctx = canvas.getContext("2d");
@@ -295,6 +295,31 @@ export function draw() {
     ctx.beginPath();
     ctx.arc(state.target[0], -state.target[1], 3 / scale, 0, Math.PI * 2);
     ctx.fill();
+  }
+  // The throw spot: a pair of feet on the map. Held before a search or kept
+  // from the last one; either way it was invisible, and a position you set
+  // and cannot see is one you set twice.
+  const throwSpot = state.pendingOrigin ?? state.lastOrigin;
+  if (throwSpot) {
+    const [tx, ty] = [throwSpot[0], -throwSpot[1]];
+    const r = 6 / scale;
+    ctx.strokeStyle = colors["heat-ok"];
+    ctx.fillStyle = colors.panel;
+    ctx.lineWidth = 1.8 / scale;
+    ctx.globalAlpha = 0.95;
+    ctx.beginPath();
+    ctx.moveTo(tx, ty - r * 1.4);
+    ctx.lineTo(tx + r, ty);
+    ctx.lineTo(tx, ty + r * 1.4);
+    ctx.lineTo(tx - r, ty);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = colors["heat-ok"];
+    ctx.beginPath();
+    ctx.arc(tx, ty, r * 0.35, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalAlpha = 1;
   }
   if (state.progress && (state.progress.checked.length || state.progress.verified.length)) {
     // Only draw what is on screen. A map-wide sweep reports tens of thousands

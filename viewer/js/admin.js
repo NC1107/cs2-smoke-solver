@@ -4,8 +4,8 @@
 //
 // A separate module because the rest of the viewer never edits map data, and
 // the one card that does should not be mixed into the code that reads it.
-import { state } from "./state.js?v=105";
-import { putTargets } from "./api.js?v=105";
+import { state } from "./state.js?v=106";
+import { putTargets } from "./api.js?v=106";
 
 let callbacks = {
   onSetTarget: () => {},
@@ -14,7 +14,7 @@ let callbacks = {
   status: () => {},
 };
 
-const card = () => document.getElementById("card-targets");
+const editor = () => document.getElementById("target-editor");
 const list = () => document.getElementById("target-list");
 let dirty = false;
 
@@ -103,18 +103,39 @@ function markDirty() {
   save.textContent = "Save changes";
 }
 
+// Whether the editor is available at all: the Targets mode tile shows for
+// admins, and the panel shows the editor when that mode is chosen.
+export function syncAdminMode() {
+  const admin = !!state.account?.admin;
+  document.getElementById("mode-targets").hidden = !admin;
+  if (!admin && state.panelMode === "targets") {
+    state.panelMode = "results";
+  }
+}
+
 export function renderAdmin() {
-  const el = card();
-  el.hidden = !state.account?.admin;
+  syncAdminMode();
+  const el = editor();
+  el.hidden = !(state.account?.admin && state.panelMode === "targets");
   if (el.hidden) {
     return;
   }
   const ol = list();
   ol.innerHTML = "";
-  document.getElementById("targets-count").textContent = `(${state.targets.length})`;
-  state.targets.forEach((t, i) => {
+  // The queue first: what still needs a person's word, then what has it.
+  const order = state.targets.map((t, i) => ({ t, i })).sort((a, b) => (a.t.named ? 1 : 0) - (b.t.named ? 1 : 0));
+  let lastNamed = null;
+  for (const { t, i } of order) {
+    if (t.named !== lastNamed) {
+      lastNamed = t.named;
+      const head = document.createElement("li");
+      head.className = "exec-head";
+      const n = state.targets.filter(x => !!x.named === t.named).length;
+      head.textContent = t.named ? `confirmed (${n})` : `to confirm (${n})`;
+      ol.appendChild(head);
+    }
     const li = document.createElement("li");
-    li.className = "target-row" + (t.named ? "" : " provisional");
+    li.className = "target-row" + (t.named ? " confirmed" : " provisional");
     li.dataset.index = String(i);
     const current = state.target && Math.hypot(state.target[0] - t.pos[0], state.target[1] - t.pos[1]) < 1;
     if (current) {
@@ -122,7 +143,7 @@ export function renderAdmin() {
     }
     li.innerHTML =
       `<div class="line"><input type="text" value="${escapeAttr(t.name)}" maxlength="40" aria-label="Target name" placeholder="name">` +
-      `<label class="named" title="Confirmed by a person - not a guess from the nearest callout"><input type="checkbox" ${t.named ? "checked" : ""} aria-label="Name confirmed"> named</label></div>` +
+      `<label class="named" title="Confirmed: a person has checked the name and the position. Unticked, it is a guess from the nearest callout and shows a ? on the map"><input type="checkbox" ${t.named ? "checked" : ""} aria-label="Confirmed"> ${t.named ? "\u{1F512} confirmed" : "confirm"}</label></div>` +
       `<div class="line"><span class="pos" title="${t.landings ? `${t.landings} pro landings, spread ${Math.round(t.spread)}u` : "added by hand"}">${t.pos[0].toFixed(0)}, ${t.pos[1].toFixed(0)}, ${t.pos[2].toFixed(0)}</span>` +
       `<span class="acts">` +
       `<button type="button" class="btn" data-act="look" title="Make this the target and look at it in 3D">Look</button>` +
@@ -130,7 +151,9 @@ export function renderAdmin() {
       `<button type="button" class="btn danger" data-act="drop" title="Delete this pin" aria-label="Delete">×</button>` +
       `</span></div>`;
     ol.appendChild(li);
-  });
+  }
+  document.getElementById("head-count").textContent =
+    `${state.targets.filter(t => !t.named).length} open \u00b7 ${state.targets.filter(t => t.named).length} confirmed`;
   const save = document.getElementById("targets-save");
   if (!dirty) {
     save.disabled = true;
