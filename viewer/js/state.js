@@ -271,7 +271,18 @@ export const referenceBand = l => l.aimRef?.band ?? (l.aimRef?.tier === "sky" ? 
 // what a player could reproduce. Feet to the unit and angles to a tenth of a
 // degree are finer than anyone can stand or aim, so the same throw found by
 // two different solves keys the same.
+// The server's durable lineup id, when the result carries one. The same
+// physical throw gets the same id whichever solve found it, and the server is
+// the one place the quantisation lives, so favourites, votes and shared sets
+// cannot disagree about what "the same lineup" means.
 export function favKey(l) {
+  return l.id ?? legacyFavKey(l);
+}
+
+// The key favourites were saved under before the server minted ids. Kept so
+// nothing anyone saved is orphaned: a lineup is a favourite if EITHER key is
+// in the set, and saving under the new one writes the old one out.
+function legacyFavKey(l) {
   return [
     Math.round(l.feet[0]), Math.round(l.feet[1]), Math.round(l.feet[2]),
     l.type, l.strength.toFixed(2), l.yaw.toFixed(1), l.pitch.toFixed(1),
@@ -294,6 +305,9 @@ export function loadFavorites(map) {
 
 export function setFavorite(map, l, on) {
   const key = favKey(l);
+  // Either way, the legacy key goes: on, it is superseded by the id; off, it
+  // must not keep the star lit by itself.
+  state.favorites.delete(legacyFavKey(l));
   if (on) {
     state.favorites.add(key);
   } else {
@@ -308,7 +322,7 @@ export function setFavorite(map, l, on) {
 }
 
 export function isFavorite(l) {
-  return state.favorites.has(favKey(l));
+  return state.favorites.has(favKey(l)) || state.favorites.has(legacyFavKey(l));
 }
 
 // Does a pro throw THIS SMOKE from here? The demo data pairs each throw origin

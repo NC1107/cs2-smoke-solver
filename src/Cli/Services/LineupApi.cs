@@ -203,6 +203,7 @@ public static class LineupApi
         }
         json.Append("],\"lineup\":").Append(JsonSerializer.Serialize(new
         {
+            id = LineupIdentity.Id(type, strength, runDeg, feet, yawDeg, pitchDeg),
             feet = new[] { feet.X, feet.Y, feet.Z },
             yaw = yawDeg,
             pitch = pitchDeg,
@@ -471,7 +472,7 @@ public static class LineupApi
             : "all";
         // Bump when solver or sim behavior changes: cached answers from older code
         // must never be replayed as current results.
-        const int QueryVersion = 26;
+        const int QueryVersion = 27;
         // meshVersion is the content-hashed mesh identity (not just the game
         // build), so re-extracting a map - e.g. dropping the Retake tape - forces
         // a re-solve instead of replaying results computed against the old mesh.
@@ -639,6 +640,9 @@ public static class LineupApi
             // map-search) rather than a hard top-12 that dropped the ideal one.
             lineups = ranked.Take(400).Select(l => new
             {
+                // Durable identity for favourites, votes and shared sets: the
+                // same physical throw gets the same id whichever solve found it.
+                id = LineupIdentity.Id(l),
                 feet = new[] { l.Feet.X, l.Feet.Y, l.Feet.Z },
                 yaw = l.YawDeg,
                 pitch = l.PitchDeg,
