@@ -321,18 +321,19 @@ public static partial class LineupSolver
             // cell-vs-point mismatch that put elevated origins in space
             // (measured on de_dust2 [-1402,2742], a floating pin master ships
             // today). Re-seat the pin on the real floor rather than only
-            // rejecting it: the probe reaches further down than up because the
-            // failure mode is feet left ABOVE the surface, and simply dropping
-            // everything that misses a tight window discarded four perfectly
-            // good origins whose floor sat just outside it.
-            var probeTop = snapped + new Vector3(0, 0, grid.VoxelSize);
-            var probeBottom = snapped - new Vector3(0, 0, grid.VoxelSize * 2);
-            if (collider.FirstHit(probeTop, probeBottom) is not { } floor ||
-                floor.Normal.Z < StandableNormalZ)
+            // rejecting it, and on the floor the HULL rests on: this used to
+            // be a single ray under the pin's centre, which on any slope sits
+            // below where the hull's footprint touches, and the hull test
+            // right after then rejected the pin as inside the floor. That is
+            // how every wedge against a crate or low wall on sloped ground
+            // went missing (de_dust2's A site is nothing but sloped ground).
+            // The probe reaches further down than up because the failure mode
+            // is feet left ABOVE the surface.
+            if (HullRestHeight(collider, snapped, grid.VoxelSize * 2, grid.VoxelSize) is not { } seated)
             {
                 return;
             }
-            snapped = snapped with { Z = float.Lerp(probeTop.Z, probeBottom.Z, floor.T) };
+            snapped = seated;
             // A pin is placed 16u off ONE wall plane, which says nothing about
             // the rest of the geometry around it - a second wall, a railing or
             // clutter can leave the player hull with nowhere to be. Measured on
@@ -458,14 +459,15 @@ public static partial class LineupSolver
     // exactly what happened to a real getpos taken wedged against a crate on
     // de_dust2's sloped A-site ground: the spot a player was standing on
     // came back "no stand spots in range".
-    static Vector3? HullRestHeight(TriangleCollider collider, Vector3 seed)
+    static Vector3? HullRestHeight(TriangleCollider collider, Vector3 seed, float down = StandSpots.StepHeight, float up = StandSpots.StepHeight)
     {
         var heights = StandSpots.SupportedHeights(
-            collider, seed.X, seed.Y, seed.Z - StandSpots.StepHeight, seed.Z + StandSpots.StepHeight + StandSpots.StandingHeight);
+            collider, seed.X, seed.Y, seed.Z - down, seed.Z + up + StandSpots.StandingHeight);
         float? best = null;
         foreach (var h in heights)
         {
-            if (MathF.Abs(h - seed.Z) <= StandSpots.StepHeight && (best is not { } b || MathF.Abs(h - seed.Z) < MathF.Abs(b - seed.Z)))
+            var within = h >= seed.Z - down && h <= seed.Z + up;
+            if (within && (best is not { } b || MathF.Abs(h - seed.Z) < MathF.Abs(b - seed.Z)))
             {
                 best = h;
             }

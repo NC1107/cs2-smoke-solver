@@ -28,6 +28,9 @@ public static class TargetSolver
 
     // How far from a spawn to accept a validated stand spot in its place.
     const float SpawnSnap = 32f;
+    // How far from a clicked throw spot an origin counts as "the spot they
+    // asked about" - the click and its wall pins, a hull-width away at most.
+    const float ClickKindRadius = 24f;
 
     // The precomputed stand spot nearest a point, within a radius. That set
     // knows about crates and ledges the nav mesh omits, and every entry has
@@ -306,7 +309,14 @@ public static class TargetSolver
             // literally (and its pinned variants) - the lattice's nearest sample
             // can sit half a grid step away, and for a tight known lineup that
             // is the difference between finding it and not.
-            var clickZ = LineupSolver.NavGroundZ(corners, originClick.X, originClick.Y) ?? target.Z;
+            // Same height ladder as the exact solve: the caller's own Z first
+            // (a pasted getpos, a 3D click), then the stand spots, then the
+            // nav mesh. The nav mesh alone put a getpos taken at the foot of a
+            // crate on top of the crate, where it swept zero options.
+            var clickZ = originZ
+                ?? NearestStandSpotZ(standSpots, originClick)
+                ?? LineupSolver.NavGroundZ(corners, originClick.X, originClick.Y)
+                ?? target.Z;
             origins.AddRange(LineupSolver.ExactOriginWithPins(grid, playerCollider, new Vector3(originClick.X, originClick.Y, clickZ), crouchOnlyExtras));
         }
 
@@ -345,6 +355,13 @@ public static class TargetSolver
             collider: collider, target: target,
             maxRefineSeeds: deepSpot ? int.MaxValue : 8,
             keepEveryKind: deepSpot,
+            // The clicked spot and its pins keep a candidate per throw kind
+            // even in a spot search: one candidate for the exact spot someone
+            // asked about meant one failed verification reported nothing
+            // from there while the lattice a step away had plenty.
+            keepEveryKindAt: hasOrigin && !deepSpot
+                ? feet => Vector2.Distance(new Vector2(feet.X, feet.Y), originClick) <= ClickKindRadius
+                : null,
             // Ordering only, and only for a map-wide sweep: a one-spot probe
             // has a single origin, so there is no order to grow.
             extraFronts: hasOrigin ? null : spawnFronts);

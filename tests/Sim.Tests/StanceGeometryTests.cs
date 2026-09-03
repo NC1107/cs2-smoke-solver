@@ -111,4 +111,41 @@ public class StanceGeometryTests
         Assert.Equal(0, pin);
         Assert.Null(gap);
     }
+
+    // The same corner room on a 6% slope rising along x - de_dust2's A site.
+    // The crate face is the wall at y=0; the slope rises under it.
+    static CollisionMesh SlopedCornerRoom() => SyntheticMeshes.FromQuads(
+    [
+        ([-64f, -64f, 0f], [512f, -64f, 34.6f], [512f, 512f, 34.6f], [-64f, 512f, 0f]),
+        SyntheticMeshes.WallX(0, -64, 512, 0, 160),
+        SyntheticMeshes.WallY(-64, 512, 0, 0, 160),
+    ]);
+
+    [Fact]
+    public void PinsAgainstAWallOnSlopedGroundAreKept()
+    {
+        // The regression Nick saw on every crate and low wall on dust2's A
+        // site: the pin was re-seated with a single ray under its centre, the
+        // hull rests on the highest floor point under its footprint, and on a
+        // slope those differ by more than the hull test's skin - so every
+        // wedge against a crate on sloped ground was thrown away.
+        var mesh = SlopedCornerRoom();
+        var collider = new TriangleCollider(mesh, BoundsMin, BoundsMax);
+        var grid = VoxelGrid.Build(mesh, 16f, BoundsMin, BoundsMax);
+        var seed = new Vector3(56f, 56f, (56f + 64f) / 576f * 34.6f);
+        var origins = new List<Vector3> { seed };
+
+        LineupSolver.AddPinnedOriginsTo(grid, collider, origins);
+
+        var pins = origins.Skip(1).ToList();
+        Assert.True(pins.Count >= 2, $"expected a pin against each wall and the corner, got {pins.Count}");
+        Assert.Contains(pins, p => MathF.Abs(p.Y - 16f) < 1f);
+        Assert.Contains(pins, p => MathF.Abs(p.X - 16f) < 1f);
+        foreach (var feet in pins)
+        {
+            Assert.NotEqual(StandSpots.Stance.None, StandSpots.StanceAt(collider, feet));
+            var slopeZ = (feet.X + 64f) / 576f * 34.6f;
+            Assert.True(MathF.Abs(feet.Z - slopeZ) < 2.5f, $"pin at {feet} is not resting on the slope (z={slopeZ:F1})");
+        }
+    }
 }

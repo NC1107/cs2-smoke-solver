@@ -152,7 +152,11 @@ public static partial class LineupSolver
         // meant the whole answer rode on a single candidate, and when that
         // one failed verification the spot reported nothing even though a
         // different kind of throw from the same feet would have verified.
-        bool keepEveryKind = false)
+        bool keepEveryKind = false,
+        // The same, for particular origins only: the spot a player clicked
+        // and its wall pins are the ones they asked about, so those keep a
+        // candidate per kind while the lattice around them keeps one each.
+        Func<Vector3, bool>? keepEveryKindAt = null)
     {
         if (zoneCrossings.Count == 0)
         {
@@ -278,7 +282,7 @@ public static partial class LineupSolver
                 }
                 hits++;
                 var lineup = new Lineup(feet, Normalize(yaw), pitch, type, result.RestPoint, result.Bounces, result.FlightTime, crossings, Strength: strength, RunYawOffsetDeg: runOffset);
-                var kind = keepEveryKind
+                var kind = keepEveryKind || (keepEveryKindAt?.Invoke(feet) ?? false)
                     ? (int)type * 1000 + (int)MathF.Round(strength * 10f) * 10 + (int)MathF.Round(runOffset / 45f) + 2
                     : 0;
                 var key = ((int)MathF.Floor(feet.X / dedupeBucketSize), (int)MathF.Floor(feet.Y / dedupeBucketSize), kind);
