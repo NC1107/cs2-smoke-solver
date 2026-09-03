@@ -1641,3 +1641,63 @@ combined coverage - the coverage overlay is already the other half of "does my
 execute actually cover the site".
 
 237 tests.
+
+## Beta readiness pass (2026-09-03)
+
+Everything below is live at smoke.npc-server.top (viewer `?v=101`, QueryVersion 31).
+Executes have their viewer now (their own card, five smokes, named by pin), and the "still missing" note above is closed.
+
+### The solver bug Nick found, and where else it lived
+
+A real getpos taken wedged against a crate on de_dust2's A site came back "no stand spots in range".
+The exact-origin paths grounded a click with a single ray under the column centre, but the player hull rests on the highest floor point under its whole 32x32 footprint.
+On a 6% slope those differ by about a unit, more than the hull test's 0.5u skin, so the click sat "inside the floor" and was rejected.
+Every place that puts feet on the floor was then audited:
+
+| Path | Grounding | Verdict |
+|---|---|---|
+| exact click (`ExactOriginOnly`, `ExactOriginWithPins`) | centre ray | bug, fixed (`HullRestHeight`) |
+| wall and corner pins (`AddPinnedOrigins`) | centre ray, then hull test | bug, fixed - every wedge against a crate or low wall on sloped ground was dropped |
+| precomputed stand spots | hull-footprint sweep | fine |
+| spawn drop (`FloorUnderHull`) | five rays, highest wins | fine |
+| lattice fallback (`OnSurface`) | centre ray, no hull test after | harmless, feet ~1u low |
+
+Measured map-wide on dust2 to BombsiteA: pinned origins 931 -> 2000, corner wedges 49 -> 110, pinned lineups in the top 400 doubled.
+Both fixes have regression tests on a synthetic 6% slope, and the pin test was confirmed to fail on the old code.
+
+### Exact-spot solves are now the exhaustive search
+
+One candidate per 8u bucket meant the whole "from exactly here" answer rode on a single throw, and when that one failed verification the spot reported nothing.
+An exact solve now keeps a candidate per throw kind, uses a 0.25 degree lattice, refines every near miss, opens the verify gate to its floor, and - when the voxel sweep still finds nothing - runs the exact simulator over every angle of every kind (~144k flights, ~22s) before saying no.
+Spot searches keep a candidate per kind at the clicked spot and its pins too, and honour a pasted Z over the nav mesh.
+A 2D click with no Z takes the lowest stand spot within a hull width, so a click at the foot of a crate no longer lands on top of it.
+
+### Smoke coverage as a fixed amount of gas
+
+The flood fill was a hard sphere and stopped in mid doors where the game keeps going.
+It is nearest-first through free space now, with the cells the radius holds in the open as its budget: identical in the open, and boxed in it spends the cells the walls took away further along (to 1.75x the radius), with cells below the landing counting as nearer so it pours off cat.
+Mid doors on dust2: 977 -> 1153 cells, 76 of them past 128u.
+This is a heuristic and has not been calibrated against the game's volumetric smoke; that needs a rig capture of smoke extents, which the validation plugin does not record yet.
+
+### Viewer
+
+Named targets are an overlay: pins with name plates in 3D, a Targets tile (persisted), a click on a pin in 2D or 3D makes it the target whatever else a click would have meant.
+Duplicate provisional names are numbered until a person names them.
+Saved view (Results | Saved), Steam persona and avatar, execute card, panel header in two rows with the chevron on the right, votes on the selected card reaching the server, and the collapse arrow moved.
+Spawn markers dropped to the floor; the textured GLB's light_environment (a 1707-intensity sun that turned lit overlays white) stripped on load.
+Two module-level consts used by a `?t=` permalink during boot were declared below their first use - a silent ReferenceError on every shared link - and are hoisted.
+`rig/check-viewer.mjs` runs in CI: modules parse, every `getElementById` names a real id, `?v=` tokens agree, divs balance.
+
+### Warmed for the first click
+
+`rig/warm-cache.py` now solves every named pin first; the seven maps with pro data were warmed and the cache rsynced to prod, so a beta tester's first click on a pin answers from disk instead of a 40-100s cold solve.
+
+### Known limits going into beta
+
+- de_train, de_vertigo, de_cache, de_boulder and the cs_ maps have no named pins: HLTV now sits behind a Cloudflare challenge that `rig/gather-pro-demos.sh` cannot pass, and `rig/gather-hltv-browser.py` needs a human to pass it once in a headed Chrome.
+- de_boulder has no textured view (upstream exporter crash); the tile is hidden there.
+- Cold map-wide solves off the warmed pins are still 40-100s.
+- Provisional names are still provisional; the naming pass is Nick's.
+- No execute scoring, no noise (audibility) filter.
+
+284 tests.
