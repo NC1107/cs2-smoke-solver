@@ -2,18 +2,18 @@
 // import the feature modules; they call back into the orchestrators defined
 // here (setTarget, select, runQuery) via the init*/set*Callbacks hooks.
 
-import { state, filtered, esc, lowMemoryDevice, loadFavorites, setFavorite, isFavorite, DEFAULT_EYE_HEIGHT, EYE_HEIGHT_BY_TYPE } from "./state.js?v=92";
-import { loadMapList, loadMapData, runQuery as postLineupQuery, fetchTrajectory, fetchLineupOne, fetchSlack, fetchSpawns, fetchProSmokes, fetchMeshDiff, meshDiffExists, fetchLevels, fetchSmokeCoverage, runExecute, findExecuteSpots} from "./api.js?v=92";
-import { loadRadar, readColors, recolorRadar, draw, scheduleDraw, resize, resetView, initMap2d, screenOf } from "./map2d.js?v=92";
-import { ensure3d, resetEnsure3d, teardown3d, current3d, sync3d, syncProgress3d, syncMeshDiff3d, set3dCallbacks, applyTheme3d, verticalFovFromDesired } from "./view3d.js?v=92";
-import { resetEnsureTexturedScene } from "./textured-scene.js?v=92";
-import { capturePreview } from "./preview.js?v=92";
+import { state, filtered, esc, lowMemoryDevice, loadFavorites, setFavorite, isFavorite, DEFAULT_EYE_HEIGHT, EYE_HEIGHT_BY_TYPE, TARGET_SNAP_RADIUS} from "./state.js?v=93";
+import { loadMapList, loadMapData, runQuery as postLineupQuery, fetchTrajectory, fetchLineupOne, fetchSlack, fetchSpawns, fetchProSmokes, fetchMeshDiff, meshDiffExists, fetchLevels, fetchSmokeCoverage, runExecute, findExecuteSpots, fetchTargets} from "./api.js?v=93";
+import { loadRadar, readColors, recolorRadar, draw, scheduleDraw, resize, resetView, initMap2d, screenOf } from "./map2d.js?v=93";
+import { ensure3d, resetEnsure3d, teardown3d, current3d, sync3d, syncProgress3d, syncMeshDiff3d, set3dCallbacks, applyTheme3d, verticalFovFromDesired } from "./view3d.js?v=93";
+import { resetEnsureTexturedScene } from "./textured-scene.js?v=93";
+import { capturePreview } from "./preview.js?v=93";
 // Every local import across viewer/js carries the SAME ?v= token, bumped
 // together on any change. The HTML is served no-cache, so a fresh load pulls
 // main.js?v=N, which pulls every module at ?v=N - the whole graph refreshes as
 // one consistent set past Cloudflare's 4h JS cache, with no duplicate module
 // instances (which a partial versioning would cause). Bump the token everywhere.
-import { renderLineups, initPanel, revealSelected, resultStatusText } from "./panel.js?v=92";
+import { renderLineups, initPanel, revealSelected, resultStatusText } from "./panel.js?v=93";
 
 (async () => {
   // Map switching means a failed load is no longer necessarily terminal (the
@@ -750,6 +750,13 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
       syncControls();
     }).catch(e => console.warn("spawns unavailable for", name, e));
     loadFavorites(name);
+    // Named targets come with the map; a click that lands near one snaps to
+    // it, so the labels below need them in place before the first click.
+    state.targets = [];
+    state.targetName = null;
+    fetchTargets(name).then(t => {
+      if (state.mapGeneration === gen) { state.targets = Array.isArray(t) ? t : []; scheduleDraw(); }
+    }).catch(e => console.warn("targets unavailable for", name, e));
     fetchProSmokes(name).then(d => {
       if (state.mapGeneration === gen) { state.prosmokes = d; syncControls(); }
     }).catch(e => console.warn("pro smokes unavailable for", name, e));
@@ -1327,7 +1334,34 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
     sync3d();
   }
 
+  // The named target within snapping distance of a point, or null.
+  function nearestNamedTarget(t) {
+    let best = null;
+    let bestD = TARGET_SNAP_RADIUS;
+    for (const nt of state.targets) {
+      const d = Math.hypot(nt.pos[0] - t[0], nt.pos[1] - t[1]);
+      if (d < bestD) {
+        bestD = d;
+        best = nt;
+      }
+    }
+    return best;
+  }
+
   function setTarget(t, note) {
+    // Snap to a named spot when the click is close to one: that is the whole
+    // point of naming them. Two people who both mean "B doors" then get the
+    // same coordinate, the cache serves one answer instead of two, and a vote
+    // has one thing to attach to. Far from any named spot, the click is kept
+    // exactly - it may be a spot nobody has named yet.
+    const snap = nearestNamedTarget(t);
+    if (snap) {
+      t = [...snap.pos];
+      state.targetName = snap.name;
+      note = `${snap.named ? "" : "provisional: "}${snap.name}`;
+    } else {
+      state.targetName = null;
+    }
     state.target = t;
     resetSearch({ keepTarget: true });
     syncUrl();

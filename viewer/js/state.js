@@ -92,6 +92,10 @@ export const state = {
   // `target` because the current target is the one being placed; these are the
   // ones already decided on.
   executeTargets: [],
+  // The map's named smoke targets, for snapping clicks and labelling the map.
+  targets: [],
+  // The named target the current click snapped to, if any.
+  targetName: null,
   // Places that can throw every smoke in the list, from /api/execute/spots.
   executeSpots: null,
   hovered: -1,
@@ -120,6 +124,10 @@ export const referenceFallback = { active: false, dropped: [] };
 
 // Throws that leave the ground. Shared by the stance filter and the difficulty
 // word, which must agree on what "airborne" means.
+// How close a click must land to a named target to become it. A smoke is 288u
+// across; a click this far from a spot the pros use still means that spot.
+export const TARGET_SNAP_RADIUS = 64;
+
 export const AIRBORNE = new Set(["JumpThrow", "CrouchJumpThrow", "RunJumpThrow"]);
 
 // How far above the horizon a throw aims, in degrees. Source's pitch is

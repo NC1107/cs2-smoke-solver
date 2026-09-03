@@ -3,8 +3,8 @@
 // actions (set target, select, run query) go through callbacks that main.js
 // registers, so this module never imports the orchestrator.
 
-import { cacheBust } from "./api.js?v=92";
-import { isDrag, state, filtered, clickWords, movementWords, clickClass, esc, SMOKE_BLOOM_RADIUS, PICK_RADIUS_PX, TOUCH_PICK_RADIUS_PX, HEAT_CELL } from "./state.js?v=92";
+import { cacheBust } from "./api.js?v=93";
+import { isDrag, state, filtered, clickWords, movementWords, clickClass, esc, SMOKE_BLOOM_RADIUS, PICK_RADIUS_PX, TOUCH_PICK_RADIUS_PX, HEAT_CELL } from "./state.js?v=93";
 
 const canvas = state.canvas;
 const ctx = canvas.getContext("2d");
@@ -201,6 +201,39 @@ export function draw() {
     }
     ctx.stroke();
     ctx.globalAlpha = 1;
+  }
+  // Named smoke targets: the spots pros actually put smokes, as pins with their
+  // names. Drawn before the live target and execute markers so the thing being
+  // placed still reads as current. A provisional name (nearest callout, not
+  // yet confirmed by a person) is drawn lighter and with a leading "?" so a
+  // guess never reads as a fact.
+  if (state.targets.length && scale > 0.08) {
+    ctx.save();
+    const r = 5 / scale;
+    ctx.lineWidth = 1.2 / scale;
+    ctx.font = `600 ${9.5 / scale}px ui-sans-serif, system-ui, sans-serif`;
+    ctx.textAlign = "left";
+    ctx.textBaseline = "middle";
+    for (const t of state.targets) {
+      const x = t.pos[0], y = -t.pos[1];
+      const active = state.targetName === t.name && state.target &&
+        Math.hypot(state.target[0] - t.pos[0], state.target[1] - t.pos[1]) < 1;
+      ctx.globalAlpha = t.named ? 0.95 : 0.6;
+      ctx.strokeStyle = colors.target;
+      ctx.fillStyle = active ? colors.target : colors.surface;
+      ctx.beginPath();
+      ctx.arc(x, y, r, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+      // A short tick so the pin reads as a marker rather than a stray dot.
+      ctx.beginPath();
+      ctx.moveTo(x, y + r);
+      ctx.lineTo(x, y + r * 2.2);
+      ctx.stroke();
+      ctx.fillStyle = colors.target;
+      ctx.fillText((t.named ? "" : "? ") + t.name, x + r * 1.8, y);
+    }
+    ctx.restore();
   }
   // The smokes already queued into an execute, numbered in throw order. Drawn
   // under the live target so the one being placed still reads as the current

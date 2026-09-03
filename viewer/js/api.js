@@ -1,6 +1,6 @@
 // Fetch wrappers. No DOM access here; callers own status text and overlays.
 
-import { state } from "./state.js?v=92";
+import { state } from "./state.js?v=93";
 
 // Cache-bust a data URL with the map build: re-processed radars/GLBs change
 // content without changing name, and the query string gets a fresh copy past
@@ -31,6 +31,17 @@ export async function loadMapData(map) {
 // T/CT spawn positions from the map's entity lump: { t: [[x,y,z]...], ct: [...] }.
 export async function fetchSpawns(map) {
   const res = await fetch(`/api/spawns?map=${encodeURIComponent(map)}`);
+  if (!res.ok) {
+    throw new Error(`HTTP ${res.status}`);
+  }
+  return res.json();
+}
+
+// The map's named smoke targets: [{ name, named, pos: [x,y,z], landings, spread }].
+// Seeded from pro landings and hand-named; `named` false means the label is a
+// guess from the nearest callout and should be shown as one.
+export async function fetchTargets(map) {
+  const res = await fetch(`/api/targets?map=${encodeURIComponent(map)}`);
   if (!res.ok) {
     throw new Error(`HTTP ${res.status}`);
   }

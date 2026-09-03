@@ -338,6 +338,34 @@ public static class MapRegistry
         return (t, ct);
     }
 
+    // The map's canonical smoke targets from data/<map>.targets.json, seeded
+    // from pro landings by the `targets` command and hand-named after. Parsed
+    // once per map like the spawns; an absent file is simply a map with none.
+    public static readonly System.Collections.Concurrent.ConcurrentDictionary<string, string> TargetsCache = new(StringComparer.Ordinal);
+
+    public static string LoadTargetsJson(string root, string mapName)
+    {
+        var path = Path.Combine(root, "data", $"{mapName}.targets.json");
+        if (!File.Exists(path))
+        {
+            return "[]";
+        }
+        try
+        {
+            // Validated by parsing, then served as the bytes on disk: the file
+            // is the source of truth and re-serialising would only lose fields
+            // a future edit might add.
+            var text = File.ReadAllText(path);
+            using var _ = JsonDocument.Parse(text);
+            return text;
+        }
+        catch (Exception e) when (e is JsonException or IOException)
+        {
+            Console.Error.WriteLine($"targets unreadable for {mapName}: {e.Message}");
+            return "[]";
+        }
+    }
+
     /// <summary>
     /// Ceiling on the solve cache, enforced while the server runs.
     /// </summary>

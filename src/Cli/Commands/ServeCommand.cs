@@ -355,6 +355,21 @@ public static class ServeCommand
             });
         }).RequireRateLimiting(PhysicsPolicy);
 
+        // The named spots a smoke goes on this map. A click near one snaps to
+        // it, which is what gives a target a durable identity: two people who
+        // both mean "B doors" get the same coordinate instead of two that
+        // differ by a tenth of a unit and never agree on anything after.
+        app.MapGet("/api/targets", (HttpContext context, string? map) =>
+        {
+            if (map == null || !maps.TryGetValue(map, out var entry))
+            {
+                return ApiError(StatusCodes.Status404NotFound, UnknownMapError);
+            }
+            var json = TargetsCache.GetOrAdd(entry.Mesh.MapName, name => LoadTargetsJson(root, name));
+            context.Response.Headers.CacheControl = "no-cache";
+            return Results.Text(json, JsonContentType);
+        });
+
         app.MapGet("/api/levels", (string? map, float x, float y) =>
         {
             if (map == null || !maps.TryGetValue(map, out var entry))
