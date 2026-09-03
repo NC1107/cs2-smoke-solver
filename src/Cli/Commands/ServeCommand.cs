@@ -307,9 +307,19 @@ public static class ServeCommand
             await next();
         });
 
+        // Which optional data each map has, so the viewer asks only for what
+        // exists: a probe for a file most maps do not have is a 404 in every
+        // beta tester's console, and "is this broken?" is a question nobody
+        // should have to ask about a working page.
         app.MapGet("/api/maps", () => Results.Json(maps
             .OrderBy(kv => kv.Key, StringComparer.Ordinal)
-            .Select(kv => new { map = kv.Key, hasLineups = kv.Value.NavAreas != null })));
+            .Select(kv => new
+            {
+                map = kv.Key,
+                hasLineups = kv.Value.NavAreas != null,
+                hasProSmokes = File.Exists(Path.Combine(root, "data", $"{kv.Key}.prosmokes.json")),
+                hasMeshDiff = File.Exists(Path.Combine(root, "data", $"{kv.Key}.meshdiff.json")),
+            })));
 
         // Player spawn positions, read straight from the extracted entity lump
         // (info_player_terrorist / _counterterrorist). Lets the viewer answer

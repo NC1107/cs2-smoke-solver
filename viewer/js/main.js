@@ -2,18 +2,18 @@
 // import the feature modules; they call back into the orchestrators defined
 // here (setTarget, select, runQuery) via the init*/set*Callbacks hooks.
 
-import { state, filtered, esc, lowMemoryDevice, loadFavorites, setFavorite, isFavorite, DEFAULT_EYE_HEIGHT, EYE_HEIGHT_BY_TYPE, TARGET_SNAP_RADIUS, favoriteHooks, loadSavedLocal, persistSavedLocal} from "./state.js?v=99";
-import { loadMapList, loadMapData, runQuery as postLineupQuery, fetchTrajectory, fetchLineupOne, fetchSlack, fetchSpawns, fetchProSmokes, fetchMeshDiff, meshDiffExists, fetchLevels, fetchSmokeCoverage, runExecute, findExecuteSpots, fetchTargets, fetchMe, signOut, fetchSavedLineups, putSavedLineups, fetchVotes, castVote} from "./api.js?v=99";
-import { loadRadar, readColors, recolorRadar, draw, scheduleDraw, resize, resetView, initMap2d, screenOf } from "./map2d.js?v=99";
-import { ensure3d, resetEnsure3d, teardown3d, current3d, sync3d, syncProgress3d, syncMeshDiff3d, set3dCallbacks, applyTheme3d, verticalFovFromDesired } from "./view3d.js?v=99";
-import { resetEnsureTexturedScene } from "./textured-scene.js?v=99";
-import { capturePreview } from "./preview.js?v=99";
+import { state, filtered, esc, lowMemoryDevice, loadFavorites, setFavorite, isFavorite, DEFAULT_EYE_HEIGHT, EYE_HEIGHT_BY_TYPE, TARGET_SNAP_RADIUS, favoriteHooks, loadSavedLocal, persistSavedLocal} from "./state.js?v=100";
+import { loadMapList, loadMapData, runQuery as postLineupQuery, fetchTrajectory, fetchLineupOne, fetchSlack, fetchSpawns, fetchProSmokes, fetchMeshDiff, meshDiffExists, fetchLevels, fetchSmokeCoverage, runExecute, findExecuteSpots, fetchTargets, fetchMe, signOut, fetchSavedLineups, putSavedLineups, fetchVotes, castVote} from "./api.js?v=100";
+import { loadRadar, readColors, recolorRadar, draw, scheduleDraw, resize, resetView, initMap2d, screenOf } from "./map2d.js?v=100";
+import { ensure3d, resetEnsure3d, teardown3d, current3d, sync3d, syncProgress3d, syncMeshDiff3d, set3dCallbacks, applyTheme3d, verticalFovFromDesired } from "./view3d.js?v=100";
+import { resetEnsureTexturedScene } from "./textured-scene.js?v=100";
+import { capturePreview } from "./preview.js?v=100";
 // Every local import across viewer/js carries the SAME ?v= token, bumped
 // together on any change. The HTML is served no-cache, so a fresh load pulls
 // main.js?v=N, which pulls every module at ?v=N - the whole graph refreshes as
 // one consistent set past Cloudflare's 4h JS cache, with no duplicate module
 // instances (which a partial versioning would cause). Bump the token everywhere.
-import { renderLineups, initPanel, revealSelected, resultStatusText } from "./panel.js?v=99";
+import { renderLineups, initPanel, revealSelected, resultStatusText } from "./panel.js?v=100";
 
 (async () => {
   // Map switching means a failed load is no longer necessarily terminal (the
@@ -977,16 +977,22 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
       scheduleDraw();
       sync3d();
     }).catch(e => console.warn("targets unavailable for", name, e));
-    fetchProSmokes(name).then(d => {
-      if (state.mapGeneration === gen) { state.prosmokes = d; syncControls(); }
-    }).catch(e => console.warn("pro smokes unavailable for", name, e));
+    // Optional per-map data is asked for only when /api/maps says it exists.
+    const extras = mapList.find(m => m.map === name);
+    if (extras?.hasProSmokes) {
+      fetchProSmokes(name).then(d => {
+        if (state.mapGeneration === gen) { state.prosmokes = d; syncControls(); }
+      }).catch(e => console.warn("pro smokes unavailable for", name, e));
+    }
     // Dev overlay: absent on most maps (only meshdiff CLI runs produce it), so
     // a 404 is the expected default, not a failure worth logging. Only its
     // existence is checked here; the payload carries every mismatched surface
     // and is fetched when someone actually switches the overlay on.
-    meshDiffExists(name).then(has => {
-      if (state.mapGeneration === gen) { state.meshdiffAvailable = has; syncControls(); }
-    }).catch(() => {});
+    if (extras?.hasMeshDiff) {
+      meshDiffExists(name).then(has => {
+        if (state.mapGeneration === gen) { state.meshdiffAvailable = has; syncControls(); }
+      }).catch(() => {});
+    }
     try {
       await loadRadar();
     } catch {

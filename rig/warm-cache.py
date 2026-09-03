@@ -35,6 +35,14 @@ def targets_for(map_name):
     every named callout centre (the spots players aim at). Deduped to the 16u
     cache grid so we don't warm the same cell twice."""
     out = []
+    # The named pins first: they are what the viewer snaps a click to, so a
+    # beta tester's first click on a map is one of these far more often than
+    # not, and it should answer instantly.
+    try:
+        for t in get(f"/api/targets?map={map_name}"):
+            out.append(t["pos"])
+    except Exception as e:
+        print(f"  {map_name}: no named targets ({e})", file=sys.stderr)
     protargets = os.path.join(DATA, f"{map_name}.protargets.json")
     if os.path.exists(protargets):
         for t in json.load(open(protargets)).get("targets", []):

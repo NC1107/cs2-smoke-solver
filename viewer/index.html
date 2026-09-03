@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Smoke Solver</title>
 <link rel="icon" href="viewer/favicon.svg" type="image/svg+xml">
-<link rel="stylesheet" href="viewer/app.css?v=99">
+<link rel="stylesheet" href="viewer/app.css?v=100">
 </head>
 <body>
 
@@ -391,12 +391,12 @@ give weapon_smokegrenade<button data-copy="cmd-setup" class="btn">copy</button><
   <div class="intro-card" role="dialog" aria-modal="true" aria-labelledby="intro-title">
     <div class="intro-step" id="intro-map">
       <h1 id="intro-title">Pick a map</h1>
-      <p>Then click anywhere on it to set a smoke target, and this will find every spot you can throw it from.</p>
+      <p>Then click a named pin - the spots pros actually smoke - or anywhere else on the map, and this finds every spot you can throw that smoke from. Right-click moves the target once one is set.</p>
       <div class="intro-step map-grid" id="intro-map-grid"></div>
     </div>
     <div class="intro-step" id="intro-filters" hidden>
       <h1>Narrow it down</h1>
-      <p>Set the filters now to reduce resulting lineups that you don't want.</p>
+      <p>Which throws you want to see. The defaults keep it to standing throws with something to line the crosshair up against; loosen them here, or later from the filters card.</p>
       <div class="filter-rows" id="intro-filter-rows"></div>
       <div class="intro-choices">
         <button id="intro-done" class="btn primary">Show me the map</button>
@@ -418,6 +418,6 @@ give weapon_smokegrenade<button data-copy="cmd-setup" class="btn">copy</button><
      4h, so bumping ?v= here is what busts that cache. Bump on any change to a
      directly-referenced asset. (The permanent cure is CF Browser Cache TTL ->
      "Respect Existing Headers", after which this is belt-and-suspenders.) -->
-<script type="module" src="viewer/js/main.js?v=99"></script>
+<script type="module" src="viewer/js/main.js?v=100"></script>
 </body>
 </html>

@@ -55,8 +55,27 @@ public static class TargetSolver
         return best;
     }
 
-    static float? NearestStandSpotZ(IReadOnlyList<StandSpotOrigin>? standSpots, Vector2 at) =>
-        NearestStandSpot(standSpots, at, 24f)?.Feet.Z;
+    // A 2D click names a column, and at the foot of a crate the column holds
+    // two floors: the ground and the crate top. The nearest lattice spot is a
+    // coin toss between them - and it came up "crate top" for a click meant
+    // for the wedge at its base. With no Z to go on, the ground wins: a
+    // click on the map is far more often "where I stand" than "on the box".
+    static float? NearestStandSpotZ(IReadOnlyList<StandSpotOrigin>? standSpots, Vector2 at)
+    {
+        if (standSpots is not { Count: > 0 })
+        {
+            return null;
+        }
+        float? lowest = null;
+        foreach (var s in standSpots)
+        {
+            if (Vector2.Distance(new Vector2(s.Feet.X, s.Feet.Y), at) < 24f && (lowest is not { } z || s.Feet.Z < z))
+            {
+                lowest = s.Feet.Z;
+            }
+        }
+        return lowest;
+    }
 
     public static TargetSolve SolveForTarget(
         CollisionMesh mesh,

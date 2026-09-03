@@ -32,6 +32,11 @@ jobs:
         with:
           dotnet-version: '10.0.x'
 
+      # The viewer has no build step and no test runner; this is the check
+      # that stands in for both. Each thing it looks for has shipped broken.
+      - name: Viewer static check
+        run: node --experimental-vm-modules rig/check-viewer.mjs
+
       - name: Restore
         run: dotnet restore SmokeSolver.sln
 
