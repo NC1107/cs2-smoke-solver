@@ -3,10 +3,10 @@
 // wraps init/sync. Raycast picks route through callbacks that main.js
 // registers, so this module never imports the orchestrator.
 
-import { state, filtered, clickClass, lowMemoryDevice, SMOKE_BLOOM_RADIUS, EYE_HEIGHT_BY_TYPE, DEFAULT_EYE_HEIGHT } from "./state.js?v=104";
-import { fetchMesh } from "./api.js?v=104";
-import { createFlyCamera } from "./flycam.js?v=104";
-import { loadScript, ensureTexturedScene, currentTexturedScene, disposeSceneContents, disposeTexturedScene } from "./textured-scene.js?v=104";
+import { state, filtered, clickClass, lowMemoryDevice, SMOKE_BLOOM_RADIUS, EYE_HEIGHT_BY_TYPE, DEFAULT_EYE_HEIGHT } from "./state.js?v=105";
+import { fetchMesh } from "./api.js?v=105";
+import { createFlyCamera } from "./flycam.js?v=105";
+import { loadScript, ensureTexturedScene, currentTexturedScene, disposeSceneContents, disposeTexturedScene } from "./textured-scene.js?v=105";
 
 const stage3d = state.stage3d;
 // Warning tint for phantom blockers (grenade-clips, physics-clips, glass) - a
@@ -468,15 +468,83 @@ async function init3d() {
       }
     }
     const hits = raycaster.intersectObject(meshObj, false);
-    return hits.length > 0 ? { point: hits[0].point } : null;
+    return hits.length > 0 ? { point: hits[0].point, normal: hits[0].face?.normal ?? null } : null;
   }
-  function setTargetAt(clientX, clientY) {
+
+  // Where a target under the pointer would really go: on the floor beneath
+  // what was clicked, not forty units up the side of a crate. A click on a
+  // wall face is a point ON the wall, so the drop starts a little off it;
+  // the server pushes the final target a grenade's width out of the wall
+  // too, but that is not the ghost's job - one extra ray per hover is all
+  // the frame budget allows against this mesh.
+  //   kind: "floor" (fine), "wall" (will be nudged out), "void" (no floor)
+  function settledPointAt(clientX, clientY) {
     const hit = pickAt(clientX, clientY, false);
-    if (hit?.point) {
-      const p = hit.point;
-      callbacks.onSetTarget([p.x, p.y, p.z], `target ${p.x.toFixed(0)}, ${p.y.toFixed(0)}, ${p.z.toFixed(0)} (3D)`);
+    if (!hit?.point) {
+      return null;
+    }
+    const p = hit.point;
+    const onWall = hit.normal ? Math.abs(hit.normal.z) < 0.35 : false;
+    if (!onWall) {
+      return { point: [p.x, p.y, p.z], kind: "floor" };
+    }
+    // Step off the wall along its normal so the drop does not hit it.
+    const n = hit.normal;
+    const off = new THREE.Vector3(p.x + n.x * 4, p.y + n.y * 4, p.z + 2);
+    dropRay.set(off, straightDown);
+    dropRay.far = 160;
+    const floor = dropRay.intersectObject(meshObj, false);
+    dropRay.far = Infinity;
+    return floor.length > 0
+      ? { point: [off.x, off.y, floor[0].point.z], kind: "wall" }
+      : { point: [p.x, p.y, p.z], kind: "void" };
+  }
+
+  function setTargetAt(clientX, clientY) {
+    const s = settledPointAt(clientX, clientY);
+    if (s) {
+      const [x, y, z] = s.point;
+      callbacks.onSetTarget([x, y, z], `target ${x.toFixed(0)}, ${y.toFixed(0)}, ${z.toFixed(0)} (3D)`);
     }
   }
+
+  // The ghost pin: a ring on the floor under the pointer, the way a map app
+  // shows where the pegman will land before you let go. Green on a floor,
+  // amber on a wall (the target will be nudged to its foot), red where there
+  // is nothing under the pointer to land on.
+  const ghost = new THREE.Group();
+  const ghostMat = new THREE.MeshBasicMaterial({ color: 0x37c46a, transparent: true, opacity: 0.85, depthWrite: false, side: THREE.DoubleSide });
+  const ghostRing = new THREE.Mesh(new THREE.RingGeometry(7, 10, 28), ghostMat);
+  const ghostStem = new THREE.Mesh(new THREE.CylinderGeometry(0.8, 0.8, 28, 6).rotateX(Math.PI / 2).translate(0, 0, 14), ghostMat);
+  ghost.add(ghostRing, ghostStem);
+  ghost.visible = false;
+  ghost.renderOrder = 2;
+  scene.add(ghost);
+  const GHOST_COLOR = { floor: 0x37c46a, wall: 0xd9a441, void: 0xd94a4a };
+  let ghostAt = 0;
+  renderer.domElement.addEventListener("pointermove", e => {
+    // Mouse only, and only while nothing is held: a drag is the camera's.
+    if (e.pointerType !== "mouse" || e.buttons !== 0) {
+      return;
+    }
+    const now = performance.now();
+    if (now - ghostAt < 80) {
+      return;
+    }
+    ghostAt = now;
+    const s = settledPointAt(e.clientX, e.clientY);
+    if (!s) {
+      if (ghost.visible) { ghost.visible = false; dirty = true; }
+      return;
+    }
+    ghost.position.set(s.point[0], s.point[1], s.point[2] + 0.5);
+    ghostMat.color.set(GHOST_COLOR[s.kind]);
+    ghost.visible = true;
+    dirty = true;
+  });
+  renderer.domElement.addEventListener("pointerleave", () => {
+    if (ghost.visible) { ghost.visible = false; dirty = true; }
+  });
   const cam = createFlyCamera(camera, renderer.domElement, {
     requestRender: () => { dirty = true; },
     onLongPress: setTargetAt,
@@ -602,7 +670,7 @@ async function init3d() {
       // mesh active rather than dereferencing null.
       if (!dest) { return; }
       const src = on ? scene : currentTexturedScene();
-      for (const g of [lightGroup, markerGroup, targetGroup, progressGroup, spawnGroup, namedGroup, meshdiffGroup, phantomVisual,
+      for (const g of [lightGroup, markerGroup, targetGroup, progressGroup, spawnGroup, namedGroup, ghost, meshdiffGroup, phantomVisual,
                        stateVisuals.doors, stateVisuals.glass].filter(Boolean)) {
         src?.remove(g);
         dest.add(g);

@@ -65,7 +65,8 @@ def targets_for(map_name):
 
 def solve(map_name, target):
     body = json.dumps({"map": map_name, "target": target}).encode()
-    req = urllib.request.Request(BASE + "/api/lineup", body, {"Content-Type": "application/json"})
+    # Low priority: the server holds this back while anyone is using the site.
+    req = urllib.request.Request(BASE + "/api/lineup", body, {"Content-Type": "application/json", "X-Solve-Priority": "low"})
     t0 = time.time()
     lineups = 0
     for raw in urllib.request.urlopen(req, timeout=300):

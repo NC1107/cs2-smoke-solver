@@ -472,7 +472,7 @@ public static class LineupApi
             : "all";
         // Bump when solver or sim behavior changes: cached answers from older code
         // must never be replayed as current results.
-        const int QueryVersion = 32;
+        const int QueryVersion = 33;
         // meshVersion is the content-hashed mesh identity (not just the game
         // build), so re-extracting a map - e.g. dropping the Retake tape - forces
         // a re-solve instead of replaying results computed against the old mesh.
@@ -507,7 +507,8 @@ public static class LineupApi
         // T and CT spawn positions, so a map-wide sweep also grows outward
         // from where a round begins.
         IReadOnlyList<Vector3>? spawnFronts = null,
-        IReadOnlyList<Vector3>? spawnPoints = null)
+        IReadOnlyList<Vector3>? spawnPoints = null,
+        CancellationToken ct = default)
     {
         var targetEl = query.GetProperty("target");
         var target = new Vector3(targetEl[0].GetSingle(), targetEl[1].GetSingle(), 0);
@@ -549,7 +550,8 @@ public static class LineupApi
 
         var solve = SolveForTarget(mesh, attributeFilter, navAreas, target, hasTargetZ, originClick, originReach, tolerance, constants, onPhase, onOrigin, onCandidate, minStability, fineScan, types, strengths, standSpots, broken, spawnFronts,
             spawnPoints, 0f, spawnsOnly: scope == "spawns", exactOrigin: scope == "exact",
-            originZ: hasOrigin && originEl.GetArrayLength() > 2 ? originEl[2].GetSingle() : null);
+            originZ: hasOrigin && originEl.GetArrayLength() > 2 ? originEl[2].GetSingle() : null,
+            ct: ct);
 
         // Raw voxel-stage counts overstate throwability (many candidates die in
         // exact-sim verification), so each cell also says whether a verified

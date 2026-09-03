@@ -33,7 +33,10 @@ export const state = {
   reticleMode: "cross",
   // The magenta collision-box overlay (grenade-clips/glass) - on by default so
   // the 3D view keeps showing what really stops a smoke; toggleable.
-  collisionOn: true,
+  // Off by default: the magenta clip overlay is a debugging view, and on by
+  // default it painted every railing and doorway pink for people who never
+  // asked what a grenade clip is.
+  collisionOn: false,
   // The full-screen "+" lineup crosshair - a numbered tick ruler overlay for
   // lining grenades up by tick, like CS2's grenade crosshair (off by default).
   reticleOn: false,

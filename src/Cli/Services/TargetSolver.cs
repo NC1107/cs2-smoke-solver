@@ -121,7 +121,8 @@ public static class TargetSolver
         bool exactOrigin = false,
         // The height the caller means, when it has one - a solved throw spot or
         // a pasted setpos both carry their own.
-        float? originZ = null)
+        float? originZ = null,
+        CancellationToken ct = default)
     {
         var hasOrigin = originClickOpt.HasValue;
         var originClick = originClickOpt ?? new Vector2(target.X, target.Y);
@@ -173,6 +174,24 @@ public static class TargetSolver
             MathF.Min(meshMax.Z + 64, target.Z + 900));
         var grid = VoxelGrid.Build(mesh, voxelSize, min, max, attributeFilter);
 
+        // Built before the origins, not after: they are snapped onto its triangles
+        // so that the spot a lineup names is the spot the player actually stands on.
+        var collider = brokenGroups is { Count: > 0 }
+            ? BuildGrenadeColliderExcluding(mesh, min, max, brokenGroups)
+            : BuildGrenadeCollider(mesh, min, max);
+
+        // A target with its own height still gets settled: a 3D click lands
+        // on whatever the pointer was over, and against a crate that is its
+        // side, forty units up a vertical face. No grenade comes to rest
+        // there, so every throw missed the precision filter and the spot
+        // "failed" - which is what clicking the same corner twice and getting
+        // nothing was. The target goes to the floor under the click and a
+        // grenade's width out from any wall it is touching.
+        if (hasTargetZ)
+        {
+            target = SettleTarget(collider, target);
+        }
+
         // The "zone" for a two-click query is simply resting close enough to the target.
         var zoneCrossings = new Dictionary<int, int>();
         var cellRange = (int)MathF.Ceiling(tolerance / voxelSize);
@@ -196,11 +215,6 @@ public static class TargetSolver
             }
         }
 
-        // Built before the origins, not after: they are snapped onto its triangles
-        // so that the spot a lineup names is the spot the player actually stands on.
-        var collider = brokenGroups is { Count: > 0 }
-            ? BuildGrenadeColliderExcluding(mesh, min, max, brokenGroups)
-            : BuildGrenadeCollider(mesh, min, max);
         // Origins model where the PLAYER can be, so their ground snap and wall
         // pin probes run against player-solid geometry: the clip brushes along
         // railings and ledges are exactly what pins feet in game, and they are
@@ -392,6 +406,7 @@ public static class TargetSolver
             ownBucketAt: pinnedOrigins.Count > 0
                 ? feet => pinnedOrigins.Contains(((int)MathF.Round(feet.X * 4f), (int)MathF.Round(feet.Y * 4f)))
                 : null,
+            ct: ct,
             // Ordering only, and only for a map-wide sweep: a one-spot probe
             // has a single origin, so there is no order to grow.
             extraFronts: hasOrigin ? null : spawnFronts);
@@ -399,7 +414,7 @@ public static class TargetSolver
         // The cell zone above is the sweep's recall filter; the promise the
         // user actually made ("within `tolerance` of this point") is enforced
         // here, against each candidate's exact rest point.
-        var verified = LineupSolver.VerifyExact(grid, collider, zoneCrossings, candidates, minStability: minStability, constants: constants, onCandidate: onCandidate, aimTarget: target, tolerance: tolerance);
+        var verified = LineupSolver.VerifyExact(grid, collider, zoneCrossings, candidates, minStability: minStability, constants: constants, onCandidate: onCandidate, aimTarget: target, tolerance: tolerance, ct: ct);
         // An exact-spot solve that the voxel sweep answered with nothing gets
         // the real simulator over the whole lattice before it is allowed to
         // say no: the grid is an approximation, and "from right here" is the
@@ -412,10 +427,10 @@ public static class TargetSolver
             {
                 rescued.AddRange(LineupSolver.ExhaustiveExactSpot(collider, o, target, tolerance,
                     types ?? [ThrowType.Stand, ThrowType.Crouch, ThrowType.JumpThrow, ThrowType.CrouchJumpThrow, ThrowType.RunJumpThrow],
-                    strengths, constants));
+                    strengths, constants, ct: ct));
             }
             onPhase?.Invoke("verify", rescued.Count);
-            verified = LineupSolver.VerifyExact(grid, collider, zoneCrossings, rescued, minStability: minStability, constants: constants, onCandidate: onCandidate, aimTarget: target, tolerance: tolerance);
+            verified = LineupSolver.VerifyExact(grid, collider, zoneCrossings, rescued, minStability: minStability, constants: constants, onCandidate: onCandidate, aimTarget: target, tolerance: tolerance, ct: ct);
         }
 
         // Some stand spots only fit the player crouched - under a vent, a stair
@@ -488,6 +503,75 @@ public static class TargetSolver
             collider,
             playerCollider,
             emptyReason);
+    }
+
+    // How far a settled target sits out from a wall: about a smoke grenade's
+    // radius, so the rest point it names is one a grenade can occupy.
+    const float TargetWallClearance = 8f;
+    const float TargetFloorDrop = 96f;
+
+    /// <summary>
+    /// A 3D-clicked target moved to where a grenade could actually rest: onto
+    /// the floor under it, and a grenade's width out from any wall it touches.
+    /// </summary>
+    public static Vector3 SettleTarget(TriangleCollider collider, Vector3 target)
+    {
+        var p = target;
+        // Off the surface first, then down: a click on a wall is a point ON
+        // that wall, and a ray started there sees it as the floor.
+        var probe = p + new Vector3(0, 0, 2f);
+        for (var pass = 0; pass < 2; pass++)
+        {
+            // Every wall within reach, each once, then pushed away from along
+            // its own normal: pushing along the probe ray instead dragged a
+            // point sideways off a single wall its diagonal probes also saw.
+            var walls = new List<(Vector2 N, float D)>();
+            for (var i = 0; i < 8; i++)
+            {
+                var dir = new Vector3(MathF.Cos(i * MathF.PI / 4f), MathF.Sin(i * MathF.PI / 4f), 0f);
+                // Started a unit behind the point: a click ON a wall is a point
+                // on its plane, and a ray that begins there does not hit it.
+                var from = new Vector3(p.X, p.Y, probe.Z + 6f) - dir;
+                var span = TargetWallClearance + 1f;
+                if (collider.FirstHit(from, from + dir * span) is not { } wall || MathF.Abs(wall.Normal.Z) >= 0.35f)
+                {
+                    continue;
+                }
+                var n = new Vector2(wall.Normal.X, wall.Normal.Y);
+                if (n.Length() < 0.8f)
+                {
+                    continue;
+                }
+                n = Vector2.Normalize(n);
+                // The normal faces the side the ray came from; a wall seen from
+                // behind is the same wall.
+                if (Vector2.Dot(n, new Vector2(dir.X, dir.Y)) > 0)
+                {
+                    n = -n;
+                }
+                var hitPoint = from + dir * (wall.T * span);
+                if (walls.Any(w => Vector2.Dot(w.N, n) > 0.9f))
+                {
+                    continue;
+                }
+                walls.Add((n, Vector2.Dot(n, new Vector2(hitPoint.X, hitPoint.Y))));
+            }
+            foreach (var (n, d) in walls)
+            {
+                var gap = Vector2.Dot(n, new Vector2(p.X, p.Y)) - d;
+                if (gap < TargetWallClearance)
+                {
+                    p += new Vector3(n.X, n.Y, 0f) * (TargetWallClearance - gap);
+                }
+            }
+        }
+        var top = new Vector3(p.X, p.Y, probe.Z + 6f);
+        var bottom = new Vector3(p.X, p.Y, probe.Z - TargetFloorDrop);
+        if (collider.FirstHit(top, bottom) is { } floor && floor.Normal.Z >= GrenadeTrajectory.FloorNormalZ)
+        {
+            p = p with { Z = float.Lerp(top.Z, bottom.Z, floor.T) };
+        }
+        return p;
     }
 
     /// <summary>

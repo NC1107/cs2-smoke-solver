@@ -163,7 +163,10 @@ public static partial class LineupSolver
         // distance, both blind to whether the feet are placed by geometry - so
         // the corner wedge at a site lost its cell to the open ground beside
         // it every time, and the lineups people actually use never surfaced.
-        Func<Vector3, bool>? ownBucketAt = null)
+        Func<Vector3, bool>? ownBucketAt = null,
+        // Cancelling stops the sweep within one origin's worth of work; the
+        // partial result is nobody's answer and is not returned.
+        CancellationToken ct = default)
     {
         if (zoneCrossings.Count == 0)
         {
@@ -263,7 +266,7 @@ public static partial class LineupSolver
         // diagonal stripes rather than growing out of the target. Each item is
         // a whole set of simulations, so per-item hand-out costs nothing next
         // to the work it hands out.
-        Parallel.ForEach(Partitioner.Create(origins, EnumerablePartitionerOptions.NoBuffering), Cpu.Bound, feet =>
+        Parallel.ForEach(Partitioner.Create(origins, EnumerablePartitionerOptions.NoBuffering), Cpu.BoundWith(ct), feet =>
         {
             var toZone = zoneCentroid - feet;
             var distance = new Vector2(toZone.X, toZone.Y).Length();
@@ -455,7 +458,8 @@ public static partial class LineupSolver
         IReadOnlyList<ThrowType> types,
         IReadOnlyList<float>? strengths,
         ThrowConstants? constants,
-        float stepDeg = 1f)
+        float stepDeg = 1f,
+        CancellationToken ct = default)
     {
         var k = constants ?? ThrowConstants.Default;
         var toTarget = target - feet;
@@ -473,7 +477,7 @@ public static partial class LineupSolver
         }
         var found = new ConcurrentBag<Lineup>();
         var tolSq = tolerance * tolerance;
-        Parallel.ForEach(kinds, Cpu.Bound, kind =>
+        Parallel.ForEach(kinds, Cpu.BoundWith(ct), kind =>
         {
             var (type, strength, run) = kind;
             var eye = feet + new Vector3(0, 0, GrenadeTrajectory.EyeHeight(type));
@@ -528,7 +532,8 @@ public static partial class LineupSolver
         // measured reason solved lineups landed outside the radius the user
         // asked for. The coarse zone stays as the sweep's recall filter; this
         // is the precision gate. Null keeps zone-membership acceptance.
-        float? tolerance = null)
+        float? tolerance = null,
+        CancellationToken ct = default)
     {
         // One perturbation step; also the re-aim lattice pitch, so the rescue
         // search and the stability probes share simulations.
@@ -544,7 +549,7 @@ public static partial class LineupSolver
         zoneCentroid /= Math.Max(zoneCrossings.Count, 1);
 
         var verified = new ConcurrentBag<Lineup>();
-        Parallel.ForEach(candidates, Cpu.Bound, lineup =>
+        Parallel.ForEach(candidates, Cpu.BoundWith(ct), lineup =>
         {
             var eye = lineup.Feet + new Vector3(0, 0, GrenadeTrajectory.EyeHeight(lineup.Type));
             var cache = new Dictionary<(int, int), TrajectoryResult>();

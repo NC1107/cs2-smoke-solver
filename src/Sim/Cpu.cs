@@ -10,4 +10,9 @@ public static class Cpu
     // own progress stream and any other user's request for the whole solve.
     // One worker per core, and no more.
     public static ParallelOptions Bound => new() { MaxDegreeOfParallelism = Environment.ProcessorCount };
+
+    // The same, cancellable: a solve whose client has gone must stop, not
+    // finish on every core for nobody.
+    public static ParallelOptions BoundWith(CancellationToken ct) =>
+        new() { MaxDegreeOfParallelism = Environment.ProcessorCount, CancellationToken = ct };
 }

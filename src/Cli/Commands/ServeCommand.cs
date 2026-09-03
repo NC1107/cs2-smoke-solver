@@ -25,6 +25,12 @@ public static class ServeCommand
     // cannot stream, sends a byte so the connection is not judged dead. Well
     // inside Cloudflare's 100s origin timeout.
     static readonly TimeSpan GateKeepalive = TimeSpan.FromSeconds(10);
+    // Interactive solves in the queue or running, and when one last ran: a
+    // low-priority solve stays out of the way while people are using the site.
+    static int interactiveQueued;
+    static int interactiveRunning;
+    static DateTimeOffset lastInteractiveAt = DateTimeOffset.MinValue;
+    static readonly TimeSpan InteractiveQuiet = TimeSpan.FromSeconds(60);
 
     // How many requests may WAIT for one of those two slots. The gate bounds
     // concurrency but not arrival rate, so without this an attacker's queue
@@ -1473,6 +1479,11 @@ public static class ServeCommand
                 // JSON, so cached replies are just that single last line.
                 context.Response.ContentType = "application/x-ndjson";
                 var clientGone = false;
+                // Cancel means cancel: when the client goes, the solve stops on
+                // every core within one origin's work rather than finishing
+                // for nobody. (It used to run on so the result would land in
+                // the cache; Nick would rather have the cores back.)
+                using var solveCts = CancellationTokenSource.CreateLinkedTokenSource(context.RequestAborted);
                 async Task WriteLine(string line)
                 {
                     if (clientGone)
@@ -1486,9 +1497,8 @@ public static class ServeCommand
                     }
                     catch (Exception e)
                     {
-                        // The solve keeps running so its result still lands in the
-                        // cache; a reload after cancel then answers instantly.
                         clientGone = true;
+                        solveCts.Cancel();
                         // A disconnect is the expected case and says nothing worth
                         // logging. Anything else - a serialization fault, a full
                         // disk - would otherwise be silently filed as "they left"
@@ -1516,6 +1526,17 @@ public static class ServeCommand
                         "too many solves queued - try again in a moment");
                     return;
                 }
+                // A low-priority solve (the cache warm) yields to people: it
+                // waits while anyone is solving or has solved in the last
+                // minute, then takes a slot only if one is still free after
+                // that. Without this the warm run took a slot and half the
+                // cores from whoever was actually using the site.
+                var lowPriority = context.Request.Headers["X-Solve-Priority"].ToString() == "low";
+                if (!lowPriority)
+                {
+                    Interlocked.Increment(ref interactiveQueued);
+                    lastInteractiveAt = DateTimeOffset.UtcNow;
+                }
                 try
                 {
                     // Waiting for a solver slot is silent from the outside, and
@@ -1525,14 +1546,28 @@ public static class ServeCommand
                     // is a message on screen rather than an error page.
                     var ahead = Math.Max(0, queuedSolves - 1);
                     await WriteLine($"{{\"phase\":\"queued\",\"count\":{ahead}}}");
-                    while (!await SolveGate.WaitAsync(GateKeepalive, context.RequestAborted))
+                    while (true)
                     {
+                        if (lowPriority && (interactiveQueued > 0 || interactiveRunning > 0 || DateTimeOffset.UtcNow - lastInteractiveAt < InteractiveQuiet))
+                        {
+                            await Task.Delay(GateKeepalive, context.RequestAborted);
+                            await WriteLine("{\"phase\":\"queued\",\"count\":0}");
+                            continue;
+                        }
+                        if (await SolveGate.WaitAsync(GateKeepalive, context.RequestAborted))
+                        {
+                            break;
+                        }
                         await WriteLine($"{{\"phase\":\"queued\",\"count\":{Math.Max(0, queuedSolves - 1)}}}");
                     }
                 }
                 finally
                 {
                     Interlocked.Decrement(ref queuedSolves);
+                    if (!lowPriority)
+                    {
+                        Interlocked.Decrement(ref interactiveQueued);
+                    }
                 }
                 try
                 {
@@ -1545,6 +1580,11 @@ public static class ServeCommand
                         return;
                     }
                     var events = new System.Collections.Concurrent.ConcurrentQueue<(string Kind, int[] Data)>();
+                    if (!lowPriority)
+                    {
+                        Interlocked.Increment(ref interactiveRunning);
+                        lastInteractiveAt = DateTimeOffset.UtcNow;
+                    }
                     var solveTask = Task.Run(() => RunTargetQuery(
                         mesh, attributeFilter, navAreas, body.RootElement, serveConstants,
                         onPhase: (phase, count) => events.Enqueue((phase, [count])),
@@ -1552,7 +1592,8 @@ public static class ServeCommand
                         onCandidate: (feet, ok) => events.Enqueue(("cand", [(int)MathF.Round(feet.X), (int)MathF.Round(feet.Y), (int)MathF.Round(feet.Z), ok ? 1 : 0])),
                         standSpots: entry.StandSpots,
                         spawnFronts: SpawnFronts(root, entry.Mesh.MapName),
-                        spawnPoints: SpawnPoints(root, entry.Mesh.MapName)));
+                        spawnPoints: SpawnPoints(root, entry.Mesh.MapName),
+                        ct: solveCts.Token));
                     while (!solveTask.IsCompleted)
                     {
                         await Task.WhenAny(solveTask, Task.Delay(100));
@@ -1566,6 +1607,12 @@ public static class ServeCommand
                     {
                         response = await solveTask;
                     }
+                    catch (OperationCanceledException)
+                    {
+                        // The client left and the solve stopped with them; a
+                        // partial answer is not cached.
+                        return;
+                    }
                     catch (Exception e)
                     {
                         // The 200 header is already on the wire, so failures must
@@ -1573,6 +1620,14 @@ public static class ServeCommand
                         Console.Error.WriteLine($"lineup solve failed: {e.Message}");
                         await WriteLine("{\"error\":\"solver failure - check server log\"}");
                         return;
+                    }
+                    finally
+                    {
+                        if (!lowPriority)
+                        {
+                            Interlocked.Decrement(ref interactiveRunning);
+                            lastInteractiveAt = DateTimeOffset.UtcNow;
+                        }
                     }
                     await WriteSolveCacheAsync(root, cachePath, response);
                     foreach (var line in DrainProgress(events))

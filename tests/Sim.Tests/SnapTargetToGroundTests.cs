@@ -117,3 +117,48 @@ public class SnapTargetToGroundTests
         Assert.Null(TargetSolver.SnapTargetToGround(grid, x, y));
     }
 }
+
+/// <summary>
+/// A 3D-clicked target settles to where a grenade could rest: the floor
+/// under the click, a grenade's width out from a wall it touched.
+/// </summary>
+public class SettleTargetTests
+{
+    static readonly Vector3 Min = new(-64, -64, -32);
+    static readonly Vector3 Max = new(512, 512, 256);
+
+    static TriangleCollider Room() => new(SyntheticMeshes.FromQuads(
+    [
+        SyntheticMeshes.Ground(-64, 512, 0),
+        SyntheticMeshes.WallY(-64, 512, 200, 0, 128),
+    ]), Min, Max);
+
+    [Fact]
+    public void AClickHalfwayUpAWallGoesToItsFoot()
+    {
+        // Clicking the same corner twice and getting nothing: the click had
+        // landed on the crate's side, forty units up, where no smoke rests.
+        var settled = TargetSolver.SettleTarget(Room(), new Vector3(100, 200, 40));
+
+        Assert.Equal(0f, settled.Z, 1f);
+        Assert.True(MathF.Abs(settled.Y - 200) >= 6f, $"still against the wall at y={settled.Y:F1}");
+        Assert.Equal(100f, settled.X, 0.5f);
+    }
+
+    [Fact]
+    public void AClickOnOpenFloorStaysWhereItIs()
+    {
+        var settled = TargetSolver.SettleTarget(Room(), new Vector3(100, 100, 0));
+
+        Assert.Equal(new Vector3(100, 100, 0), settled);
+    }
+
+    [Fact]
+    public void AClickOnTheFloorAgainstAWallIsNudgedOut()
+    {
+        var settled = TargetSolver.SettleTarget(Room(), new Vector3(100, 197, 0));
+
+        Assert.True(settled.Y <= 192.5f, $"y={settled.Y:F1}");
+        Assert.Equal(0f, settled.Z, 1f);
+    }
+}

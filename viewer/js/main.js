@@ -2,19 +2,19 @@
 // import the feature modules; they call back into the orchestrators defined
 // here (setTarget, select, runQuery) via the init*/set*Callbacks hooks.
 
-import { state, filtered, esc, lowMemoryDevice, loadFavorites, setFavorite, isFavorite, DEFAULT_EYE_HEIGHT, EYE_HEIGHT_BY_TYPE, TARGET_SNAP_RADIUS, favoriteHooks, loadSavedLocal, persistSavedLocal} from "./state.js?v=104";
-import { loadMapList, loadMapData, runQuery as postLineupQuery, fetchTrajectory, fetchLineupOne, fetchSlack, fetchSpawns, fetchProSmokes, fetchMeshDiff, meshDiffExists, fetchLevels, fetchSmokeCoverage, runExecute, findExecuteSpots, fetchTargets, fetchMe, signOut, fetchSavedLineups, putSavedLineups, fetchVotes, castVote} from "./api.js?v=104";
-import { loadRadar, readColors, recolorRadar, draw, scheduleDraw, resize, resetView, initMap2d, screenOf } from "./map2d.js?v=104";
-import { ensure3d, resetEnsure3d, teardown3d, current3d, sync3d, syncProgress3d, syncMeshDiff3d, set3dCallbacks, applyTheme3d, verticalFovFromDesired } from "./view3d.js?v=104";
-import { initAdmin, renderAdmin } from "./admin.js?v=104";
-import { resetEnsureTexturedScene } from "./textured-scene.js?v=104";
-import { capturePreview } from "./preview.js?v=104";
+import { state, filtered, esc, lowMemoryDevice, loadFavorites, setFavorite, isFavorite, DEFAULT_EYE_HEIGHT, EYE_HEIGHT_BY_TYPE, TARGET_SNAP_RADIUS, favoriteHooks, loadSavedLocal, persistSavedLocal} from "./state.js?v=105";
+import { loadMapList, loadMapData, runQuery as postLineupQuery, fetchTrajectory, fetchLineupOne, fetchSlack, fetchSpawns, fetchProSmokes, fetchMeshDiff, meshDiffExists, fetchLevels, fetchSmokeCoverage, runExecute, findExecuteSpots, fetchTargets, fetchMe, signOut, fetchSavedLineups, putSavedLineups, fetchVotes, castVote} from "./api.js?v=105";
+import { loadRadar, readColors, recolorRadar, draw, scheduleDraw, resize, resetView, initMap2d, screenOf } from "./map2d.js?v=105";
+import { ensure3d, resetEnsure3d, teardown3d, current3d, sync3d, syncProgress3d, syncMeshDiff3d, set3dCallbacks, applyTheme3d, verticalFovFromDesired } from "./view3d.js?v=105";
+import { initAdmin, renderAdmin } from "./admin.js?v=105";
+import { resetEnsureTexturedScene } from "./textured-scene.js?v=105";
+import { capturePreview } from "./preview.js?v=105";
 // Every local import across viewer/js carries the SAME ?v= token, bumped
 // together on any change. The HTML is served no-cache, so a fresh load pulls
 // main.js?v=N, which pulls every module at ?v=N - the whole graph refreshes as
 // one consistent set past Cloudflare's 4h JS cache, with no duplicate module
 // instances (which a partial versioning would cause). Bump the token everywhere.
-import { renderLineups, initPanel, revealSelected, resultStatusText } from "./panel.js?v=104";
+import { renderLineups, initPanel, revealSelected, resultStatusText } from "./panel.js?v=105";
 
 (async () => {
   // Map switching means a failed load is no longer necessarily terminal (the
@@ -301,6 +301,38 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
   // "the chip is not rendering" gets diagnosed in a minute instead of an hour.
   window.smokeState = state;
   window.smokeRenderAdmin = renderAdmin;
+
+  // Hover help: the sidebar's controls explain themselves in the status line
+  // the moment the pointer is over them. The browser's own tooltip is the
+  // same text, a second later and only if the pointer stays still; nobody
+  // waited for it, so the tiles read as unexplained.
+  {
+    const controls = document.getElementById("controls");
+    let held = null;
+    controls.addEventListener("mouseover", e => {
+      const el = e.target.closest("[title]");
+      if (!el || !controls.contains(el) || !el.title) {
+        return;
+      }
+      if (held === null) {
+        held = statusEl.textContent;
+      }
+      statusEl.textContent = el.title;
+    });
+    controls.addEventListener("mouseout", e => {
+      const el = e.target.closest("[title]");
+      const to = e.relatedTarget instanceof Element ? e.relatedTarget.closest("[title]") : null;
+      if (!el || to === el || held === null) {
+        return;
+      }
+      // Whatever the status said before the hover, unless something else
+      // wrote it in the meantime (a solve finishing).
+      if (statusEl.textContent === el.title) {
+        statusEl.textContent = held;
+      }
+      held = null;
+    });
+  }
 
   // ---- votes ----
 
@@ -2263,17 +2295,6 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
   initMap2d({ onSetTarget: setTarget, onSelect: select, onRunQuery: runQuery, onPickOrigin: pickOrigin, onPickThrowSpot: useThrowSpot });
   set3dCallbacks({ onSetTarget: setTarget, onSelect: select, onRunQuery: runQuery, onPickOrigin: pickOrigin, onPickThrowSpot: useThrowSpot });
 
-  // Derived, not constant: "click terrain" means set-target only until a
-  // target exists, then it means solve-from-here - a static string was
-  // telling users the wrong thing for most of the session. Space/Ctrl leads
-  // because that is CS2's own spectator freecam pair; Q/E stay as aliases.
-  // Touch has no WASD/scroll/right-click, so a phone gets the short gesture
-  // hint (which otherwise wraps to three wasted lines above the map).
-  const coarsePointer = matchMedia("(pointer: coarse)").matches;
-  const hint3d = () => coarsePointer
-    ? "3D: 1 finger look · 2 fingers pan/zoom · " + (state.target ? "tap terrain = set throw spot · long-press = move target" : "tap terrain = set target")
-    : "3D: WASD fly (Space/Ctrl up/down, Shift fast) · drag look · right-drag pan · scroll dolly · " +
-      (state.target ? "click terrain = set throw spot · right-click = move target" : "click terrain = set target");
 
   // A latch, not a jump: the row it sits in is a set of things that are either
   // on or off, so leaving it lets the camera go back where it was rather than
@@ -2291,7 +2312,7 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
         t3.camera.quaternion.fromArray(cameraBeforeTopDown.quat);
         t3.requestRender();
       }
-      statusEl.textContent = hint3d();
+      statusEl.textContent = "";
     } else {
       cameraBeforeTopDown = { pos: t3.camera.position.toArray(), quat: t3.camera.quaternion.toArray() };
       state.topDownOn = true;
@@ -2342,7 +2363,10 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
         for (const b of viewSeg.children) { b.disabled = false; }
       }
     }
-    statusEl.textContent = hint3d();
+    // The controls live in the "3D view" chip, not the status line: a
+    // permanent line of keybinds across the top of the map was the first
+    // thing Nick asked to have removed.
+    statusEl.textContent = "";
     if (state.reticleOn) { buildRuler(rulerEl); }
     syncControls();
     t3.focusStage();
