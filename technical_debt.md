@@ -1701,3 +1701,21 @@ Two module-level consts used by a `?t=` permalink during boot were declared belo
 - No execute scoring, no noise (audibility) filter.
 
 284 tests.
+
+## The A-site test bench (2026-09-03, later)
+
+Nick's bench: target at the centre of de_dust2's A site (`setpos_exact 1130.38 2504.53 95.75`), and nine positions he calls reasonable lineups - every one a corner or wall around the site, most of them blind lobs.
+`scratchpad/bench.mjs` runs it; keep a copy of the reference positions in this section if the scratchpad is gone:
+1069.05/2348.03, 1235.97/2348.05, 1235.96/2460.91, 1069.03/2411.97, 1101.04/2569.63, 1235.97/2561.04, 1300.04/2446.28 (z 54), 1300.03/2342.97 (z 22), 1004.97/2379.97 (z 21) - getpos eye heights, feet are 64u lower.
+
+What it found, in order of discovery:
+
+- **Ranking led by aim band put every corner lob below every long referenced throw.** A blind lob from a corner 150u out misses by a handful of units; a pinpoint aim from open ground 1500u out misses by more. `HumanError` (server and viewer) estimates the miss a person adds - feet by pin, aim by band scaled by flight distance, movement, chaos - and leads the ranking in 8u bands. The viewer filters on it (Reproducible, 32u default), orders by it, and derives the difficulty word from it. Aim-reference and sky filters now default to any.
+- **One candidate per 64u sweep cell, chosen by bounces, was pin-blind.** The corner wedge lost its cell to the open ground beside it. Pinned origins keep their own bucket now.
+- **Knee-high walls were invisible.** The wall probes sat at 36u and 46u; the site is ringed with walls and crates about 28u tall, so seven of the nine positions were "open ground". A 22u probe sees them, kept only when the hull cannot climb what it hit (floor measured short of the face, hull pushed into it and lifted one step), which rules out stair risers.
+
+Before: 3/9 reference positions appeared as lineups within 12u, result pins 25 corner / 340 wall / 35 open, nearest lineup to the target 234u.
+After: 7/9, 33 / 355 / 12, and the crate wedge Nick stood in ranks first with the top ten all corners and walls at the site.
+The two still missing are along walls where the pins sit 23-29u from his spot - the same wall, a different point along it.
+
+Open: the numbers in `HumanError` (2/8/24u, 0.5-5 degrees, 6/16u) are judgement, not measurement. The rig can measure them: throw the same lineup from feet placed by hand N times and take the spread.
