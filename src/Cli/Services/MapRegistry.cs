@@ -343,6 +343,33 @@ public static class MapRegistry
     // once per map like the spawns; an absent file is simply a map with none.
     public static readonly System.Collections.Concurrent.ConcurrentDictionary<string, string> TargetsCache = new(StringComparer.Ordinal);
 
+    // The same targets, parsed, for anything that needs to snap a point to a
+    // named spot server-side (the vote key does).
+    public static readonly System.Collections.Concurrent.ConcurrentDictionary<string, IReadOnlyList<(string Id, string Name, System.Numerics.Vector3 Pos)>> NamedTargetsCache = new(StringComparer.Ordinal);
+
+    public static IReadOnlyList<(string Id, string Name, System.Numerics.Vector3 Pos)> NamedTargets(string root, string mapName) =>
+        NamedTargetsCache.GetOrAdd(mapName, name =>
+        {
+            var list = new List<(string, string, System.Numerics.Vector3)>();
+            try
+            {
+                using var doc = JsonDocument.Parse(LoadTargetsJson(root, name));
+                foreach (var t in doc.RootElement.EnumerateArray())
+                {
+                    var p = t.GetProperty("pos");
+                    list.Add((
+                        t.TryGetProperty("id", out var idEl) ? idEl.GetString() ?? "" : "",
+                        t.GetProperty("name").GetString() ?? "unnamed",
+                        new System.Numerics.Vector3(p[0].GetSingle(), p[1].GetSingle(), p.GetArrayLength() > 2 ? p[2].GetSingle() : 0f)));
+                }
+            }
+            catch (Exception e) when (e is JsonException or KeyNotFoundException or InvalidOperationException)
+            {
+                Console.Error.WriteLine($"targets unparseable for {name}: {e.Message}");
+            }
+            return list;
+        });
+
     public static string LoadTargetsJson(string root, string mapName)
     {
         var path = Path.Combine(root, "data", $"{mapName}.targets.json");

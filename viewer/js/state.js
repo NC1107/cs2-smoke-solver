@@ -54,6 +54,11 @@ export const state = {
   // The account's saved lineups as full throw specs, so they can be shown and
   // reopened without re-solving. Mirrors `favorites` once signed in.
   saved: [],
+  // Community votes for the current result's spot: { target, tallies, mine }.
+  // Held apart from the solver's score on purpose - one is a measurement of
+  // the throw, the other an opinion about it, and blended they are both
+  // unreadable.
+  votes: null,
   // The throw spot the last one-spot solve used, for copying back out.
   lastOrigin: null,
   // A spawn marker clicked before a target exists: held, not discarded, so the

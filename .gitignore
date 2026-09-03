@@ -69,3 +69,6 @@ data/reextract-logs/
 # lineups, not code. Both live in the bind-mounted data/ on prod.
 data/session.secret
 data/users/
+# Community votes: a SQLite database (plus its WAL sidecars) in the data mount.
+data/votes.db
+data/votes.db-*

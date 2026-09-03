@@ -2,18 +2,18 @@
 // import the feature modules; they call back into the orchestrators defined
 // here (setTarget, select, runQuery) via the init*/set*Callbacks hooks.
 
-import { state, filtered, esc, lowMemoryDevice, loadFavorites, setFavorite, isFavorite, DEFAULT_EYE_HEIGHT, EYE_HEIGHT_BY_TYPE, TARGET_SNAP_RADIUS, favoriteHooks} from "./state.js?v=95";
-import { loadMapList, loadMapData, runQuery as postLineupQuery, fetchTrajectory, fetchLineupOne, fetchSlack, fetchSpawns, fetchProSmokes, fetchMeshDiff, meshDiffExists, fetchLevels, fetchSmokeCoverage, runExecute, findExecuteSpots, fetchTargets, fetchMe, signOut, fetchSavedLineups, putSavedLineups} from "./api.js?v=95";
-import { loadRadar, readColors, recolorRadar, draw, scheduleDraw, resize, resetView, initMap2d, screenOf } from "./map2d.js?v=95";
-import { ensure3d, resetEnsure3d, teardown3d, current3d, sync3d, syncProgress3d, syncMeshDiff3d, set3dCallbacks, applyTheme3d, verticalFovFromDesired } from "./view3d.js?v=95";
-import { resetEnsureTexturedScene } from "./textured-scene.js?v=95";
-import { capturePreview } from "./preview.js?v=95";
+import { state, filtered, esc, lowMemoryDevice, loadFavorites, setFavorite, isFavorite, DEFAULT_EYE_HEIGHT, EYE_HEIGHT_BY_TYPE, TARGET_SNAP_RADIUS, favoriteHooks} from "./state.js?v=97";
+import { loadMapList, loadMapData, runQuery as postLineupQuery, fetchTrajectory, fetchLineupOne, fetchSlack, fetchSpawns, fetchProSmokes, fetchMeshDiff, meshDiffExists, fetchLevels, fetchSmokeCoverage, runExecute, findExecuteSpots, fetchTargets, fetchMe, signOut, fetchSavedLineups, putSavedLineups, fetchVotes, castVote} from "./api.js?v=97";
+import { loadRadar, readColors, recolorRadar, draw, scheduleDraw, resize, resetView, initMap2d, screenOf } from "./map2d.js?v=97";
+import { ensure3d, resetEnsure3d, teardown3d, current3d, sync3d, syncProgress3d, syncMeshDiff3d, set3dCallbacks, applyTheme3d, verticalFovFromDesired } from "./view3d.js?v=97";
+import { resetEnsureTexturedScene } from "./textured-scene.js?v=97";
+import { capturePreview } from "./preview.js?v=97";
 // Every local import across viewer/js carries the SAME ?v= token, bumped
 // together on any change. The HTML is served no-cache, so a fresh load pulls
 // main.js?v=N, which pulls every module at ?v=N - the whole graph refreshes as
 // one consistent set past Cloudflare's 4h JS cache, with no duplicate module
 // instances (which a partial versioning would cause). Bump the token everywhere.
-import { renderLineups, initPanel, revealSelected, resultStatusText } from "./panel.js?v=95";
+import { renderLineups, initPanel, revealSelected, resultStatusText } from "./panel.js?v=97";
 
 (async () => {
   // Map switching means a failed load is no longer necessarily terminal (the
@@ -265,6 +265,51 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
     }
   }
   loadAccount();
+
+  // The live state, reachable from devtools. Nothing here is secret - it is
+  // what the page is already showing - and being able to inspect it is how
+  // "the chip is not rendering" gets diagnosed in a minute instead of an hour.
+  window.smokeState = state;
+
+  // ---- votes ----
+
+  // The community's tally for the spot this result is about. Loaded after every
+  // result so the arrows and the "most voted" sort have something to show; a
+  // failure here is cosmetic and must never take the result down with it.
+  async function loadVotes() {
+    const target = state.result?.target;
+    if (!target || state.result.execute) {
+      state.votes = null;
+      return;
+    }
+    const gen = state.mapGeneration;
+    const forResult = state.result;
+    try {
+      const v = await fetchVotes(state.currentMap, target);
+      if (state.mapGeneration !== gen || state.result !== forResult) { return; }
+      state.votes = v;
+      renderLineups();
+    } catch (err) {
+      console.warn("votes unavailable", err);
+    }
+  }
+
+  async function voteOn(l, vote) {
+    if (!state.account) {
+      statusEl.textContent = "sign in with Steam to vote on lineups";
+      return;
+    }
+    if (!l.id || !state.result?.target) {
+      return;
+    }
+    const { error, data } = await castVote(state.currentMap, state.result.target, l.id, vote);
+    if (error) {
+      statusEl.textContent = error;
+      return;
+    }
+    state.votes = data;
+    renderLineups();
+  }
 
   // ---- executes: several smokes from one stance ----
 
@@ -1285,6 +1330,8 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
       next.lineups.forEach((l, i) => { l._idx = i; l._favorite = isFavorite(l); });
       tagSpawnLineups(next.lineups);
       state.result = next;
+      state.votes = null;
+      loadVotes();
       // Adopt the server's resolved target, which carries the ground Z it snapped
       // a 2D (Z-less) pick onto. Keeps the 2D and 3D target at the same height the
       // sim actually used, so switching views no longer moves or floats it.
@@ -1995,7 +2042,7 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
   initPanel({
     onSetTarget: setTarget, onSelect: select, onPreview: loadPreviewThumb,
     onGoTo: goToLineup, onFavorite: toggleFavorite, onRemove: removeLineup,
-    onShare: shareLineup,
+    onShare: shareLineup, onVote: voteOn,
   });
   initMap2d({ onSetTarget: setTarget, onSelect: select, onRunQuery: runQuery, onPickOrigin: pickOrigin, onPickThrowSpot: useThrowSpot });
   set3dCallbacks({ onSetTarget: setTarget, onSelect: select, onRunQuery: runQuery, onPickOrigin: pickOrigin, onPickThrowSpot: useThrowSpot });

@@ -4,7 +4,7 @@
 // selecting a lineup route through the callbacks main.js registers.
 
 import { state, filtered, clickShort, clickClass, esc, skyAngle, proMatched, scoreBreakdown, referenceBand, referenceFallback,
-  movementWords, clickWords, aimWords, difficultyWords } from "./state.js?v=95";
+  movementWords, clickWords, aimWords, difficultyWords } from "./state.js?v=97";
 
 const statusEl = state.statusEl;
 const PAGE_SIZE = 50;
@@ -41,6 +41,7 @@ function sortForList(list, target) {
     case "stability": return copy.sort((a, b) => (b.stability ?? 0) - (a.stability ?? 0));
     case "bounces": return copy.sort((a, b) => (a.Bounces ?? 0) - (b.Bounces ?? 0));
     case "flight": return copy.sort((a, b) => (a.flightTime ?? 0) - (b.flightTime ?? 0));
+    case "community": return copy.sort(ranker(by, target, missOf));
     default: return copy.sort((a, b) => scoreBreakdown(b, target).total - scoreBreakdown(a, target).total);
   }
 }
@@ -53,6 +54,12 @@ function ranker(by, target, missOf) {
     case "stability": return (a, b) => (b.stability ?? 0) - (a.stability ?? 0);
     case "bounces": return (a, b) => (a.Bounces ?? 0) - (b.Bounces ?? 0);
     case "flight": return (a, b) => (a.flightTime ?? 0) - (b.flightTime ?? 0);
+    // Votes first, and the solver's score only to order the unvoted tail -
+    // a separate mode rather than a term in the score, because a measurement
+    // and an opinion do not add.
+    case "community": return (a, b) =>
+      ((state.votes?.tallies?.[b.id]?.score ?? 0) - (state.votes?.tallies?.[a.id]?.score ?? 0)) ||
+      (scoreBreakdown(b, target).total - scoreBreakdown(a, target).total);
     default: return (a, b) => scoreBreakdown(b, target).total - scoreBreakdown(a, target).total;
   }
 }
@@ -69,6 +76,7 @@ let callbacks = {
   onFavorite: () => {},
   onRemove: () => {},
   onShare: () => {},
+  onVote: () => {},
 };
 
 // One result, said the way a lineup guide says it: which button, how you are
@@ -97,12 +105,24 @@ function lineupSummaryHtml(l) {
   const score = target ? scoreBreakdown(l, target).total : null;
   const scoreChip = score === null ? "" :
     `<span class="lu-score" title="Match score: how this lineup ranks against the others for this target. Open the row for the full working - what each part added or took away">${score}</span>`;
+  // The community's opinion, beside the score and never inside it. Absent
+  // until someone has voted, so the list does not fill with zeros.
+  const tally = state.votes?.tallies?.[l.id];
+  const mine = state.votes?.mine?.[l.id] ?? 0;
+  const voteChip = !tally && !state.account ? "" :
+    `<span class="lu-votes ${mine > 0 ? "up" : mine < 0 ? "down" : ""}" title="Community votes: ${tally?.up ?? 0} up, ${tally?.down ?? 0} down. ${state.account ? "Click to vote on whether this lineup works for you." : "Sign in with Steam to vote."}">` +
+    // Spans, not buttons: the row is itself a button and a button inside one
+    // is invalid HTML the parser breaks apart. The click is routed below.
+    `<span role="button" tabindex="0" class="vote-btn" data-vote="1" aria-label="Vote up" aria-pressed="${mine > 0}">&#9650;</span>` +
+    `<b>${tally?.score ?? 0}</b>` +
+    `<span role="button" tabindex="0" class="vote-btn" data-vote="-1" aria-label="Vote down" aria-pressed="${mine < 0}">&#9660;</span></span>`;
   const head =
     `<span class="lu-head" title="${how}">` +
     `<b class="${clickClass(l.strength)}">${clickWords(l.strength)}</b>` +
     `<span class="lu-move">${movementWords(l)}</span>` +
     `<span class="diff ${diff.cls}" title="how forgiving this throw is of your feet and your crosshair">${diff.word}</span>` +
     scoreChip +
+    voteChip +
     `</span>`;
 
   // Where the feet go, and how exactly. This is the position half of "can you
@@ -360,7 +380,29 @@ function optionButton(l) {
   b.setAttribute("aria-pressed", "false");
   b.tabIndex = -1;
   b.innerHTML = lineupSummaryHtml(l);
-  b.addEventListener("click", () => callbacks.onSelect(l._idx));
+  b.addEventListener("click", e => {
+    // A vote is on the row but is not a selection of it.
+    const v = e.target.closest("[data-vote]");
+    if (v) {
+      e.stopPropagation();
+      // Clicking the arrow you already chose withdraws it.
+      const chosen = Number(v.dataset.vote);
+      const mine = state.votes?.mine?.[l.id] ?? 0;
+      callbacks.onVote(l, mine === chosen ? 0 : chosen);
+      return;
+    }
+    callbacks.onSelect(l._idx);
+  });
+  b.addEventListener("keydown", e => {
+    const v = e.target.closest("[data-vote]");
+    if (v && (e.key === "Enter" || e.key === " ")) {
+      e.preventDefault();
+      e.stopPropagation();
+      const chosen = Number(v.dataset.vote);
+      const mine = state.votes?.mine?.[l.id] ?? 0;
+      callbacks.onVote(l, mine === chosen ? 0 : chosen);
+    }
+  });
   return b;
 }
 

@@ -85,6 +85,10 @@ public static class ServeCommand
 
     // A saved set is a few kilobytes; anything bigger is not a set of lineups.
     const int MaxSavedSetBytes = 256 * 1024;
+    // How close a target may be to a named spot and still vote under its name.
+    // Matches the viewer's click snap, so what you clicked and what you voted
+    // on are the same spot.
+    const float VoteSnapRadius = 64f;
 
     // Behind the reverse proxy every request arrives from the same socket
     // address, so a forwarded header is the only thing that tells one caller
@@ -184,6 +188,7 @@ public static class ServeCommand
         StartBrotliPrecompress(maps, root);
         PruneCache(root, maps);
         var sessionSecret = SteamAuth.LoadOrCreateSecret(root);
+        using var votes = new VoteStore(Path.Combine(root, "data", "votes.db"));
         using var steamHttp = new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
 
         // A solve occupies one pool thread per core (see Cpu.Bound). The pool's
@@ -505,6 +510,86 @@ public static class ServeCommand
             await File.WriteAllTextAsync(temp, body, context.RequestAborted);
             File.Move(temp, path, overwrite: true);
             return Results.NoContent();
+        }).RequireRateLimiting(AccountPolicy);
+
+        // ---- votes: the community's opinion, kept apart from the solver's score ----
+
+        app.MapGet("/api/votes", async (HttpContext context, string? map, float x, float y, float z) =>
+        {
+            if (map == null || !maps.TryGetValue(map, out var entry))
+            {
+                return ApiError(StatusCodes.Status404NotFound, UnknownMapError);
+            }
+            if (!float.IsFinite(x) || !float.IsFinite(y) || !float.IsFinite(z))
+            {
+                return ApiError(StatusCodes.Status400BadRequest, "non-finite coordinate");
+            }
+            var key = VoteStore.TargetKey(new Vector3(x, y, z), NamedTargets(root, entry.Mesh.MapName), VoteSnapRadius);
+            var me = SignedInSteamId(context, sessionSecret);
+            var (tallies, mine) = await votes.AtSpotAsync(entry.Mesh.MapName, key, me, context.RequestAborted);
+            context.Response.Headers.CacheControl = "no-store";
+            return Results.Json(new
+            {
+                target = key,
+                tallies = tallies.ToDictionary(kv => kv.Key, kv => new { up = kv.Value.Up, down = kv.Value.Down, score = kv.Value.Score }),
+                mine,
+            });
+        }).RequireRateLimiting(AccountPolicy);
+
+        app.MapPost("/api/vote", async (HttpContext context) =>
+        {
+            if (SignedInSteamId(context, sessionSecret) is not { } steamId)
+            {
+                return ApiError(StatusCodes.Status401Unauthorized, "sign in with Steam to vote");
+            }
+            if (context.Request.ContentType is not { } ct || !ct.StartsWith("application/json", StringComparison.OrdinalIgnoreCase))
+            {
+                return ApiError(StatusCodes.Status415UnsupportedMediaType, "Content-Type must be application/json");
+            }
+            JsonDocument doc;
+            try
+            {
+                doc = await JsonDocument.ParseAsync(context.Request.Body, cancellationToken: context.RequestAborted);
+            }
+            catch (JsonException)
+            {
+                return ApiError(StatusCodes.Status400BadRequest, "body must be valid JSON");
+            }
+            using (doc)
+            {
+                var r = doc.RootElement;
+                if (r.ValueKind != JsonValueKind.Object ||
+                    !r.TryGetProperty("map", out var mEl) || mEl.ValueKind != JsonValueKind.String ||
+                    !maps.TryGetValue(mEl.GetString() ?? "", out var entry))
+                {
+                    return ApiError(StatusCodes.Status404NotFound, UnknownMapError);
+                }
+                if (!r.TryGetProperty("target", out var tEl) || tEl.ValueKind != JsonValueKind.Array || tEl.GetArrayLength() < 2 ||
+                    tEl.EnumerateArray().Any(e => e.ValueKind != JsonValueKind.Number || !float.IsFinite(e.GetSingle())))
+                {
+                    return ApiError(StatusCodes.Status400BadRequest, "target must be [x,y] or [x,y,z]");
+                }
+                if (!r.TryGetProperty("lineupId", out var lEl) || lEl.ValueKind != JsonValueKind.String ||
+                    lEl.GetString() is not { Length: 16 } lineupId || !lineupId.All(char.IsAsciiHexDigitLower))
+                {
+                    return ApiError(StatusCodes.Status400BadRequest, "lineupId must be a 16-character lineup id");
+                }
+                if (!r.TryGetProperty("vote", out var vEl) || vEl.ValueKind != JsonValueKind.Number ||
+                    !vEl.TryGetInt32(out var vote) || vote is not (-1 or 0 or 1))
+                {
+                    return ApiError(StatusCodes.Status400BadRequest, "vote must be 1, -1, or 0 to withdraw");
+                }
+                var target = new Vector3(tEl[0].GetSingle(), tEl[1].GetSingle(), tEl.GetArrayLength() > 2 ? tEl[2].GetSingle() : 0f);
+                var key = VoteStore.TargetKey(target, NamedTargets(root, entry.Mesh.MapName), VoteSnapRadius);
+                await votes.CastAsync(entry.Mesh.MapName, key, lineupId, steamId, vote, context.RequestAborted);
+                var (tallies, mine) = await votes.AtSpotAsync(entry.Mesh.MapName, key, steamId, context.RequestAborted);
+                return Results.Json(new
+                {
+                    target = key,
+                    tallies = tallies.ToDictionary(kv => kv.Key, kv => new { up = kv.Value.Up, down = kv.Value.Down, score = kv.Value.Score }),
+                    mine,
+                });
+            }
         }).RequireRateLimiting(AccountPolicy);
 
         // The named spots a smoke goes on this map. A click near one snaps to

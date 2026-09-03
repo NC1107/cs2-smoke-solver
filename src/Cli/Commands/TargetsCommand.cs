@@ -64,10 +64,16 @@ public static class TargetsCommand
         var targets = new List<CanonicalTarget>();
         foreach (var (members, centre, spread) in clusters)
         {
-            var kept = existing.FirstOrDefault(e => Vector2.Distance(new Vector2(e.Pos[0], e.Pos[1]), new Vector2(centre.X, centre.Y)) <= radius && e.Named);
+            // The nearest existing target within the radius is the same spot:
+            // its id always carries over, and its name does when a person set it.
+            var kept = existing
+                .Where(e => Vector2.Distance(new Vector2(e.Pos[0], e.Pos[1]), new Vector2(centre.X, centre.Y)) <= radius)
+                .OrderBy(e => Vector2.Distance(new Vector2(e.Pos[0], e.Pos[1]), new Vector2(centre.X, centre.Y)))
+                .FirstOrDefault();
+            var id = kept?.Id ?? MintId();
             string name;
             bool named;
-            if (kept is not null)
+            if (kept is { Named: true })
             {
                 name = kept.Name;
                 named = true;
@@ -80,11 +86,13 @@ public static class TargetsCommand
                     : dist <= CalloutNameReach ? callout
                     : $"near {callout}";
             }
-            targets.Add(new CanonicalTarget(name, named, [centre.X, centre.Y, centre.Z], members.Count, spread));
+            targets.Add(new CanonicalTarget(id, name, named, [centre.X, centre.Y, centre.Z], members.Count, spread));
         }
 
         var json = JsonSerializer.Serialize(targets.Select(t => new
         {
+            // Stable across renames and re-runs; what votes attach to.
+            id = t.Id,
             name = t.Name,
             // False until a person has confirmed the name. The viewer shows
             // provisional names in a lighter style so a guess never reads as
@@ -105,12 +113,18 @@ public static class TargetsCommand
         Console.WriteLine($"  covered {targets.Sum(t => t.Landings)} of {lands.Count} landings; wrote {outPath}");
         foreach (var t in targets)
         {
-            Console.WriteLine($"  {(t.Named ? " " : "?")} {t.Name,-22} [{t.Pos[0],6:F0},{t.Pos[1],6:F0},{t.Pos[2],5:F0}]  {t.Landings,3} landings, spread {t.Spread,3:F0}u");
+            Console.WriteLine($"  {(t.Named ? " " : "?")} {t.Id} {t.Name,-22} [{t.Pos[0],6:F0},{t.Pos[1],6:F0},{t.Pos[2],5:F0}]  {t.Landings,3} landings, spread {t.Spread,3:F0}u");
         }
         return 0;
     }
 
-    sealed record CanonicalTarget(string Name, bool Named, float[] Pos, int Landings, float Spread);
+    sealed record CanonicalTarget(string Id, string Name, bool Named, float[] Pos, int Landings, float Spread);
+
+    // A short random id, minted once per target and carried across re-runs.
+    // Votes and saved sets key on it, so it must survive a rename, a re-cluster
+    // that nudges the centre, and a person re-ordering the file.
+    static string MintId() =>
+        Convert.ToHexString(System.Security.Cryptography.RandomNumberGenerator.GetBytes(4)).ToLowerInvariant();
 
     // Greedy density clustering: seed on whichever remaining landing has the
     // most neighbours, absorb everything within the radius, repeat. Simple,
@@ -179,6 +193,7 @@ public static class TargetsCommand
         {
             using var doc = JsonDocument.Parse(File.ReadAllText(path));
             return doc.RootElement.EnumerateArray().Select(t => new CanonicalTarget(
+                t.TryGetProperty("id", out var idEl) && idEl.GetString() is { Length: > 0 } id ? id : MintId(),
                 t.GetProperty("name").GetString() ?? "unnamed",
                 t.TryGetProperty("named", out var n) && n.GetBoolean(),
                 t.GetProperty("pos").EnumerateArray().Select(v => v.GetSingle()).ToArray(),

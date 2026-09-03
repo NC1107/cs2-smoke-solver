@@ -1,6 +1,6 @@
 // Fetch wrappers. No DOM access here; callers own status text and overlays.
 
-import { state } from "./state.js?v=95";
+import { state } from "./state.js?v=97";
 
 // Cache-bust a data URL with the map build: re-processed radars/GLBs change
 // content without changing name, and the query string gets a fresh copy past
@@ -290,4 +290,26 @@ export async function putSavedLineups(lineups) {
   if (!res.ok) {
     throw new Error(`save HTTP ${res.status}`);
   }
+}
+
+// Community votes at a spot: { target, tallies: { lineupId: {up,down,score} }, mine: { lineupId: vote } }.
+export async function fetchVotes(map, target) {
+  const q = new URLSearchParams({ map, x: target[0], y: target[1], z: target[2] ?? 0 });
+  const res = await fetch(`/api/votes?${q}`);
+  if (!res.ok) {
+    throw new Error(`votes HTTP ${res.status}`);
+  }
+  return res.json();
+}
+
+export async function castVote(map, target, lineupId, vote) {
+  const res = await fetch("/api/vote", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ map, target, lineupId, vote }),
+  });
+  if (!res.ok) {
+    return { error: (await res.json().catch(() => ({}))).error ?? `error ${res.status}` };
+  }
+  return { data: await res.json() };
 }
