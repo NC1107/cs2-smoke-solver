@@ -1,6 +1,7 @@
 using System.Numerics;
 using SmokeSolver.Cli;
 using SmokeSolver.Sim;
+using SmokeSolver.Solver;
 
 namespace SmokeSolver.Sim.Tests;
 
@@ -186,5 +187,51 @@ public class TargetSolverTests
         Assert.Equal(target.X, solve.Target.X, 0.01f);
         Assert.Equal(target.Y, solve.Target.Y, 0.01f);
         Assert.Equal(target.Z, solve.Target.Z, 0.01f);
+    }
+
+    // ---- the two facts the class comment promises and no test asserted ----
+
+    [Fact]
+    public void AThrowSpotWithAClearViewOfTheLandingIsFlaggedExposedAndOneBehindAWallIsNot()
+    {
+        // Open arena: every spot can see the landing.
+        var open = Solve(new Vector3(400, 0, 0), new Vector2(-200, 0));
+        Assert.NotEmpty(open.Lineups);
+        Assert.All(open.Lineups, l => Assert.True(l.DirectLos, $"open ground at {l.Feet} should see the landing"));
+
+        // A tall wall between the throw spot and the landing: nothing behind
+        // it can see over, so every lineup from behind it is concealed.
+        var walled = SyntheticMeshes.FromQuads([
+            SyntheticMeshes.Ground(-Extent, Extent, 0),
+            SyntheticMeshes.WallX(100, -Extent, Extent, 0, 300),
+        ]);
+        var behind = TargetSolver.SolveForTarget(
+            walled, null, ArenaNav(), new Vector3(400, 0, 0), hasTargetZ: true,
+            new Vector2(-200, 0), 150f, 128f, ThrowConstants.Default);
+        Assert.NotEmpty(behind.Lineups);
+        Assert.All(behind.Lineups, l => Assert.False(l.DirectLos, $"{l.Feet} is behind a 300u wall and cannot see the landing"));
+    }
+
+    [Fact]
+    public void ARunFromBesideAWallProducesPinnedOriginsAndTheRankingPutsThemFirst()
+    {
+        // A wall next to the throw spot: the lattice sample beside it gains a
+        // wall-pinned twin, and the API's order prefers it.
+        var walled = SyntheticMeshes.FromQuads([
+            SyntheticMeshes.Ground(-Extent, Extent, 0),
+            SyntheticMeshes.WallY(-Extent, Extent, -232, 0, 128),
+        ]);
+        var solve = TargetSolver.SolveForTarget(
+            walled, null, ArenaNav(), new Vector3(400, 0, 0), hasTargetZ: true,
+            new Vector2(-200, -200), 64f, 128f, ThrowConstants.Default);
+        Assert.NotEmpty(solve.Lineups);
+        var pinned = solve.Lineups.Where(l => LineupSolver.PositionStance(solve.PlayerCollider, l.Feet).Pin > 0).ToList();
+        Assert.NotEmpty(pinned);
+        // Pressed against the wall from either side: a hull half-width off it.
+        Assert.All(pinned, l => Assert.Equal(16f, MathF.Abs(l.Feet.Y + 232f), 1.5f));
+
+        var ranked = LineupApi.Ranked(solve, new Vector2(-200, -200));
+        Assert.True(LineupSolver.PositionStance(solve.PlayerCollider, ranked[0].Feet).Pin > 0,
+            $"the first-ranked lineup stands at {ranked[0].Feet}, which is not against the wall");
     }
 }

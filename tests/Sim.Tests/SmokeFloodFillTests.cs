@@ -110,10 +110,14 @@ public class SmokeFloodFillTests
         Assert.True(cmax.X - cmin.X <= 2 * SmokeParams.CoverageRadius + 16, $"capped ran {cmax.X - cmin.X}u along the corridor");
         Assert.True(smax.X - smin.X > cmax.X - cmin.X + 64, $"stretched fill ran {smax.X - smin.X}u, capped {cmax.X - cmin.X}u");
         Assert.True(stretched.Cells.Length > capped.Cells.Length, "the stretched fill should spend more of its budget");
+        // Further, but not without limit: the stretched reach is the ceiling.
+        var ceiling = SmokeParams.CoverageRadius * SmokeParams.Coverage.ContainedStretch + 16f;
         foreach (var cell in stretched.Cells)
         {
             Assert.False(grid.IsSolid(cell));
+            Assert.True(Vector3.Distance(grid.CellCenter(cell), at) <= ceiling, $"cell {grid.CellCenter(cell)} is past the stretched reach");
         }
+        Assert.True(stretched.Cells.Length <= SmokeParams.GameCellBudget, "never more cells than the budget");
     }
 
     [Fact]

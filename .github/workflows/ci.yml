@@ -37,6 +37,12 @@ jobs:
       - name: Viewer static check
         run: node --experimental-vm-modules rig/check-viewer.mjs
 
+      # The viewer's copy of HumanError is checked against the C# model's
+      # fixture (written by HumanErrorParityTests, committed), plus the pure
+      # logic around it.
+      - name: Viewer logic check
+        run: node --experimental-vm-modules rig/check-viewer-logic.mjs
+
       - name: Restore
         run: dotnet restore SmokeSolver.sln
 
