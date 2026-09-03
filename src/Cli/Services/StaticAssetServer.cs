@@ -73,8 +73,19 @@ public static class StaticAssetServer
             // lets the browser STORE the file - it just reconditions each load
             // against the ETag, so an unchanged file comes back as a 304 with no
             // re-download and only a changed file pays for a fresh transfer.
-            context.Response.Headers.CacheControl = "no-cache";
+            //
+            // Unless the URL names this exact version of the file: then the
+            // reply is immutable and the edge may keep it. no-cache on a 37MB
+            // GLB meant every viewer's download came from the origin, and the
+            // origin is the same box the solver saturates - textures crawled
+            // whenever a solve was running. /api/maps hands the viewer the
+            // token (AssetVersion); a stale token simply falls back to
+            // revalidation.
             etag = FileETag(full);
+            var wanted = context.Request.Query["v"].ToString();
+            context.Response.Headers.CacheControl = wanted.Length > 0 && wanted == AssetVersion(full)
+                ? "public, max-age=31536000, immutable"
+                : "no-cache";
         }
         if (etag != null)
         {
@@ -90,9 +101,13 @@ public static class StaticAssetServer
     }
 
     // For serve without --geo there is no build id; fall back to file identity.
-    static string FileETag(string path)
+    static string FileETag(string path) => "\"" + AssetVersion(path) + "\"";
+
+    /// <summary>The content token a URL names to be served as immutable:
+    /// changes whenever the file does.</summary>
+    public static string AssetVersion(string path)
     {
         var info = new FileInfo(path);
-        return $"\"{info.LastWriteTimeUtc.Ticks:x}-{info.Length:x}\"";
+        return $"{info.LastWriteTimeUtc.Ticks:x}-{info.Length:x}";
     }
 }

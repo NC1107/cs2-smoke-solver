@@ -3,8 +3,8 @@
 // previews. Loading, axis conversion, and material sanitization live here;
 // the interactive view and the preview path only consume the finished scene.
 
-import { state, lowMemoryDevice } from "./state.js?v=103";
-import { cacheBust } from "./api.js?v=103";
+import { state, lowMemoryDevice } from "./state.js?v=104";
+import { cacheBust } from "./api.js?v=104";
 
 const scriptPromises = {};
 export function loadScript(src) {
@@ -41,8 +41,13 @@ let texturedScenePromise = null;
 export function resetEnsureTexturedScene() {
   texturedScenePromise = null;
 }
-const desktopUrl = map => `data/${map}_textured.glb`;
-const mobileUrl = map => `data/${map}_textured.mobile.glb`;
+// Named by content token when /api/maps has one: the server then serves the
+// file as immutable and Cloudflare keeps it at the edge, instead of every
+// download coming from the origin box - the one the solver saturates.
+const versioned = (path, version) => version ? `${path}?v=${version}` : path;
+const mapInfo = map => state.mapList?.find(m => m.map === map);
+const desktopUrl = map => versioned(`data/${map}_textured.glb`, mapInfo(map)?.texturedVersion);
+const mobileUrl = map => versioned(`data/${map}_textured.mobile.glb`, mapInfo(map)?.mobileVersion);
 
 export function ensureTexturedScene(url) {
   texturedScenePromise ??= (async () => {
@@ -70,7 +75,7 @@ export function ensureTexturedScene(url) {
           state.statusEl.textContent = before;
         }
       };
-      loader.load(cacheBust(src), g => { restore(); resolve(g); }, progress => {
+      loader.load(src.includes("?v=") ? src : cacheBust(src), g => { restore(); resolve(g); }, progress => {
         if (progress.lengthComputable) {
           if (before === null) {
             before = state.statusEl.textContent;

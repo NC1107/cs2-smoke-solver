@@ -1028,6 +1028,25 @@
      execute rule so the two grouped lists read alike. */
   .score-row.score-repro { display: block; margin-bottom: 4px; padding-bottom: 4px; border-bottom: var(--border); line-height: 1.35; }
   .score-row.score-repro b { color: var(--accent); }
+  /* The admin target editor. */
+  #card-targets[hidden] { display: none; }
+  #card-targets > summary { display: list-item; }
+  #target-list { margin: 0 0 6px; padding: 0; list-style: none; display: grid; gap: 4px; max-height: 320px; overflow-y: auto; }
+  /* Two lines per pin in a 200px card: the name and its confirmation, then
+     where it is and what you can do to it. */
+  #target-list .target-row { display: grid; gap: 3px; padding: 4px; border: var(--border); border-radius: 4px; font-size: 0.88em; }
+  .target-row .line { display: flex; align-items: center; justify-content: space-between; gap: 6px; min-width: 0; }
+  .target-row .line input[type=text] { flex: 1; }
+  .target-row.current { border-color: var(--accent); }
+  .target-row.provisional input[type=text] { font-style: italic; }
+  .target-row input[type=text] { width: 100%; font: inherit; padding: 2px 5px; border: var(--border); border-radius: 3px; background: var(--panel); color: var(--fg); min-width: 0; }
+  .target-row .named { color: var(--muted); white-space: nowrap; font-size: 0.9em; display: inline-flex; align-items: center; gap: 3px; }
+  .target-row .pos { color: var(--muted); font-variant-numeric: tabular-nums; font-size: 0.9em; }
+  .target-row .acts { display: inline-flex; gap: 3px; justify-content: flex-end; }
+  .target-row .acts .btn { --btn-pad: 1px 5px; --btn-font-size: 10.5px; white-space: nowrap; }
+  .target-row .acts .btn.danger:hover { color: var(--danger); border-color: var(--danger); }
+  .target-actions { display: flex; gap: 6px; }
+  .target-actions .btn { flex: 1; }
   .saved-empty { margin: 8px 4px; color: var(--muted); font-size: 0.92em; line-height: 1.4; }
   .saved-empty a { color: var(--accent); }
   .saved-row .lu-head { align-items: center; }

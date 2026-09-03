@@ -56,6 +56,9 @@ export const state = {
   saved: [],
   // Which list the panel shows: the solver's results, or the lineups you saved.
   panelMode: "results",
+  // /api/maps as loaded at boot: which optional data each map has, and the
+  // content tokens of its big downloads.
+  mapList: [],
   // Community votes for the current result's spot: { target, tallies, mine }.
   // Held apart from the solver's score on purpose - one is a measurement of
   // the throw, the other an opinion about it, and blended they are both

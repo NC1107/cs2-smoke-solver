@@ -1,6 +1,6 @@
 // Fetch wrappers. No DOM access here; callers own status text and overlays.
 
-import { state } from "./state.js?v=103";
+import { state } from "./state.js?v=104";
 
 // Cache-bust a data URL with the map build: re-processed radars/GLBs change
 // content without changing name, and the query string gets a fresh copy past
@@ -318,4 +318,18 @@ export async function castVote(map, target, lineupId, vote) {
     return { error: (await res.json().catch(() => ({}))).error ?? `error ${res.status}` };
   }
   return { data: await res.json() };
+}
+
+// Replace a map's named targets (admin only): the server keeps ids, mints
+// them for new entries, and answers with the list as it was written.
+export async function putTargets(map, targets) {
+  const res = await fetch(`/api/targets?map=${encodeURIComponent(map)}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(targets.map(t => ({ id: t.id ?? undefined, name: t.name, named: !!t.named, pos: t.pos, landings: t.landings ?? 0, spread: t.spread ?? 0 }))),
+  });
+  if (!res.ok) {
+    throw new Error(res.status === 403 ? "not an admin" : (await res.json().catch(() => ({}))).error ?? `error ${res.status}`);
+  }
+  return res.json();
 }

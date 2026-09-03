@@ -2,18 +2,19 @@
 // import the feature modules; they call back into the orchestrators defined
 // here (setTarget, select, runQuery) via the init*/set*Callbacks hooks.
 
-import { state, filtered, esc, lowMemoryDevice, loadFavorites, setFavorite, isFavorite, DEFAULT_EYE_HEIGHT, EYE_HEIGHT_BY_TYPE, TARGET_SNAP_RADIUS, favoriteHooks, loadSavedLocal, persistSavedLocal} from "./state.js?v=103";
-import { loadMapList, loadMapData, runQuery as postLineupQuery, fetchTrajectory, fetchLineupOne, fetchSlack, fetchSpawns, fetchProSmokes, fetchMeshDiff, meshDiffExists, fetchLevels, fetchSmokeCoverage, runExecute, findExecuteSpots, fetchTargets, fetchMe, signOut, fetchSavedLineups, putSavedLineups, fetchVotes, castVote} from "./api.js?v=103";
-import { loadRadar, readColors, recolorRadar, draw, scheduleDraw, resize, resetView, initMap2d, screenOf } from "./map2d.js?v=103";
-import { ensure3d, resetEnsure3d, teardown3d, current3d, sync3d, syncProgress3d, syncMeshDiff3d, set3dCallbacks, applyTheme3d, verticalFovFromDesired } from "./view3d.js?v=103";
-import { resetEnsureTexturedScene } from "./textured-scene.js?v=103";
-import { capturePreview } from "./preview.js?v=103";
+import { state, filtered, esc, lowMemoryDevice, loadFavorites, setFavorite, isFavorite, DEFAULT_EYE_HEIGHT, EYE_HEIGHT_BY_TYPE, TARGET_SNAP_RADIUS, favoriteHooks, loadSavedLocal, persistSavedLocal} from "./state.js?v=104";
+import { loadMapList, loadMapData, runQuery as postLineupQuery, fetchTrajectory, fetchLineupOne, fetchSlack, fetchSpawns, fetchProSmokes, fetchMeshDiff, meshDiffExists, fetchLevels, fetchSmokeCoverage, runExecute, findExecuteSpots, fetchTargets, fetchMe, signOut, fetchSavedLineups, putSavedLineups, fetchVotes, castVote} from "./api.js?v=104";
+import { loadRadar, readColors, recolorRadar, draw, scheduleDraw, resize, resetView, initMap2d, screenOf } from "./map2d.js?v=104";
+import { ensure3d, resetEnsure3d, teardown3d, current3d, sync3d, syncProgress3d, syncMeshDiff3d, set3dCallbacks, applyTheme3d, verticalFovFromDesired } from "./view3d.js?v=104";
+import { initAdmin, renderAdmin } from "./admin.js?v=104";
+import { resetEnsureTexturedScene } from "./textured-scene.js?v=104";
+import { capturePreview } from "./preview.js?v=104";
 // Every local import across viewer/js carries the SAME ?v= token, bumped
 // together on any change. The HTML is served no-cache, so a fresh load pulls
 // main.js?v=N, which pulls every module at ?v=N - the whole graph refreshes as
 // one consistent set past Cloudflare's 4h JS cache, with no duplicate module
 // instances (which a partial versioning would cause). Bump the token everywhere.
-import { renderLineups, initPanel, revealSelected, resultStatusText } from "./panel.js?v=103";
+import { renderLineups, initPanel, revealSelected, resultStatusText } from "./panel.js?v=104";
 
 (async () => {
   // Map switching means a failed load is no longer necessarily terminal (the
@@ -240,6 +241,7 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
     const me = await fetchMe().catch(() => null);
     state.account = me;
     syncAccountUi();
+    renderAdmin();
     if (!me) {
       return;
     }
@@ -298,6 +300,7 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
   // what the page is already showing - and being able to inspect it is how
   // "the chip is not rendering" gets diagnosed in a minute instead of an hour.
   window.smokeState = state;
+  window.smokeRenderAdmin = renderAdmin;
 
   // ---- votes ----
 
@@ -976,6 +979,7 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
     fetchTargets(name).then(t => {
       if (state.mapGeneration !== gen) { return; }
       state.targets = disambiguateTargetNames(Array.isArray(t) ? t : []);
+      renderAdmin();
       // A target that arrived by link, before the names did, gets its name now.
       if (state.target && !state.targetName) {
         state.targetName = nearestNamedTarget(state.target)?.name ?? null;
@@ -1019,6 +1023,7 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
 
   try {
     mapList = await loadMapList();
+    state.mapList = mapList;
   } catch {
     bootError("/api/maps");
     return;
@@ -1557,15 +1562,16 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
   }
 
   // A spawn clicked before any target is a stated intention - "throw from
-  // here" - so it is held rather than discarded, and spent the moment the
-  // target it was waiting for arrives.
+  // here" - so it is held rather than discarded.
+  // Both positions set is still not a question asked: the search tiles ask
+  // it. This used to fire the spot search itself the moment the second
+  // position landed.
   function usePendingOrigin() {
-    const origin = state.pendingOrigin;
-    if (!origin || !state.target) {
+    if (!state.pendingOrigin || !state.target) {
       return;
     }
-    state.pendingOrigin = null;
-    runQuery({ target: state.target, origin });
+    statusEl.textContent = "throw spot and target set - Exact searches from that exact spot, Spot searches around it";
+    syncControls();
   }
 
   function pickOrigin(origin, team) {
@@ -1822,8 +1828,10 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
     });
   }
 
-  // A throw spot with a target already set is a solve from that spot; without
-  // one it waits, the same way a clicked spawn does.
+  // Setting the throw spot is setting a position, not asking a question:
+  // the search tiles ask it (Exact from that spot, Spot around it). It used
+  // to fire a spot search the moment the click landed, which meant every
+  // adjustment of where you stand cost a solve you had not asked for.
   async function useThrowSpot(origin) {
     state.pickingOrigin = false;
     canvas.classList.remove("picking");
@@ -1836,15 +1844,13 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
         origin = [origin[0], origin[1], levels[levels.length - 1].z];
       }
     }
-    if (state.target) {
-      runQuery({ target: state.target, origin });
-    } else {
-      state.pendingOrigin = origin;
-      statusEl.textContent = "throwing from there - now set the target you want to smoke";
-      syncControls();
-      draw();
-      sync3d();
-    }
+    state.pendingOrigin = origin;
+    statusEl.textContent = state.target
+      ? "throw spot set - Exact searches from that exact spot, Spot searches around it"
+      : "throwing from there - now set the target you want to smoke";
+    syncControls();
+    draw();
+    sync3d();
   }
   // Copy the target as a setpos command: pasteable back into the getpos box or
   // the game console. A 2D-picked target carries no Z; fall back to the searched
@@ -2221,6 +2227,33 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
     }
   }
 
+  // The admin's "Look": stand the camera back from the pin, a little above
+  // it, looking at it, in whichever 3D view is up (flat if none is).
+  async function lookAtTarget(t) {
+    const t3 = current3d() ?? await openView3d();
+    if (!t3) {
+      return;
+    }
+    const back = 260, up = 140;
+    // Approach from the map's centre side, so the pin is seen from where a
+    // player would usually see it rather than from outside the map.
+    const [rx0, ry0, rx1, ry1] = state.mapData.region;
+    const cx = (rx0 + rx1) / 2;
+    const cy = (ry0 + ry1) / 2;
+    const yaw = Math.atan2(t.pos[1] - cy, t.pos[0] - cx);
+    const feet = [t.pos[0] - back * Math.cos(yaw), t.pos[1] - back * Math.sin(yaw), t.pos[2] + up];
+    const pitchDeg = Math.atan2(up, back) * 180 / Math.PI;
+    t3.flyTo({ feet, type: "Stand", pitchDeg, yawDeg: yaw * 180 / Math.PI });
+    t3.focusStage();
+  }
+
+  initAdmin({
+    onSetTarget: t => setTarget(t, "looking at a pin"),
+    onLook: lookAtTarget,
+    onChanged: () => { scheduleDraw(); sync3d(); syncControls(); },
+    status: msg => { statusEl.textContent = msg; },
+  });
+
   initPanel({
     onSetTarget: setTarget, onSelect: select, onPreview: loadPreviewThumb,
     onGoTo: goToLineup, onFavorite: toggleFavorite, onRemove: removeLineup,
@@ -2238,9 +2271,9 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
   // hint (which otherwise wraps to three wasted lines above the map).
   const coarsePointer = matchMedia("(pointer: coarse)").matches;
   const hint3d = () => coarsePointer
-    ? "3D: 1 finger look · 2 fingers pan/zoom · " + (state.target ? "tap terrain = solve there · long-press = move target" : "tap terrain = set target")
+    ? "3D: 1 finger look · 2 fingers pan/zoom · " + (state.target ? "tap terrain = set throw spot · long-press = move target" : "tap terrain = set target")
     : "3D: WASD fly (Space/Ctrl up/down, Shift fast) · drag look · right-drag pan · scroll dolly · " +
-      (state.target ? "click terrain = solve from that spot · right-click = move target" : "click terrain = set target");
+      (state.target ? "click terrain = set throw spot · right-click = move target" : "click terrain = set target");
 
   // A latch, not a jump: the row it sits in is a set of things that are either
   // on or off, so leaving it lets the camera go back where it was rather than

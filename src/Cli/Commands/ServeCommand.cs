@@ -135,6 +135,12 @@ public static class ServeCommand
     static Task WriteInBandError(HttpContext context, string message) =>
         context.Response.WriteAsync(JsonSerializer.Serialize(new { error = message }), CancellationToken.None);
 
+    static string? AssetVersionOrNull(string path) => File.Exists(path) ? StaticAssetServer.AssetVersion(path) : null;
+
+    // A map has a few dozen named spots, not hundreds; and a name is a callout.
+    const int MaxTargetsPerMap = 200;
+    const int MaxTargetNameLength = 40;
+
     // A saved set is a few kilobytes; anything bigger is not a set of lineups.
     const int MaxSavedSetBytes = 256 * 1024;
     // Fewer flooded cells than this is not a smoke, it is a pocket: a full
@@ -216,6 +222,24 @@ public static class ServeCommand
     {
         var proto = context.Request.Headers["X-Forwarded-Proto"].ToString() is { Length: > 0 } p ? p.Split(',')[0].Trim() : context.Request.Scheme;
         return $"{proto}://{context.Request.Host}";
+    }
+
+    // Who may edit the map data through the API: SteamID64s, one per line, in
+    // data/admins.txt. A file rather than config so the list lives with the
+    // data it protects and survives redeploys; missing file means nobody.
+    static readonly TimeSpan AdminsTtl = TimeSpan.FromSeconds(30);
+    static (HashSet<string> Ids, DateTimeOffset At) adminsCache = ([], DateTimeOffset.MinValue);
+    static bool IsAdmin(string root, string steamId)
+    {
+        if (DateTimeOffset.UtcNow - adminsCache.At > AdminsTtl)
+        {
+            var path = Path.Combine(root, "data", "admins.txt");
+            var ids = File.Exists(path)
+                ? File.ReadAllLines(path).Select(l => l.Trim()).Where(l => l.Length == 17 && l.All(char.IsAsciiDigit)).ToHashSet(StringComparer.Ordinal)
+                : new HashSet<string>(StringComparer.Ordinal);
+            adminsCache = (ids, DateTimeOffset.UtcNow);
+        }
+        return adminsCache.Ids.Contains(steamId);
     }
 
     static string? SignedInSteamId(HttpContext context, byte[] secret) =>
@@ -347,6 +371,10 @@ public static class ServeCommand
                 hasProSmokes = File.Exists(Path.Combine(root, "data", $"{kv.Key}.prosmokes.json")),
                 hasMeshDiff = File.Exists(Path.Combine(root, "data", $"{kv.Key}.meshdiff.json")),
                 hasTextured = File.Exists(Path.Combine(root, "data", $"{kv.Key}_textured.glb")),
+                // Content tokens for the big downloads, so the viewer can ask
+                // for them by version and the edge can cache them.
+                texturedVersion = AssetVersionOrNull(Path.Combine(root, "data", $"{kv.Key}_textured.glb")),
+                mobileVersion = AssetVersionOrNull(Path.Combine(root, "data", $"{kv.Key}_textured.mobile.glb")),
             })));
 
         // Player spawn positions, read straight from the extracted entity lump
@@ -521,7 +549,7 @@ public static class ServeCommand
             }
             var profile = await SteamAuth.ProfileAsync(steamHttp, id);
             context.Response.Headers.CacheControl = "no-store";
-            return Results.Json(new { steamId = profile.SteamId, name = profile.Name, avatar = profile.Avatar });
+            return Results.Json(new { steamId = profile.SteamId, name = profile.Name, avatar = profile.Avatar, admin = IsAdmin(root, id) });
         }).RequireRateLimiting(AccountPolicy);
 
         app.MapPost("/auth/logout", (HttpContext context) =>
@@ -694,6 +722,93 @@ public static class ServeCommand
             context.Response.Headers.CacheControl = "no-cache";
             return Results.Text(json, JsonContentType);
         });
+
+        // The named targets, edited by an admin: the whole list replaces the
+        // file. Ids are kept (votes and saved lineups key on them) and minted
+        // for new entries; a target left out of the list is deleted.
+        app.MapPut("/api/targets", async (HttpContext context, string? map) =>
+        {
+            if (SignedInSteamId(context, sessionSecret) is not { } id || !IsAdmin(root, id))
+            {
+                return Results.StatusCode(StatusCodes.Status403Forbidden);
+            }
+            if (map == null || !maps.TryGetValue(map, out var entry))
+            {
+                return ApiError(StatusCodes.Status404NotFound, UnknownMapError);
+            }
+            if (context.Request.ContentType is not { } ct || !ct.StartsWith("application/json", StringComparison.OrdinalIgnoreCase))
+            {
+                return ApiError(StatusCodes.Status415UnsupportedMediaType, "Content-Type must be application/json");
+            }
+            if (context.Request.ContentLength is > MaxSavedSetBytes)
+            {
+                return ApiError(StatusCodes.Status413PayloadTooLarge, "targets list too large");
+            }
+            JsonDocument doc;
+            try
+            {
+                doc = await JsonDocument.ParseAsync(context.Request.Body, cancellationToken: context.RequestAborted);
+            }
+            catch (JsonException)
+            {
+                return ApiError(StatusCodes.Status400BadRequest, "body must be valid JSON");
+            }
+            using (doc)
+            {
+                if (doc.RootElement.ValueKind != JsonValueKind.Array || doc.RootElement.GetArrayLength() > MaxTargetsPerMap)
+                {
+                    return ApiError(StatusCodes.Status400BadRequest, $"body must be an array of at most {MaxTargetsPerMap} targets");
+                }
+                var (min, max) = entry.Mesh.ComputeBounds();
+                var seen = new HashSet<string>(StringComparer.Ordinal);
+                var cleaned = new List<object>();
+                foreach (var t in doc.RootElement.EnumerateArray())
+                {
+                    if (t.ValueKind != JsonValueKind.Object ||
+                        !t.TryGetProperty("name", out var nameEl) || nameEl.ValueKind != JsonValueKind.String ||
+                        !t.TryGetProperty("pos", out var posEl) || posEl.ValueKind != JsonValueKind.Array || posEl.GetArrayLength() != 3 ||
+                        posEl.EnumerateArray().Any(v => v.ValueKind != JsonValueKind.Number || !float.IsFinite(v.GetSingle())))
+                    {
+                        return ApiError(StatusCodes.Status400BadRequest, "each target needs a name and a [x,y,z] pos");
+                    }
+                    var name = nameEl.GetString()!.Trim();
+                    if (name.Length is 0 or > MaxTargetNameLength)
+                    {
+                        return ApiError(StatusCodes.Status400BadRequest, $"names must be 1-{MaxTargetNameLength} characters");
+                    }
+                    var pos = posEl.EnumerateArray().Select(v => v.GetSingle()).ToArray();
+                    if (pos[0] < min.X - 256 || pos[0] > max.X + 256 || pos[1] < min.Y - 256 || pos[1] > max.Y + 256)
+                    {
+                        return ApiError(StatusCodes.Status400BadRequest, $"target \"{name}\" is outside the map");
+                    }
+                    var tid = t.TryGetProperty("id", out var idEl) && idEl.ValueKind == JsonValueKind.String && idEl.GetString() is { Length: 8 } existing && existing.All(char.IsAsciiHexDigitLower)
+                        ? existing
+                        : Convert.ToHexString(System.Security.Cryptography.RandomNumberGenerator.GetBytes(4)).ToLowerInvariant();
+                    if (!seen.Add(tid))
+                    {
+                        return ApiError(StatusCodes.Status400BadRequest, $"duplicate target id {tid}");
+                    }
+                    cleaned.Add(new
+                    {
+                        id = tid,
+                        name,
+                        named = t.TryGetProperty("named", out var namedEl) && namedEl.ValueKind == JsonValueKind.True,
+                        pos = new[] { MathF.Round(pos[0], 1), MathF.Round(pos[1], 1), MathF.Round(pos[2], 1) },
+                        landings = t.TryGetProperty("landings", out var lEl) && lEl.ValueKind == JsonValueKind.Number ? lEl.GetInt32() : 0,
+                        spread = t.TryGetProperty("spread", out var sEl) && sEl.ValueKind == JsonValueKind.Number ? MathF.Round(sEl.GetSingle(), 1) : 0f,
+                    });
+                }
+                var json = JsonSerializer.Serialize(cleaned, new JsonSerializerOptions { WriteIndented = true });
+                var path = Path.Combine(root, "data", $"{entry.Mesh.MapName}.targets.json");
+                var temp = path + "." + Environment.CurrentManagedThreadId + ".tmp";
+                await File.WriteAllTextAsync(temp, json, context.RequestAborted);
+                File.Move(temp, path, overwrite: true);
+                TargetsCache.TryRemove(entry.Mesh.MapName, out _);
+                NamedTargetsCache.TryRemove(entry.Mesh.MapName, out _);
+                Console.WriteLine($"targets for {entry.Mesh.MapName} saved by {id}: {cleaned.Count} entries");
+                return Results.Text(json, JsonContentType);
+            }
+        }).RequireRateLimiting(AccountPolicy);
 
         app.MapGet("/api/levels", (string? map, float x, float y) =>
         {

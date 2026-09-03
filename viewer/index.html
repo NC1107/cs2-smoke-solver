@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Smoke Solver</title>
 <link rel="icon" href="viewer/favicon.svg" type="image/svg+xml">
-<link rel="stylesheet" href="viewer/app.css?v=103">
+<link rel="stylesheet" href="viewer/app.css?v=104">
 </head>
 <body>
 
@@ -209,6 +209,18 @@
         </div>
         <span class="action-label key-subhead" id="execute-spots-label" hidden title="Ranked by the hardest smoke of the set: a spot is only as good as its worst aim">spots that throw all · hardest aim</span>
         <ul id="execute-spots" hidden aria-label="Spots that can throw every smoke"></ul>
+      </div>
+    </details>
+    <!-- Admin only: the target editor. Hidden unless /auth/me says admin. -->
+    <details class="card" id="card-targets" hidden open>
+      <summary>targets <span class="filter-count" id="targets-count"></span></summary>
+      <div class="card-body">
+        <p class="exec-hint">Name the pins, move them, add and remove them. Look flies the camera to a pin; Here moves a pin to the current target.</p>
+        <ol id="target-list" aria-label="Named targets on this map"></ol>
+        <div class="target-actions">
+          <button id="targets-add" class="btn" title="Add a pin at the current target">Add pin at target</button>
+          <button id="targets-save" class="btn primary" disabled>Saved</button>
+        </div>
       </div>
     </details>
     <details class="card" id="card-advanced">
@@ -426,6 +438,6 @@ give weapon_smokegrenade<button data-copy="cmd-setup" class="btn">copy</button><
      4h, so bumping ?v= here is what busts that cache. Bump on any change to a
      directly-referenced asset. (The permanent cure is CF Browser Cache TTL ->
      "Respect Existing Headers", after which this is belt-and-suspenders.) -->
-<script type="module" src="viewer/js/main.js?v=103"></script>
+<script type="module" src="viewer/js/main.js?v=104"></script>
 </body>
 </html>

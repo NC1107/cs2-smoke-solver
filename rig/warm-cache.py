@@ -83,8 +83,10 @@ def main():
         targets = targets_for(m)
         print(f"=== {m}: warming {len(targets)} targets ===")
         done = 0
-        # The server caps concurrent solves at 2 (SolveGate); match it.
-        with ThreadPoolExecutor(max_workers=2) as pool:
+        # The server caps concurrent solves at 2 (SolveGate). One worker by
+        # default so a slot stays free for whoever is using the site while
+        # this runs; WARM_WORKERS=2 takes both when nobody is.
+        with ThreadPoolExecutor(max_workers=int(os.environ.get("WARM_WORKERS", "1"))) as pool:
             for target, (dt, n) in zip(targets, pool.map(lambda t: solve(m, t), targets)):
                 done += 1
                 total += 1
