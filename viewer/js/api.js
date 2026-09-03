@@ -1,6 +1,6 @@
 // Fetch wrappers. No DOM access here; callers own status text and overlays.
 
-import { state } from "./state.js?v=94";
+import { state } from "./state.js?v=95";
 
 // Cache-bust a data URL with the map build: re-processed radars/GLBs change
 // content without changing name, and the query string gets a fresh copy past
@@ -259,4 +259,35 @@ export async function findExecuteSpots(map, targets) {
     return { error: (await res.json().catch(() => ({}))).error ?? `error ${res.status}` };
   }
   return { data: await res.json() };
+}
+
+// Who is signed in, or null. Never throws: an anonymous visitor is the normal
+// case, not an error.
+export async function fetchMe() {
+  const res = await fetch("/auth/me");
+  return res.ok ? res.json() : null;
+}
+
+export async function signOut() {
+  await fetch("/auth/logout", { method: "POST" });
+}
+
+// The account's saved lineups: { lineups: [...] }.
+export async function fetchSavedLineups() {
+  const res = await fetch("/api/me/lineups");
+  if (!res.ok) {
+    throw new Error(`saved lineups HTTP ${res.status}`);
+  }
+  return res.json();
+}
+
+export async function putSavedLineups(lineups) {
+  const res = await fetch("/api/me/lineups", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ lineups }),
+  });
+  if (!res.ok) {
+    throw new Error(`save HTTP ${res.status}`);
+  }
 }

@@ -933,6 +933,10 @@
      the recommendation it is. */
   /* The ranking number, on the row. Muted and tabular so it reads as a
      reference figure being compared down the column, not as a headline. */
+  /* Account controls in the toolbar: the id is a quiet monospace tag, not a
+     headline - it exists so you can tell which account, nothing more. */
+  .account { display: inline-flex; align-items: center; gap: 8px; }
+  #whoami { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 12px; color: var(--muted); }
   .lu-score {
     margin-left: auto;
     color: var(--muted);

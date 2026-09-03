@@ -2,18 +2,18 @@
 // import the feature modules; they call back into the orchestrators defined
 // here (setTarget, select, runQuery) via the init*/set*Callbacks hooks.
 
-import { state, filtered, esc, lowMemoryDevice, loadFavorites, setFavorite, isFavorite, DEFAULT_EYE_HEIGHT, EYE_HEIGHT_BY_TYPE, TARGET_SNAP_RADIUS} from "./state.js?v=94";
-import { loadMapList, loadMapData, runQuery as postLineupQuery, fetchTrajectory, fetchLineupOne, fetchSlack, fetchSpawns, fetchProSmokes, fetchMeshDiff, meshDiffExists, fetchLevels, fetchSmokeCoverage, runExecute, findExecuteSpots, fetchTargets} from "./api.js?v=94";
-import { loadRadar, readColors, recolorRadar, draw, scheduleDraw, resize, resetView, initMap2d, screenOf } from "./map2d.js?v=94";
-import { ensure3d, resetEnsure3d, teardown3d, current3d, sync3d, syncProgress3d, syncMeshDiff3d, set3dCallbacks, applyTheme3d, verticalFovFromDesired } from "./view3d.js?v=94";
-import { resetEnsureTexturedScene } from "./textured-scene.js?v=94";
-import { capturePreview } from "./preview.js?v=94";
+import { state, filtered, esc, lowMemoryDevice, loadFavorites, setFavorite, isFavorite, DEFAULT_EYE_HEIGHT, EYE_HEIGHT_BY_TYPE, TARGET_SNAP_RADIUS, favoriteHooks} from "./state.js?v=95";
+import { loadMapList, loadMapData, runQuery as postLineupQuery, fetchTrajectory, fetchLineupOne, fetchSlack, fetchSpawns, fetchProSmokes, fetchMeshDiff, meshDiffExists, fetchLevels, fetchSmokeCoverage, runExecute, findExecuteSpots, fetchTargets, fetchMe, signOut, fetchSavedLineups, putSavedLineups} from "./api.js?v=95";
+import { loadRadar, readColors, recolorRadar, draw, scheduleDraw, resize, resetView, initMap2d, screenOf } from "./map2d.js?v=95";
+import { ensure3d, resetEnsure3d, teardown3d, current3d, sync3d, syncProgress3d, syncMeshDiff3d, set3dCallbacks, applyTheme3d, verticalFovFromDesired } from "./view3d.js?v=95";
+import { resetEnsureTexturedScene } from "./textured-scene.js?v=95";
+import { capturePreview } from "./preview.js?v=95";
 // Every local import across viewer/js carries the SAME ?v= token, bumped
 // together on any change. The HTML is served no-cache, so a fresh load pulls
 // main.js?v=N, which pulls every module at ?v=N - the whole graph refreshes as
 // one consistent set past Cloudflare's 4h JS cache, with no duplicate module
 // instances (which a partial versioning would cause). Bump the token everywhere.
-import { renderLineups, initPanel, revealSelected, resultStatusText } from "./panel.js?v=94";
+import { renderLineups, initPanel, revealSelected, resultStatusText } from "./panel.js?v=95";
 
 (async () => {
   // Map switching means a failed load is no longer necessarily terminal (the
@@ -172,6 +172,99 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
     }
     await loadCoverage();
   });
+
+  // ---- the account: sign-in, and favourites that follow it ----
+
+  const signinEl = document.getElementById("signin");
+  const whoamiEl = document.getElementById("whoami");
+  const signoutBtn = document.getElementById("signout");
+
+  function syncAccountUi() {
+    const me = state.account;
+    signinEl.hidden = !!me;
+    whoamiEl.hidden = !me;
+    signoutBtn.hidden = !me;
+    if (me) {
+      // Steam's OpenID hands back only the id; a persona name needs a Web API
+      // key this server deliberately does not hold. The last digits are
+      // enough to see which account this is.
+      whoamiEl.textContent = `Steam \u2026${me.steamId.slice(-5)}`;
+      whoamiEl.title = `Signed in as SteamID ${me.steamId}. Saved lineups are kept on this account.`;
+    }
+  }
+
+  // Push the whole set after a change, coalesced so a burst of stars is one
+  // write. Replace-whole is deliberate: the client always holds the full set
+  // and the server stores it atomically, so there is no partial state to get
+  // wrong.
+  let saveTimer = null;
+  function scheduleAccountSave() {
+    if (!state.account) {
+      return;
+    }
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(async () => {
+      try {
+        await putSavedLineups(state.saved);
+      } catch (err) {
+        statusEl.textContent = `could not save to your account: ${err.message}`;
+      }
+    }, 600);
+  }
+  favoriteHooks.onChange = scheduleAccountSave;
+
+  async function loadAccount() {
+    const me = await fetchMe().catch(() => null);
+    state.account = me;
+    syncAccountUi();
+    if (!me) {
+      return;
+    }
+    try {
+      const { lineups } = await fetchSavedLineups();
+      // Merge, never replace: what is on the account and what this browser
+      // starred before signing in are both real. A lineup saved anywhere is
+      // saved everywhere, keyed by its durable id.
+      const byKey = new Map(lineups.map(l => [`${l.map}|${l.id}`, l]));
+      for (const l of state.saved) {
+        byKey.set(`${l.map}|${l.id}`, l);
+      }
+      state.saved = [...byKey.values()];
+      // And the star state for the current map reflects the merged set.
+      for (const l of state.saved) {
+        if (l.map === state.currentMap) {
+          state.favorites.add(l.id);
+        }
+      }
+      if (state.result?.lineups) {
+        for (const l of state.result.lineups) { l._favorite = isFavorite(l); }
+        renderLineups();
+      }
+      scheduleAccountSave();
+    } catch (err) {
+      statusEl.textContent = `signed in, but your saved lineups did not load: ${err.message}`;
+    }
+  }
+
+  signoutBtn.addEventListener("click", async () => {
+    await signOut().catch(() => {});
+    state.account = null;
+    syncAccountUi();
+    statusEl.textContent = "signed out - favourites stay in this browser";
+  });
+
+  // The redirect back from Steam lands here with ?signin=ok|failed; say so
+  // once and drop it from the URL so a reload does not repeat it.
+  {
+    const params = new URLSearchParams(location.search);
+    const signin = params.get("signin");
+    if (signin) {
+      statusEl.textContent = signin === "ok" ? "signed in with Steam" : "Steam sign-in did not complete - try again";
+      params.delete("signin");
+      history.replaceState(null, "", location.pathname + (params.toString() ? "?" + params : "") + location.hash);
+    }
+  }
+  loadAccount();
 
   // ---- executes: several smokes from one stance ----
 

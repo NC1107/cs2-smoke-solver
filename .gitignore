@@ -63,3 +63,9 @@ data/gather-hltv-browser.log
 # output, useful while a run is in flight and never afterwards.
 data/onboard-logs/
 data/reextract-logs/
+
+# Account data. The session secret signs every login cookie - committing it
+# would let anyone mint sessions - and the per-user files are people's saved
+# lineups, not code. Both live in the bind-mounted data/ on prod.
+data/session.secret
+data/users/

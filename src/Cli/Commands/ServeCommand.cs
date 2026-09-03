@@ -76,6 +76,16 @@ public static class ServeCommand
     const int PhysicsRefill = 120;
     static readonly TimeSpan PhysicsRefillPeriod = TimeSpan.FromSeconds(30);
 
+    // Sign-in and per-account endpoints. Cheap, but a login callback makes a
+    // server-side call to Steam, so it must not be hammerable.
+    const string AccountPolicy = "account";
+    const int AccountBurst = 30;
+    const int AccountRefill = 15;
+    static readonly TimeSpan AccountRefillPeriod = TimeSpan.FromSeconds(30);
+
+    // A saved set is a few kilobytes; anything bigger is not a set of lineups.
+    const int MaxSavedSetBytes = 256 * 1024;
+
     // Behind the reverse proxy every request arrives from the same socket
     // address, so a forwarded header is the only thing that tells one caller
     // from another - but only a header the client cannot write itself will do.
@@ -137,6 +147,23 @@ public static class ServeCommand
         NoteCacheWrite(root, json.Length);
     }
 
+
+    // The origin the browser reached us at, for Steam's return_to and realm.
+    // Behind traefik the scheme arrives in X-Forwarded-Proto and the host in
+    // Host; locally it is plain http. The realm must match return_to's origin
+    // exactly or Steam refuses the assertion.
+    static string PublicOrigin(HttpContext context)
+    {
+        var proto = context.Request.Headers["X-Forwarded-Proto"].ToString() is { Length: > 0 } p ? p.Split(',')[0].Trim() : context.Request.Scheme;
+        return $"{proto}://{context.Request.Host}";
+    }
+
+    static string? SignedInSteamId(HttpContext context, byte[] secret) =>
+        SteamAuth.ReadSession(secret, context.Request.Cookies[SteamAuth.CookieName], DateTimeOffset.UtcNow);
+
+    static string SavedSetPath(string root, string steamId) =>
+        Path.Combine(root, "data", "users", steamId + ".json");
+
     public static int Run(Dictionary<string, string> options)
     {
         var port = int.Parse(options.GetValueOrDefault("port", "8137"), CultureInfo.InvariantCulture);
@@ -156,6 +183,8 @@ public static class ServeCommand
         }
         StartBrotliPrecompress(maps, root);
         PruneCache(root, maps);
+        var sessionSecret = SteamAuth.LoadOrCreateSecret(root);
+        using var steamHttp = new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
 
         // A solve occupies one pool thread per core (see Cpu.Bound). The pool's
         // default floor is exactly that many, so everything else the request
@@ -204,6 +233,16 @@ public static class ServeCommand
                     ReplenishmentPeriod = SolveRefillPeriod,
                     // Queueing a rejected solve helps nobody: the caller would
                     // rather be told to slow down than hold a connection open.
+                    QueueLimit = 0,
+                    AutoReplenishment = true,
+                }));
+            limiter.AddPolicy(AccountPolicy, context => RateLimitPartition.GetTokenBucketLimiter(
+                ClientKey(context),
+                _ => new TokenBucketRateLimiterOptions
+                {
+                    TokenLimit = AccountBurst,
+                    TokensPerPeriod = AccountRefill,
+                    ReplenishmentPeriod = AccountRefillPeriod,
                     QueueLimit = 0,
                     AutoReplenishment = true,
                 }));
@@ -354,6 +393,119 @@ public static class ServeCommand
                 cells,
             });
         }).RequireRateLimiting(PhysicsPolicy);
+
+        // ---- sign in with Steam, and what an account holds ----
+
+        app.MapGet("/auth/steam", (HttpContext context) =>
+            Results.Redirect(SteamAuth.LoginUrl(PublicOrigin(context))))
+            .RequireRateLimiting(AccountPolicy);
+
+        app.MapGet("/auth/steam/callback", async (HttpContext context) =>
+        {
+            var query = context.Request.Query.ToDictionary(kv => kv.Key, kv => kv.Value.ToString(), StringComparer.Ordinal);
+            var steamId = await SteamAuth.VerifyCallbackAsync(
+                query,
+                PublicOrigin(context) + "/auth/steam/callback",
+                form => SteamAuth.PostToSteamAsync(steamHttp, form));
+            if (steamId is null)
+            {
+                return Results.Redirect("/?signin=failed");
+            }
+            context.Response.Cookies.Append(SteamAuth.CookieName, SteamAuth.MintSession(sessionSecret, steamId, DateTimeOffset.UtcNow), new CookieOptions
+            {
+                HttpOnly = true,
+                Secure = context.Request.IsHttps || context.Request.Headers["X-Forwarded-Proto"].ToString().StartsWith("https", StringComparison.OrdinalIgnoreCase),
+                // Lax: sent on top-level navigation (so the redirect back from
+                // Steam lands signed in) but never on a cross-site POST, which
+                // is what keeps the write endpoints below CSRF-safe.
+                SameSite = SameSiteMode.Lax,
+                MaxAge = SteamAuth.SessionLength,
+                Path = "/",
+            });
+            return Results.Redirect("/?signin=ok");
+        }).RequireRateLimiting(AccountPolicy);
+
+        app.MapGet("/auth/me", (HttpContext context) =>
+            SignedInSteamId(context, sessionSecret) is { } id
+                ? Results.Json(new { steamId = id })
+                : Results.StatusCode(StatusCodes.Status401Unauthorized))
+            .RequireRateLimiting(AccountPolicy);
+
+        app.MapPost("/auth/logout", (HttpContext context) =>
+        {
+            context.Response.Cookies.Delete(SteamAuth.CookieName, new CookieOptions { Path = "/" });
+            return Results.NoContent();
+        }).RequireRateLimiting(AccountPolicy);
+
+        // The account's saved lineups: one JSON file per SteamID, replaced whole.
+        // A set is a few kilobytes and changes when a person clicks a star, so
+        // replace-whole with temp-then-rename is both simpler and safer than
+        // patching, and the client always holds the full set anyway.
+        app.MapGet("/api/me/lineups", async (HttpContext context) =>
+        {
+            if (SignedInSteamId(context, sessionSecret) is not { } id)
+            {
+                return Results.StatusCode(StatusCodes.Status401Unauthorized);
+            }
+            var path = SavedSetPath(root, id);
+            context.Response.Headers.CacheControl = "no-store";
+            return File.Exists(path)
+                ? Results.Text(await File.ReadAllTextAsync(path, context.RequestAborted), JsonContentType)
+                : Results.Text("{\"lineups\":[]}", JsonContentType);
+        }).RequireRateLimiting(AccountPolicy);
+
+        app.MapPut("/api/me/lineups", async (HttpContext context) =>
+        {
+            if (SignedInSteamId(context, sessionSecret) is not { } id)
+            {
+                return Results.StatusCode(StatusCodes.Status401Unauthorized);
+            }
+            // JSON-only, like every write here: a browser cannot send this
+            // content type cross-site without a preflight, and the Lax cookie
+            // would not travel on such a request anyway.
+            if (context.Request.ContentType is not { } ct || !ct.StartsWith("application/json", StringComparison.OrdinalIgnoreCase))
+            {
+                return ApiError(StatusCodes.Status415UnsupportedMediaType, "Content-Type must be application/json");
+            }
+            if (context.Request.ContentLength is > MaxSavedSetBytes)
+            {
+                return ApiError(StatusCodes.Status413PayloadTooLarge, "saved set too large");
+            }
+            var buffer = new byte[MaxSavedSetBytes + 1];
+            var read = 0;
+            int n;
+            while ((n = await context.Request.Body.ReadAsync(buffer.AsMemory(read), context.RequestAborted)) > 0)
+            {
+                read += n;
+                if (read > MaxSavedSetBytes)
+                {
+                    return ApiError(StatusCodes.Status413PayloadTooLarge, "saved set too large");
+                }
+            }
+            string body;
+            try
+            {
+                // Parse, then store the parsed form: what lands on disk is
+                // known-valid JSON of the expected shape, not whatever arrived.
+                using var doc = JsonDocument.Parse(buffer.AsMemory(0, read));
+                if (doc.RootElement.ValueKind != JsonValueKind.Object ||
+                    !doc.RootElement.TryGetProperty("lineups", out var ls) || ls.ValueKind != JsonValueKind.Array)
+                {
+                    return ApiError(StatusCodes.Status400BadRequest, "body must be {\"lineups\":[...]}");
+                }
+                body = JsonSerializer.Serialize(new { lineups = ls, updated = DateTimeOffset.UtcNow.ToUnixTimeSeconds() });
+            }
+            catch (JsonException)
+            {
+                return ApiError(StatusCodes.Status400BadRequest, "body must be valid JSON");
+            }
+            var path = SavedSetPath(root, id);
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            var temp = path + "." + Environment.CurrentManagedThreadId + ".tmp";
+            await File.WriteAllTextAsync(temp, body, context.RequestAborted);
+            File.Move(temp, path, overwrite: true);
+            return Results.NoContent();
+        }).RequireRateLimiting(AccountPolicy);
 
         // The named spots a smoke goes on this map. A click near one snaps to
         // it, which is what gives a target a durable identity: two people who

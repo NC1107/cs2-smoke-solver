@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Smoke Solver</title>
 <link rel="icon" href="viewer/favicon.svg" type="image/svg+xml">
-<link rel="stylesheet" href="viewer/app.css?v=94">
+<link rel="stylesheet" href="viewer/app.css?v=95">
 </head>
 <body>
 
@@ -15,6 +15,11 @@
   <output id="status" aria-live="polite"></output>
   <button id="solve-cancel" class="btn" hidden>Cancel</button>
   <span id="readout"></span>
+  <span id="account" class="account">
+    <a id="signin" class="btn" href="/auth/steam" title="Sign in with Steam so your saved lineups follow you to any browser. Browsing and solving never need an account">Sign in with Steam</a>
+    <span id="whoami" hidden></span>
+    <button id="signout" class="btn" hidden title="Sign out of this browser">Sign out</button>
+  </span>
   <a class="btn nav-link" href="viewer/validation.html" title="Simulation accuracy: automated in-game validation runs">Accuracy</a>
 </div>
 
@@ -396,6 +401,6 @@ give weapon_smokegrenade<button data-copy="cmd-setup" class="btn">copy</button><
      4h, so bumping ?v= here is what busts that cache. Bump on any change to a
      directly-referenced asset. (The permanent cure is CF Browser Cache TTL ->
      "Respect Existing Headers", after which this is belt-and-suspenders.) -->
-<script type="module" src="viewer/js/main.js?v=94"></script>
+<script type="module" src="viewer/js/main.js?v=95"></script>
 </body>
 </html>

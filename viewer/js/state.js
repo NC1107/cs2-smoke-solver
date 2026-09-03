@@ -48,6 +48,12 @@ export const state = {
   // Favourites, persisted per map (see favKey): a lineup you saved survives
   // re-solving, filtering and reloading.
   favorites: new Set(),
+  // Signed-in account, or null. Browsing and solving never need one; saving
+  // and (later) voting do.
+  account: null,
+  // The account's saved lineups as full throw specs, so they can be shown and
+  // reopened without re-solving. Mirrors `favorites` once signed in.
+  saved: [],
   // The throw spot the last one-spot solve used, for copying back out.
   lastOrigin: null,
   // A spawn marker clicked before a target exists: held, not discarded, so the
@@ -301,7 +307,33 @@ export function loadFavorites(map) {
     // A private window or blocked storage just means favourites do not persist.
     state.favorites = new Set();
   }
+  // What the account holds for this map counts too; without this a map switch
+  // would show only the stars this browser set and forget the ones that came
+  // in from the account at sign-in.
+  for (const l of state.saved) {
+    if (l.map === map) {
+      state.favorites.add(l.id);
+    }
+  }
 }
+
+// The throw itself, in the shape a shared link carries, so a saved lineup can
+// be reopened on any browser without the solve that found it.
+export function lineupSpec(map, l) {
+  return {
+    id: l.id ?? favKey(l),
+    map,
+    type: l.type, strength: l.strength, runDeg: l.runDeg ?? 0,
+    feet: l.feet.map(v => Math.round(v * 10) / 10),
+    pitch: Math.round(l.pitch * 100) / 100, yaw: Math.round(l.yaw * 100) / 100,
+    target: state.result?.target ? state.result.target.map(v => Math.round(v * 10) / 10) : null,
+    savedAt: Date.now(),
+  };
+}
+
+// Called after every favourite change; main.js points it at the account sync
+// once someone is signed in. Kept here so state.js stays import-free.
+export const favoriteHooks = { onChange: null };
 
 export function setFavorite(map, l, on) {
   const key = favKey(l);
@@ -319,6 +351,12 @@ export function setFavorite(map, l, on) {
   } catch {
     // Not persisting is survivable; the in-session flag above still holds.
   }
+  // The account's copy carries the whole throw, not just its key.
+  state.saved = state.saved.filter(s => !(s.map === map && s.id === key));
+  if (on) {
+    state.saved.push(lineupSpec(map, l));
+  }
+  favoriteHooks.onChange?.();
 }
 
 export function isFavorite(l) {
