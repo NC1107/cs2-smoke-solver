@@ -1553,7 +1553,9 @@ public static class ServeCommand
                     await WriteLine($"{{\"phase\":\"queued\",\"count\":{ahead}}}");
                     while (true)
                     {
-                        if (lowPriority && (interactiveQueued > 0 || interactiveRunning > 0 || DateTimeOffset.UtcNow - lastInteractiveAt < InteractiveQuiet))
+                        // A low-priority solve also never takes the LAST slot:
+                        // one stays free for a person, whatever the warm is up to.
+                        if (lowPriority && (interactiveQueued > 0 || interactiveRunning > 0 || SolveGate.CurrentCount < 2 || DateTimeOffset.UtcNow - lastInteractiveAt < InteractiveQuiet))
                         {
                             await Task.Delay(GateKeepalive, context.RequestAborted);
                             await WriteLine("{\"phase\":\"queued\",\"count\":0}");
