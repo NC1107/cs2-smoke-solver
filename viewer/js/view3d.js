@@ -3,10 +3,10 @@
 // wraps init/sync. Raycast picks route through callbacks that main.js
 // registers, so this module never imports the orchestrator.
 
-import { state, filtered, clickClass, lowMemoryDevice, SMOKE_BLOOM_RADIUS, EYE_HEIGHT_BY_TYPE, DEFAULT_EYE_HEIGHT } from "./state.js?v=98";
-import { fetchMesh } from "./api.js?v=98";
-import { createFlyCamera } from "./flycam.js?v=98";
-import { loadScript, ensureTexturedScene, currentTexturedScene, disposeSceneContents, disposeTexturedScene } from "./textured-scene.js?v=98";
+import { state, filtered, clickClass, lowMemoryDevice, SMOKE_BLOOM_RADIUS, EYE_HEIGHT_BY_TYPE, DEFAULT_EYE_HEIGHT } from "./state.js?v=99";
+import { fetchMesh } from "./api.js?v=99";
+import { createFlyCamera } from "./flycam.js?v=99";
+import { loadScript, ensureTexturedScene, currentTexturedScene, disposeSceneContents, disposeTexturedScene } from "./textured-scene.js?v=99";
 
 const stage3d = state.stage3d;
 // Warning tint for phantom blockers (grenade-clips, physics-clips, glass) - a
@@ -41,6 +41,43 @@ function circleSprite() {
   g.fillRect(0, 0, 64, 64);
   return new THREE.CanvasTexture(c);
 }
+// A name on a plate, as a sprite texture, for the named target pins. Cached
+// by text and style: sync3d rebuilds the pins on every state change and
+// rasterising a dozen labels each time is wasted work and leaked textures.
+const labelCache = new Map();
+function labelSprite(text, fg, bg, provisional) {
+  const key = `${text}|${fg}|${bg}|${provisional}`;
+  let entry = labelCache.get(key);
+  if (!entry) {
+    const c = document.createElement("canvas");
+    const g = c.getContext("2d");
+    const font = "600 26px ui-sans-serif, system-ui, sans-serif";
+    g.font = font;
+    const w = Math.ceil(g.measureText(text).width) + 28;
+    c.width = w;
+    c.height = 44;
+    g.font = font;
+    g.globalAlpha = provisional ? 0.75 : 0.95;
+    g.fillStyle = bg;
+    g.beginPath();
+    g.roundRect(1, 1, w - 2, 42, 8);
+    g.fill();
+    g.strokeStyle = fg;
+    g.lineWidth = 2;
+    if (provisional) { g.setLineDash([6, 5]); }
+    g.stroke();
+    g.setLineDash([]);
+    g.fillStyle = fg;
+    g.textBaseline = "middle";
+    g.fillText(text, 14, 23);
+    const tex = new THREE.CanvasTexture(c);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    entry = { tex, aspect: w / 44 };
+    labelCache.set(key, entry);
+  }
+  return entry;
+}
+
 let three = null;
 let threePromise = null; // memoized in-flight init so re-toggles share one
 // The meshdiff overlay is one Points cloud built once per map (cells can run
@@ -249,10 +286,17 @@ async function init3d() {
   if (phantomVisual) {
     scene.add(phantomVisual);
   }
-  scene.add(new THREE.HemisphereLight(0xffffff, 0x33302a, 0.95));
+  // The lights travel with the overlays (setTextured moves this group too).
+  // The textured world is unlit and does not care, but the lit overlays -
+  // the spawn domes - rendered over it as white blobs with black shadow
+  // sides, because a Lambert material in a scene with no lights has nothing
+  // to shade by except the renderer's default.
+  const lightGroup = new THREE.Group();
+  lightGroup.add(new THREE.HemisphereLight(0xffffff, 0x33302a, 0.95));
   const sun = new THREE.DirectionalLight(0xffffff, 0.7);
   sun.position.set(0.4, 0.25, 1);
-  scene.add(sun);
+  lightGroup.add(sun);
+  scene.add(lightGroup);
 
   const markerGroup = new THREE.Group();
   scene.add(markerGroup);
@@ -262,6 +306,16 @@ async function init3d() {
   scene.add(progressGroup);
   const spawnGroup = new THREE.Group();
   scene.add(spawnGroup);
+  // The named smoke targets: a pin on a stem with the name on a plate above
+  // it, the 3D twin of the 2D map's labelled pins. Clickable (pickAt).
+  const namedGroup = new THREE.Group();
+  scene.add(namedGroup);
+  const namedPinGeo = new THREE.SphereGeometry(7, 14, 10);
+  const namedStemGeo = new THREE.CylinderGeometry(1.2, 1.2, 28, 6);
+  namedStemGeo.rotateX(Math.PI / 2);
+  namedStemGeo.translate(0, 0, 14);
+  const namedPinMat = new THREE.MeshBasicMaterial({ color: colors.target });
+  const namedPinDimMat = new THREE.MeshBasicMaterial({ color: colors.target, transparent: true, opacity: 0.55 });
   const meshdiffGroup = new THREE.Group();
   meshdiffGroup.visible = false;
   scene.add(meshdiffGroup);
@@ -391,6 +445,14 @@ async function init3d() {
       -((clientY - rect.top) / rect.height) * 2 + 1);
     raycaster.setFromCamera(ndc, camera);
     if (preferMarkers) {
+      // A named pin is a button: it takes the tap ahead of everything else,
+      // as it does on the 2D map.
+      if (state.targetsOn && namedGroup.children.length) {
+        const nhits = raycaster.intersectObjects(namedGroup.children, true);
+        if (nhits.length > 0 && nhits[0].object.userData.named) {
+          return { named: nhits[0].object.userData.named };
+        }
+      }
       const mhits = raycaster.intersectObjects(markerGroup.children, false);
       if (mhits.length > 0 && mhits[0].object.userData.idx !== undefined) {
         return { markerIdx: mhits[0].object.userData.idx };
@@ -428,6 +490,12 @@ async function init3d() {
       }
       const hit = pickAt(x, y, true);
       if (!hit) { return; }
+      if (hit.named) {
+        if (!state.pickingOrigin) {
+          callbacks.onSetTarget([...hit.named.pos]);
+        }
+        return;
+      }
       if (hit.markerIdx !== undefined) {
         callbacks.onSelect(hit.markerIdx);
         return;
@@ -503,6 +571,7 @@ async function init3d() {
     progressCheckedMat, progressVerifiedMat, surfaceZAt, meshdiffGroup, meshdiffMat,
     meshdiffRenderMat, meshdiffPhysicsMat,
     spawnEdgeGeo, spawnEdgeT, spawnEdgeCt, spawnHeldMat,
+    namedGroup, namedPinGeo, namedStemGeo, namedPinMat, namedPinDimMat,
     get isLive() { return live; },
     get isTextured() { return activeScene !== scene; },
     start() {
@@ -533,7 +602,7 @@ async function init3d() {
       // mesh active rather than dereferencing null.
       if (!dest) { return; }
       const src = on ? scene : currentTexturedScene();
-      for (const g of [markerGroup, targetGroup, progressGroup, spawnGroup, meshdiffGroup, phantomVisual,
+      for (const g of [lightGroup, markerGroup, targetGroup, progressGroup, spawnGroup, namedGroup, meshdiffGroup, phantomVisual,
                        stateVisuals.doors, stateVisuals.glass].filter(Boolean)) {
         src?.remove(g);
         dest.add(g);
@@ -664,6 +733,10 @@ export function applyTheme3d() {
   three.markerMats.mid.color.set(colors["click-mid"]);
   three.markerMats.right.color.set(colors["click-right"]);
   three.targetMat.color.set(colors.target);
+  three.namedPinMat.color.set(colors.target);
+  three.namedPinDimMat.color.set(colors.target);
+  // The plates were rasterised in the old theme's colours.
+  labelCache.clear();
   three.bloomMat.color.set(colors.target);
   three.lineMat.color.set(colors.accent);
   three.slackFillMat.color.set(colors["heat-ok"]);
@@ -684,6 +757,8 @@ function clearGroup(group) {
       // An InstancedMesh owns a GPU instance buffer even when its geometry and
       // material are shared, so it has to be disposed or every rebuild leaks one.
       if (o.userData.ownedInstance) { o.dispose(); }
+      // A sprite's material is per sprite (its texture is cached elsewhere).
+      if (o.userData.ownedMaterial) { o.material.dispose(); }
     });
     group.remove(child);
   }
@@ -815,6 +890,36 @@ function meshdiffPatches(cells, step, material) {
   return mesh;
 }
 
+// A pin per named target: a stem up from the floor, a ball on top, the name
+// on a plate above. The current target's pin is filled solid; the rest sit a
+// little translucent so the one you picked reads as picked. Sprites for the
+// plates because a name has to be readable from wherever the camera is.
+function addNamedTargets3d() {
+  const colors = state.colors;
+  const fg = colors.target;
+  const bg = colors.surface;
+  for (const t of state.targets) {
+    const [x, y] = t.pos;
+    const z = t.pos.length > 2 ? t.pos[2] : (three.surfaceZAt(x, y) ?? 0);
+    const active = state.target && Math.hypot(state.target[0] - x, state.target[1] - y) < 1;
+    const mat = active || t.named ? three.namedPinMat : three.namedPinDimMat;
+    const stem = new THREE.Mesh(three.namedStemGeo, mat);
+    stem.position.set(x, y, z);
+    stem.userData.named = t;
+    const ball = new THREE.Mesh(three.namedPinGeo, mat);
+    ball.position.set(x, y, z + 30);
+    ball.userData.named = t;
+    const { tex, aspect } = labelSprite((t.named ? "" : "? ") + t.name, fg, bg, !t.named);
+    const plate = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false }));
+    const h = 16;
+    plate.scale.set(h * aspect, h, 1);
+    plate.position.set(x, y, z + 50);
+    plate.userData.named = t;
+    plate.userData.ownedMaterial = true;
+    three.namedGroup.add(stem, ball, plate);
+  }
+}
+
 // A ground ring per spawn, tagged with the [x, y] origin so a tap solves a
 // smoke from that exact spawn (pickAt/onTap). The entity origin sits at the
 // player's feet, so the ring only lifts far enough to clear the floor plane it
@@ -907,6 +1012,10 @@ export function sync3d() {
   if (state.spawnsOn && state.spawns) {
     addSpawns3d(state.spawns.t, three.spawnMatT, three.spawnEdgeT, "T");
     addSpawns3d(state.spawns.ct, three.spawnMatCt, three.spawnEdgeCt, "CT");
+  }
+  clearGroup(three.namedGroup);
+  if (state.targetsOn) {
+    addNamedTargets3d();
   }
   const target = state.target;
   if (target) {

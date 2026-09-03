@@ -3,8 +3,8 @@
 // actions (set target, select, run query) go through callbacks that main.js
 // registers, so this module never imports the orchestrator.
 
-import { cacheBust } from "./api.js?v=98";
-import { isDrag, state, filtered, clickWords, movementWords, clickClass, esc, SMOKE_BLOOM_RADIUS, PICK_RADIUS_PX, TOUCH_PICK_RADIUS_PX, HEAT_CELL } from "./state.js?v=98";
+import { cacheBust } from "./api.js?v=99";
+import { isDrag, state, filtered, clickWords, movementWords, clickClass, esc, SMOKE_BLOOM_RADIUS, PICK_RADIUS_PX, TOUCH_PICK_RADIUS_PX, HEAT_CELL } from "./state.js?v=99";
 
 const canvas = state.canvas;
 const ctx = canvas.getContext("2d");
@@ -207,7 +207,7 @@ export function draw() {
   // placed still reads as current. A provisional name (nearest callout, not
   // yet confirmed by a person) is drawn lighter and with a leading "?" so a
   // guess never reads as a fact.
-  if (state.targets.length && scale > 0.08) {
+  if (state.targetsOn && state.targets.length && scale > 0.08) {
     ctx.save();
     const r = 5 / scale;
     ctx.lineWidth = 1.2 / scale;
@@ -540,6 +540,20 @@ function nearestProLanding(wx, wy, radius) {
 // The shown spawn nearest a click within grab range, tagged with its team, or
 // null - so clicking a spawn marker uses that exact spot rather than the
 // approximate pixel, and the hover can name which spawn it is.
+// The named target pin under a point, or null. A pin is a button: whatever
+// else the click would have meant, landing on one means "smoke this".
+function nearestNamedPin(wx, wy, radius) {
+  if (!state.targetsOn) {
+    return null;
+  }
+  let best = null, bestD = radius;
+  for (const t of state.targets) {
+    const d = Math.hypot(t.pos[0] - wx, t.pos[1] - wy);
+    if (d < bestD) { bestD = d; best = t; }
+  }
+  return best;
+}
+
 function nearestSpawn(wx, wy, radius) {
   if (!state.spawnsOn || !state.spawns) {
     return null;
@@ -689,6 +703,14 @@ export function initMap2d(cb) {
     // "set the target here", so clicking a spawn first - the obvious way to
     // ask "what can I throw from spawn?" - put the target on the spawn instead
     // and the marker appeared to do nothing at all.
+    // A named pin takes the click before anything else does: it is the one
+    // marker whose only job is to be clicked, and with a target already set
+    // a plain click would otherwise mean "solve from here" or select a row.
+    const pin = nearestNamedPin(wx, wy, (pickPx + SPAWN_GRAB_PX) / scale);
+    if (pin && !state.pickingOrigin) {
+      callbacks.onSetTarget([...pin.pos]);
+      return;
+    }
     const spawn = state.picking ? null : nearestSpawn(wx, wy, (pickPx + SPAWN_GRAB_PX) / scale);
     if (spawn) {
       if (state.target) {

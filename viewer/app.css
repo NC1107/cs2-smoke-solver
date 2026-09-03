@@ -539,6 +539,9 @@
   .key .swatch.meshdiff-physics { background: #ff9f1c; }
   .key .dot.spawn-t { background: #d9a441; }
   .key .dot.spawn-ct { background: #4a90d9; }
+  .key .dot.named-target { background: var(--panel); border: 1.5px solid var(--target); }
+  .key .dot.named-target.provisional { opacity: 0.6; border-style: dashed; }
+  .key .key-note { color: var(--muted); font-style: italic; }
   .key .dot.prosmoke-throw { background: #2896ff; }
   .key .dot.prosmoke-land { background: #ff7814; }
   #key-heat { display: none; }
@@ -646,7 +649,9 @@
   /* Keep the header, but only the control that reopens the panel: it moved
      inside the header, and hiding the header with it left a collapsed panel
      with nothing to click. */
-  .panel.collapsed .panel-head > *:not(.panel-collapse) { display: none; }
+  .panel.collapsed .panel-head > .head-tools,
+  .panel.collapsed .panel-head .head-row > *:not(.panel-collapse) { display: none; }
+  .panel.collapsed .panel-head .head-row { gap: 0; }
   .panel.collapsed .panel-head { padding: 0; border-bottom: none; }
   .panel.collapsed .panel-collapse { position: static; }
   .panel.collapsed .panel-collapse svg { transform: rotate(180deg); }
@@ -992,7 +997,7 @@
   #execute-list { counter-reset: exec; }
   .exec-row .exec-name { flex: 1; color: var(--fg); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .exec-hint { margin: 0 0 6px; color: var(--muted); font-size: 0.88em; line-height: 1.35; }
-  #execute-add { width: 100%; margin-bottom: 6px; }
+  #execute-add { width: 100%; margin-bottom: 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .exec-drop {
     border: var(--border); background: none; color: var(--muted);
     cursor: pointer; line-height: 1; padding: 1px 6px; border-radius: 4px;
@@ -1423,12 +1428,18 @@
      shows and how many, then how it is ordered and where you are in it. */
   .panel-head {
     display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 5px 6px;
+    flex-direction: column;
+    gap: 5px;
     padding-bottom: 6px;
     border-bottom: var(--border);
   }
+  .panel-head .head-row { display: flex; align-items: center; gap: 6px; min-width: 0; }
+  .panel-head .head-row[hidden] { display: none; }
+  /* The collapse chevron sits at the far right of the first row, where a
+     window's minimise control lives, not as a lone box in the top-left corner
+     that read as a stray button. */
+  .panel-head .head-row > .panel-collapse { margin-left: auto; }
+  .panel-head .head-tools > .list-pager { margin-left: auto; }
   .panel-head .head-count { white-space: nowrap; }
   /* Results | Saved: a two-way switch in the header, so it is a compact pair
      of word tiles rather than the sidebar's icon-over-label thirds. */
@@ -1439,8 +1450,7 @@
   .panel-head .head-sort {
     --btn-pad: 2px 6px;
     --btn-font-size: 11px;
-    margin-left: auto;
-    max-width: 40%;
+    max-width: 48%;
   }
   .panel-head .head-toggle { --btn-pad: 2px 8px; --btn-font-size: 11px; white-space: nowrap; }
   .panel-head .list-pager {
@@ -1449,7 +1459,6 @@
     gap: 2px;
     padding: 0;
     border: none;
-    margin-left: auto;
   }
   .panel-head .list-pager[hidden] { display: none; }
   .panel-head .pager-label { font-variant-numeric: tabular-nums; min-width: 26px; text-align: center; }

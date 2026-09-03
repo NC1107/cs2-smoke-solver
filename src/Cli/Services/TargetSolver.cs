@@ -317,9 +317,20 @@ public static class TargetSolver
         // Fine scan halves the angle lattice: a probe goes 1 -> 0.5 deg, a
         // map-wide sweep 3x4 -> 2x2 - roughly 3x the work, for lineups whose
         // in-zone angle ribbon the normal lattice steps over.
-        var (yawStep, pitchStep) = hasOrigin
-            ? (fineScan ? (0.5f, 0.5f) : (1f, 1f))
-            : (fineScan ? (2f, 2f) : (3f, 4f));
+        // An exact-spot solve is the "is there ANY way from right here" search:
+        // one origin, so it can afford the finest lattice, every near-miss
+        // refined, and the verify gate at its floor. Whether the throw is
+        // awkward is for the ranking and the tags to say, not for the search
+        // to decide by leaving it out.
+        var deepSpot = exactOrigin && hasOrigin;
+        var (yawStep, pitchStep) = deepSpot ? (0.25f, 0.25f)
+            : hasOrigin
+                ? (fineScan ? (0.5f, 0.5f) : (1f, 1f))
+                : (fineScan ? (2f, 2f) : (3f, 4f));
+        if (deepSpot)
+        {
+            minStability = MathF.Min(minStability, 0.05f);
+        }
         var coverage = new System.Collections.Concurrent.ConcurrentDictionary<(int X, int Y), int>();
         onPhase?.Invoke("sweep", origins.Count);
         var candidates = LineupSolver.Solve(
@@ -332,6 +343,8 @@ public static class TargetSolver
             dedupeBucketSize: hasOrigin ? 8f : 64f,
             origins: origins, strengths: strengths, constants: constants, coverage: coverage, onOrigin: onOrigin,
             collider: collider, target: target,
+            maxRefineSeeds: deepSpot ? int.MaxValue : 8,
+            keepEveryKind: deepSpot,
             // Ordering only, and only for a map-wide sweep: a one-spot probe
             // has a single origin, so there is no order to grow.
             extraFronts: hasOrigin ? null : spawnFronts);
@@ -340,6 +353,23 @@ public static class TargetSolver
         // user actually made ("within `tolerance` of this point") is enforced
         // here, against each candidate's exact rest point.
         var verified = LineupSolver.VerifyExact(grid, collider, zoneCrossings, candidates, minStability: minStability, constants: constants, onCandidate: onCandidate, aimTarget: target, tolerance: tolerance);
+        // An exact-spot solve that the voxel sweep answered with nothing gets
+        // the real simulator over the whole lattice before it is allowed to
+        // say no: the grid is an approximation, and "from right here" is the
+        // one question where its misses are the whole answer.
+        if (deepSpot && verified.Count == 0 && origins.Count > 0)
+        {
+            onPhase?.Invoke("exhaustive", origins.Count);
+            var rescued = new List<Lineup>();
+            foreach (var o in origins)
+            {
+                rescued.AddRange(LineupSolver.ExhaustiveExactSpot(collider, o, target, tolerance,
+                    types ?? [ThrowType.Stand, ThrowType.Crouch, ThrowType.JumpThrow, ThrowType.CrouchJumpThrow, ThrowType.RunJumpThrow],
+                    strengths, constants));
+            }
+            onPhase?.Invoke("verify", rescued.Count);
+            verified = LineupSolver.VerifyExact(grid, collider, zoneCrossings, rescued, minStability: minStability, constants: constants, onCandidate: onCandidate, aimTarget: target, tolerance: tolerance);
+        }
 
         // Some stand spots only fit the player crouched - under a vent, a stair
         // soffit, a low balcony. A standing or run-jump throw from one of those

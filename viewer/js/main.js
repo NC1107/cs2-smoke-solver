@@ -2,18 +2,18 @@
 // import the feature modules; they call back into the orchestrators defined
 // here (setTarget, select, runQuery) via the init*/set*Callbacks hooks.
 
-import { state, filtered, esc, lowMemoryDevice, loadFavorites, setFavorite, isFavorite, DEFAULT_EYE_HEIGHT, EYE_HEIGHT_BY_TYPE, TARGET_SNAP_RADIUS, favoriteHooks, loadSavedLocal, persistSavedLocal} from "./state.js?v=98";
-import { loadMapList, loadMapData, runQuery as postLineupQuery, fetchTrajectory, fetchLineupOne, fetchSlack, fetchSpawns, fetchProSmokes, fetchMeshDiff, meshDiffExists, fetchLevels, fetchSmokeCoverage, runExecute, findExecuteSpots, fetchTargets, fetchMe, signOut, fetchSavedLineups, putSavedLineups, fetchVotes, castVote} from "./api.js?v=98";
-import { loadRadar, readColors, recolorRadar, draw, scheduleDraw, resize, resetView, initMap2d, screenOf } from "./map2d.js?v=98";
-import { ensure3d, resetEnsure3d, teardown3d, current3d, sync3d, syncProgress3d, syncMeshDiff3d, set3dCallbacks, applyTheme3d, verticalFovFromDesired } from "./view3d.js?v=98";
-import { resetEnsureTexturedScene } from "./textured-scene.js?v=98";
-import { capturePreview } from "./preview.js?v=98";
+import { state, filtered, esc, lowMemoryDevice, loadFavorites, setFavorite, isFavorite, DEFAULT_EYE_HEIGHT, EYE_HEIGHT_BY_TYPE, TARGET_SNAP_RADIUS, favoriteHooks, loadSavedLocal, persistSavedLocal} from "./state.js?v=99";
+import { loadMapList, loadMapData, runQuery as postLineupQuery, fetchTrajectory, fetchLineupOne, fetchSlack, fetchSpawns, fetchProSmokes, fetchMeshDiff, meshDiffExists, fetchLevels, fetchSmokeCoverage, runExecute, findExecuteSpots, fetchTargets, fetchMe, signOut, fetchSavedLineups, putSavedLineups, fetchVotes, castVote} from "./api.js?v=99";
+import { loadRadar, readColors, recolorRadar, draw, scheduleDraw, resize, resetView, initMap2d, screenOf } from "./map2d.js?v=99";
+import { ensure3d, resetEnsure3d, teardown3d, current3d, sync3d, syncProgress3d, syncMeshDiff3d, set3dCallbacks, applyTheme3d, verticalFovFromDesired } from "./view3d.js?v=99";
+import { resetEnsureTexturedScene } from "./textured-scene.js?v=99";
+import { capturePreview } from "./preview.js?v=99";
 // Every local import across viewer/js carries the SAME ?v= token, bumped
 // together on any change. The HTML is served no-cache, so a fresh load pulls
 // main.js?v=N, which pulls every module at ?v=N - the whole graph refreshes as
 // one consistent set past Cloudflare's 4h JS cache, with no duplicate module
 // instances (which a partial versioning would cause). Bump the token everywhere.
-import { renderLineups, initPanel, revealSelected, resultStatusText } from "./panel.js?v=98";
+import { renderLineups, initPanel, revealSelected, resultStatusText } from "./panel.js?v=99";
 
 (async () => {
   // Map switching means a failed load is no longer necessarily terminal (the
@@ -71,6 +71,7 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
   const copyTargetBtn = document.getElementById("copy-target");
   const copyOriginBtn = document.getElementById("copy-origin");
   const spawnsBtn = overlayBtn("spawns");
+  const targetsBtn = overlayBtn("targets");
   const proSmokesBtn = document.getElementById("prosmokes");
   const proSideSeg = document.getElementById("prosmokes-side");
   const topDownBtn = overlayBtn("topdown");
@@ -78,6 +79,15 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
   const collisionBtn = overlayBtn("collision");
   const meshdiffBtn = overlayBtn("meshdiff");
   const coverageBtn = overlayBtn("coverage");
+  // setpos places the player's ORIGIN, and the engine keeps the origin a hair
+  // above the floor (Valve's 0.03125). Handing out the floor height itself puts
+  // that hair's width of the player inside the world; adding the gap back is
+  // the difference between "the floor" and "where a player standing on it is".
+  // Declared up here: a permalink applies during boot, before the setpos code
+  // further down has run, and a `const` read before its line is a
+  // ReferenceError - which silently failed every ?t= link's first render.
+  const FEET_ABOVE_FLOOR = 0.03125;
+  const coord = v => Number.parseFloat(v.toFixed(2)).toString();
   const cardExecute = document.getElementById("card-execute");
   const executeCount = document.getElementById("execute-count");
   const executeClear = document.getElementById("execute-clear");
@@ -440,8 +450,12 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
     sync3d();
   }
 
+  // Five players, five smokes: the server refuses more, and the button says
+  // so before the click rather than after.
+  const MAX_EXECUTE_SMOKES = 5;
+
   executeAdd.addEventListener("click", () => {
-    if (!state.target) {
+    if (!state.target || state.executeTargets.length >= MAX_EXECUTE_SMOKES) {
       return;
     }
     state.executeTargets.push([...state.target]);
@@ -663,6 +677,9 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
     if (view === "3d" && state.collisionOn) {
       rows.push(`<div class="key-row"><span class="swatch phantom"></span> invisible collision - grenade-clips, physics-clips, glass that stop smokes</div>`);
     }
+    if (state.targetsOn && state.targets.length) {
+      rows.push(`<div class="key-row"><span class="key-label">targets</span><span><span class="dot named-target"></span> named</span><span><span class="dot named-target provisional"></span> ? provisional name</span> <span class="key-note">click one to smoke it</span></div>`);
+    }
     if (state.spawnsOn && state.spawns) {
       rows.push(`<div class="key-row"><span class="key-label">spawns</span><span><span class="dot spawn-t"></span> T</span><span><span class="dot spawn-ct"></span> CT</span></div>`);
     }
@@ -770,6 +787,8 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
     }
     spawnsBtn.hidden = !(state.spawns && (state.spawns.t.length || state.spawns.ct.length));
     press(spawnsBtn, state.spawnsOn);
+    targetsBtn.hidden = state.targets.length === 0;
+    press(targetsBtn, state.targetsOn);
     // 2D only: the pro-demo density heatmap is painted on the radar canvas and
     // has no 3D representation, so offering it in the 3D view would promise
     // something that cannot appear there.
@@ -806,13 +825,18 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
     executeCount.textContent = anyExec ? `(${state.executeTargets.length})` : "";
     executeClear.hidden = !anyExec;
     executeHint.hidden = anyExec;
-    executeAdd.disabled = state.busy || !hasTarget;
-    executeAdd.textContent = hasTarget
-      ? `Add ${state.targetName ?? "current target"}`
-      : "Add current target";
-    executeAdd.title = hasTarget
-      ? "Add the current target as the next smoke of this execute"
-      : "Click the map to set a target first";
+    const execFull = state.executeTargets.length >= MAX_EXECUTE_SMOKES;
+    executeAdd.disabled = state.busy || !hasTarget || execFull;
+    executeAdd.textContent = execFull
+      ? `${MAX_EXECUTE_SMOKES} smokes - one per player`
+      : hasTarget
+        ? `Add ${state.targetName ?? "current target"} to execute`
+        : "Add current target to execute";
+    executeAdd.title = execFull
+      ? `An execute holds ${MAX_EXECUTE_SMOKES} smokes at most: one per player in the round`
+      : hasTarget
+        ? "Add the current target as the next smoke of this execute"
+        : "Click the map to set a target first";
     executeList.hidden = !anyExec;
     executeSolveLabel.hidden = !anyExec;
     executeSeg.hidden = !anyExec;
@@ -951,6 +975,7 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
         syncControls();
       }
       scheduleDraw();
+      sync3d();
     }).catch(e => console.warn("targets unavailable for", name, e));
     fetchProSmokes(name).then(d => {
       if (state.mapGeneration === gen) { state.prosmokes = d; syncControls(); }
@@ -1189,6 +1214,10 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
     } else if (msg.phase === "sweep") {
       p.phase = "sweep";
       p.total = msg.count;
+    } else if (msg.phase === "exhaustive") {
+      // The exact-spot solve's last resort: the real simulator over every
+      // angle and every kind of throw from this one spot.
+      statusEl.textContent = "nothing on the fast pass - trying every angle of every throw from this exact spot in the full sim…";
     } else if (msg.phase === "verify") {
       p.phase = "verify";
       p.candidates = msg.count;
@@ -1533,6 +1562,9 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
 
   // The named target within snapping distance of a point, or null.
   function nearestNamedTarget(t) {
+    if (!state.targetsOn) {
+      return null;
+    }
     let best = null;
     let bestD = TARGET_SNAP_RADIUS;
     for (const nt of state.targets) {
@@ -1685,12 +1717,6 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
   // its own half: the resolved floor for the target, the throw spot's own feet
   // for the origin. Naming the target's floor for a throw spot on another level
   // would hand out a setpos that puts the player through it.
-  const coord = v => Number.parseFloat(v.toFixed(2)).toString();
-  // setpos places the player's ORIGIN, and the engine keeps the origin a hair
-  // above the floor (Valve's 0.03125). Handing out the floor height itself puts
-  // that hair's width of the player inside the world; adding the gap back is
-  // the difference between "the floor" and "where a player standing on it is".
-  const FEET_ABOVE_FLOOR = 0.03125;
   function setposOf(p, fallbackZ) {
     const z = (p[2] ?? fallbackZ ?? 0) + FEET_ABOVE_FLOOR;
     return `setpos ${coord(p[0])} ${coord(p[1])} ${coord(z)}`;
@@ -1857,6 +1883,18 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
     draw();
     sync3d();
   });
+  targetsBtn.addEventListener("click", () => {
+    state.targetsOn = !state.targetsOn;
+    press(targetsBtn, state.targetsOn);
+    try { localStorage.setItem("smokesolver.targetsOn", state.targetsOn ? "1" : "0"); } catch { /* not persisting is fine */ }
+    draw();
+    sync3d();
+  });
+  try {
+    state.targetsOn = localStorage.getItem("smokesolver.targetsOn") !== "0";
+  } catch {
+    // Default stands.
+  }
   // Collapse the results panel out of the way to see the map beneath it. A fresh
   // solve re-expands it (panel.js) since the point of searching is to see them.
   panelCollapseBtn.addEventListener("click", () => {

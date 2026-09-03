@@ -3,8 +3,8 @@
 // previews. Loading, axis conversion, and material sanitization live here;
 // the interactive view and the preview path only consume the finished scene.
 
-import { state, lowMemoryDevice } from "./state.js?v=98";
-import { cacheBust } from "./api.js?v=98";
+import { state, lowMemoryDevice } from "./state.js?v=99";
+import { cacheBust } from "./api.js?v=99";
 
 const scriptPromises = {};
 export function loadScript(src) {
@@ -264,6 +264,17 @@ export function ensureTexturedScene(url) {
         if (m.map && !keptTextures.has(m.map)) { m.map.dispose(); }
         m.dispose?.();
       }
+    }
+
+    // The export carries the map's light_environment as a KHR light - a sun
+    // at an intensity in the thousands. The world here is unlit and never
+    // sees it, but the lit overlays that ride along into this scene (the
+    // spawn domes) did: they rendered as pure white blobs. The viewer brings
+    // its own lights with those overlays; the map's are dropped.
+    const stray = [];
+    root.traverse(o => { if (o.isLight) { stray.push(o); } });
+    for (const light of stray) {
+      light.removeFromParent();
     }
 
     const scene = new THREE.Scene();

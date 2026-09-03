@@ -213,3 +213,86 @@ public class LineupSolveTests
         Assert.Equal(9, lineup.RestCrossings);
     }
 }
+
+/// <summary>
+/// The exact-spot solve: one origin, and the answer must not ride on a single
+/// candidate or on the voxel approximation being kind.
+/// </summary>
+public class ExactSpotSolveTests
+{
+    static readonly Vector3 SolveMin = new(0, 0, 0);
+    static readonly Vector3 SolveMax = new(2048, 2048, 256);
+
+    static (VoxelGrid Grid, TriangleCollider Collider) Ground()
+    {
+        var mesh = SyntheticMeshes.FromQuads([SyntheticMeshes.Ground(0, 2048, 0)]);
+        var grid = VoxelGrid.Build(mesh, 16f, new Vector3(0, 0, -16), new Vector3(2048, 2048, 256));
+        return (grid, new TriangleCollider(mesh, new Vector3(0, 0, -16), new Vector3(2048, 2048, 256)));
+    }
+
+    static Dictionary<int, int> Zone(VoxelGrid grid, float minX, float maxX, float minY, float maxY)
+    {
+        var zone = new Dictionary<int, int>();
+        var (_, _, gz) = grid.CellOf(new Vector3(minX, minY, 0f));
+        for (var x = minX; x <= maxX; x += grid.VoxelSize)
+        {
+            for (var y = minY; y <= maxY; y += grid.VoxelSize)
+            {
+                var (cx, cy, _) = grid.CellOf(new Vector3(x, y, 0f));
+                for (var dz = 0; dz <= 3; dz++)
+                {
+                    zone[grid.Index(cx, cy, gz + dz)] = 1;
+                }
+            }
+        }
+        return zone;
+    }
+
+    [Fact]
+    public void OneOriginKeepsTheBestOfEveryThrowKindRatherThanOneCandidate()
+    {
+        // With one candidate per origin, "from exactly here" was answered by
+        // whichever single throw won the tiebreak; if that one then failed
+        // verification the spot reported nothing. Every kind that reaches the
+        // zone must survive the sweep so verification can judge each.
+        var (grid, _) = Ground();
+        var zone = Zone(grid, 500, 900, 900, 1150);
+        var origin = new Vector3(256, 1024, 0);
+        var types = new[] { ThrowType.Stand, ThrowType.Crouch, ThrowType.JumpThrow };
+
+        var one = LineupSolver.Solve(grid, zone, SolveMin, SolveMax, types,
+            yawStepDeg: 2f, pitchStepDeg: 2f, dedupeBucketSize: 8f, origins: [origin]);
+        var every = LineupSolver.Solve(grid, zone, SolveMin, SolveMax, types,
+            yawStepDeg: 2f, pitchStepDeg: 2f, dedupeBucketSize: 8f, origins: [origin], keepEveryKind: true);
+
+        Assert.Single(one);
+        Assert.True(every.Count > 1, $"expected a candidate per throw kind, got {every.Count}");
+        Assert.True(every.Select(l => (l.Type, l.Strength)).Distinct().Count() == every.Count, "one candidate per kind");
+        Assert.All(every, l => Assert.Equal(origin, l.Feet));
+    }
+
+    [Fact]
+    public void TheExhaustivePassFindsAThrowTheRealSimulatorAllowsFromTheExactSpot()
+    {
+        // Straight from the exact simulator, no voxel grid in the loop: every
+        // kind of throw over the full lattice, kept when it lands within
+        // tolerance of the target. On open ground a standing throw of any
+        // strength can put a smoke 400u away, so the pass must find several.
+        var (_, collider) = Ground();
+        var feet = new Vector3(256, 1024, 0);
+        var target = new Vector3(656, 1024, 0);
+
+        var found = LineupSolver.ExhaustiveExactSpot(collider, feet, target, 32f,
+            [ThrowType.Stand, ThrowType.JumpThrow], [1f, 0.5f], ThrowConstants.Default, stepDeg: 2f);
+
+        Assert.NotEmpty(found);
+        Assert.All(found, l =>
+        {
+            Assert.Equal(feet, l.Feet);
+            Assert.True(Vector2.Distance(new Vector2(l.RestPoint.X, l.RestPoint.Y), new Vector2(target.X, target.Y)) <= 32f,
+                $"{l.Type}/{l.Strength} rests {l.RestPoint}, outside tolerance");
+        });
+        // One per kind, the closest of that kind.
+        Assert.Equal(found.Count, found.Select(l => (l.Type, l.Strength, l.RunYawOffsetDeg)).Distinct().Count());
+    }
+}

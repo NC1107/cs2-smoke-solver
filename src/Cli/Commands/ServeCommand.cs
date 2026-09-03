@@ -35,9 +35,9 @@ public static class ServeCommand
     // An execute carries several targets, so it gets more room - but not much:
     // it is still only a list of coordinates.
     const int MaxExecuteBodyBytes = 8192;
-    // A round has time for a handful of smokes, not a library of them, and each
-    // one is a real solve.
-    const int MaxExecuteTargets = 6;
+    // Five players, one smoke each: a round cannot have more smokes than that
+    // in one execute, and each one is a real solve.
+    const int MaxExecuteTargets = 5;
     // Only the best few per smoke. An execute is "which throw do I use for
     // this one", not a catalogue - and 400 lineups per target across six
     // targets would be a payload nobody reads.
@@ -82,6 +82,31 @@ public static class ServeCommand
     const int AccountBurst = 30;
     const int AccountRefill = 15;
     static readonly TimeSpan AccountRefillPeriod = TimeSpan.FromSeconds(30);
+
+    // Spawn entities are authored a little above the floor (de_dust2's T
+    // spawns sit 16u up), and a marker drawn at the entity origin floats. The
+    // viewer gets each spawn dropped to the surface under it; the raw origins
+    // stay in SpawnCache for the solver, which grounds its own origins.
+    static readonly System.Collections.Concurrent.ConcurrentDictionary<string, (List<float[]> T, List<float[]> Ct)?> GroundedSpawnCache = new(StringComparer.Ordinal);
+    const float SpawnDropSearch = 256f;
+
+    static (List<float[]> T, List<float[]> Ct)? GroundSpawns((List<float[]> T, List<float[]> Ct)? spawns, MapEntry entry)
+    {
+        if (spawns is not { } s)
+        {
+            return null;
+        }
+        var collider = entry.PlayerCollider.Value;
+        List<float[]> Drop(List<float[]> side) => side.Select(p =>
+        {
+            var from = new Vector3(p[0], p[1], p[2] + 8f);
+            var to = new Vector3(p[0], p[1], p[2] - SpawnDropSearch);
+            return collider.FirstHit(from, to) is { } hit
+                ? new[] { p[0], p[1], from.Z + (to.Z - from.Z) * hit.T }
+                : p;
+        }).ToList();
+        return (Drop(s.T), Drop(s.Ct));
+    }
 
     // A saved set is a few kilobytes; anything bigger is not a set of lineups.
     const int MaxSavedSetBytes = 256 * 1024;
@@ -300,7 +325,7 @@ public static class ServeCommand
             // Keyed and pathed by the map's own name, not the (case-insensitive)
             // query spelling, and parsed once: the file never changes while the
             // server runs, and this handler shares its ThreadPool with the solver.
-            var spawns = SpawnCache.GetOrAdd(entry.Mesh.MapName, name => LoadSpawns(root, name));
+            var spawns = GroundedSpawnCache.GetOrAdd(entry.Mesh.MapName, name => GroundSpawns(LoadSpawns(root, name), entry));
             return spawns is { } s
                 ? Results.Json(new { t = s.T, ct = s.Ct })
                 : ApiError(StatusCodes.Status500InternalServerError, "spawn data unreadable - re-extract the map's entities");

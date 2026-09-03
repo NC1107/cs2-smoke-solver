@@ -141,7 +141,18 @@ public static partial class LineupSolver
         // Extra places the sweep should also grow outward from - in practice
         // the two team spawns. Ordering only; every reachable origin is swept
         // either way.
-        IReadOnlyList<Vector3>? extraFronts = null)
+        IReadOnlyList<Vector3>? extraFronts = null,
+        // How many coarse near-misses per type/strength get the fine lattice
+        // around them. Eight keeps a map-wide sweep interactive; an exact-spot
+        // solve has one origin and refines every one of them.
+        int maxRefineSeeds = MaxRefineSeeds,
+        // Keep the best candidate per throw kind (type, strength, run
+        // direction) in each bucket instead of one per bucket. One per bucket
+        // is what keeps a map-wide list readable; for an exact-spot solve it
+        // meant the whole answer rode on a single candidate, and when that
+        // one failed verification the spot reported nothing even though a
+        // different kind of throw from the same feet would have verified.
+        bool keepEveryKind = false)
     {
         if (zoneCrossings.Count == 0)
         {
@@ -163,7 +174,7 @@ public static partial class LineupSolver
         }
 
         origins ??= FindStandableOrigins(grid, originMin, originMax, collider);
-        var best = new ConcurrentDictionary<(int, int), Lineup>();
+        var best = new ConcurrentDictionary<(int, int, int), Lineup>();
 
         // How far every part of the map is from the zone through open air. A
         // throw spot whose shortest free-space path is longer than any throw
@@ -267,7 +278,10 @@ public static partial class LineupSolver
                 }
                 hits++;
                 var lineup = new Lineup(feet, Normalize(yaw), pitch, type, result.RestPoint, result.Bounces, result.FlightTime, crossings, Strength: strength, RunYawOffsetDeg: runOffset);
-                var key = ((int)MathF.Floor(feet.X / dedupeBucketSize), (int)MathF.Floor(feet.Y / dedupeBucketSize));
+                var kind = keepEveryKind
+                    ? (int)type * 1000 + (int)MathF.Round(strength * 10f) * 10 + (int)MathF.Round(runOffset / 45f) + 2
+                    : 0;
+                var key = ((int)MathF.Floor(feet.X / dedupeBucketSize), (int)MathF.Floor(feet.Y / dedupeBucketSize), kind);
                 best.AddOrUpdate(key, lineup, (_, current) => Better(lineup, current, target) ? lineup : current);
                 return 0f;
             }
@@ -369,7 +383,7 @@ public static partial class LineupSolver
                             }
                         }
                         nearMisses.Sort((a, b) => a.MissSq.CompareTo(b.MissSq));
-                        foreach (var (seedYaw, seedPitch, _) in nearMisses.Take(MaxRefineSeeds))
+                        foreach (var (seedYaw, seedPitch, _) in nearMisses.Take(maxRefineSeeds))
                         {
                             // The fine lattice spans the seed's whole coarse Voronoi cell
                             // so ribbons anywhere between coarse samples get sampled.
@@ -407,6 +421,79 @@ public static partial class LineupSolver
     /// rolls over thin trim (unlike a point trace) and has no voxel inflation, the
     /// two failure modes real throws exposed, so it is trusted as the referee.
     /// </summary>
+    /// <summary>
+    /// The last resort of an exact-spot solve: every throw kind over a full
+    /// angle lattice, each run through the exact simulator, from one origin.
+    /// Returns the throws whose exact rest point lands within
+    /// <paramref name="tolerance"/> of the target, as candidates for VerifyExact.
+    /// </summary>
+    // The voxel sweep is a recall filter, and a 16u grid can lose a throw the
+    // real geometry allows - a bounce off an edge the grid rounds away, a gap
+    // it closes. Map-wide that is an accepted cost. When someone asks "from
+    // exactly here, is there ANY way", it is not: with one origin the real
+    // simulator can afford the whole lattice, so the answer no longer depends
+    // on the approximation having been kind. Hundreds of thousands of exact
+    // flights; seconds, in parallel.
+    public static List<Lineup> ExhaustiveExactSpot(
+        TriangleCollider collider,
+        Vector3 feet,
+        Vector3 target,
+        float tolerance,
+        IReadOnlyList<ThrowType> types,
+        IReadOnlyList<float>? strengths,
+        ThrowConstants? constants,
+        float stepDeg = 1f)
+    {
+        var k = constants ?? ThrowConstants.Default;
+        var toTarget = target - feet;
+        var yawCenter = MathF.Atan2(toTarget.Y, toTarget.X) * 180f / MathF.PI;
+        var kinds = new List<(ThrowType Type, float Strength, float Run)>();
+        foreach (var type in types)
+        {
+            foreach (var run in type is ThrowType.RunJumpThrow ? RunYawOffsets : NoRunOffset)
+            {
+                foreach (var strength in strengths ?? AllStrengths)
+                {
+                    kinds.Add((type, strength, run));
+                }
+            }
+        }
+        var found = new ConcurrentBag<Lineup>();
+        var tolSq = tolerance * tolerance;
+        Parallel.ForEach(kinds, Cpu.Bound, kind =>
+        {
+            var (type, strength, run) = kind;
+            var eye = feet + new Vector3(0, 0, GrenadeTrajectory.EyeHeight(type));
+            var shiftShallow = RunYawShiftDeg(k, strength, 0f, run);
+            var shiftSteep = RunYawShiftDeg(k, strength, SteepPitchFloorDeg, run);
+            var yawLo = yawCenter + MathF.Min(shiftShallow, shiftSteep) - YawSpreadDeg;
+            var yawHi = yawCenter + MathF.Max(shiftShallow, shiftSteep) + YawSpreadDeg;
+            for (var yaw = yawLo; yaw <= yawHi; yaw += stepDeg)
+            {
+                for (var pitch = SteepPitchFloorDeg; pitch <= 0f; pitch += stepDeg)
+                {
+                    var r = GrenadeTrajectory.SimulateExact(collider, new ThrowSpec(eye, yaw, pitch, type, strength, run), k);
+                    if (!Settled(r))
+                    {
+                        continue;
+                    }
+                    var dx = r.RestPoint.X - target.X;
+                    var dy = r.RestPoint.Y - target.Y;
+                    if (dx * dx + dy * dy <= tolSq)
+                    {
+                        found.Add(new Lineup(feet, Normalize(yaw), pitch, type, r.RestPoint, r.Bounces, r.FlightTime, 1, Strength: strength, RunYawOffsetDeg: run));
+                    }
+                }
+            }
+        });
+        // One per kind, the closest: VerifyExact re-aims and probes each, and a
+        // thousand near-identical hits from one kind would cost verification
+        // time to say the same thing.
+        return [.. found
+            .GroupBy(l => (l.Type, l.Strength, l.RunYawOffsetDeg))
+            .Select(g => g.OrderBy(l => Vector3.DistanceSquared(l.RestPoint, target)).First())];
+    }
+
     public static List<Lineup> VerifyExact(
         VoxelGrid grid,
         TriangleCollider collider,

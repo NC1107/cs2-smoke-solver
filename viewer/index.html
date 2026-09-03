@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Smoke Solver</title>
 <link rel="icon" href="viewer/favicon.svg" type="image/svg+xml">
-<link rel="stylesheet" href="viewer/app.css?v=98">
+<link rel="stylesheet" href="viewer/app.css?v=99">
 </head>
 <body>
 
@@ -85,6 +85,7 @@
 
           <span class="action-label key-subhead">overlays</span>
           <div class="tile-row" id="overlay-seg" role="group" aria-label="Overlays">
+            <button class="tile active" data-overlay="targets" aria-pressed="true" title="The spots pros smoke on this map, with names. Click one to make it your target; clicks near one snap to it. Switch off for a clean map, or to place a target right beside one"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 17.5s-5.5-5.2-5.5-9a5.5 5.5 0 0 1 11 0c0 3.8-5.5 9-5.5 9z"/><circle cx="10" cy="8.5" r="2"/></svg><span class="tile-label">Targets</span></button>
             <button class="tile" data-overlay="spawns" hidden title="T/CT spawn positions - click one to throw from it"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M6 3v14"/><path d="M6 3h9l-2.4 3L15 9H6z"/></svg><span class="tile-label">Spawns</span></button>
             <button class="tile" data-overlay="collision" title="Invisible collision: the grenade-clips, physics-clips and glass that stop smokes (magenta). 3D only"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 2.6l6.4 3.4v7.4L10 17.4 3.6 13.4V6z"/><path d="M6.6 8v4.2L10 14"/></svg><span class="tile-label">Collision</span></button>
             <button class="tile" data-overlay="topdown" title="Look straight down at the whole map. 3D only"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 2.5v7M7 6.5l3 3 3-3"/><rect x="4" y="12" width="12" height="5" rx="1"/></svg><span class="tile-label">Top-down</span></button>
@@ -351,29 +352,33 @@ give weapon_smokegrenade<button data-copy="cmd-setup" class="btn">copy</button><
          and where you are in it. These were three separate strips before, one
          of them floating over the preview image. -->
     <div class="panel-head">
-      <button id="panel-collapse" class="panel-collapse" title="Hide results" aria-label="Hide results" aria-expanded="true">
-        <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M8 5l5 5-5 5"/></svg></button>
-      <div class="tile-row seg-mode" id="panel-mode" role="group" aria-label="What the panel shows">
-        <button class="tile active" data-mode="results" aria-pressed="true" title="The lineups the solver found for the current target">Results</button>
-        <button class="tile" data-mode="saved" aria-pressed="false" title="Lineups you starred, across every map. With Steam sign-in they follow you to any browser">Saved</button>
-      </div>
-      <span class="head-count" id="head-count"></span>
-      <select id="sort-by" class="head-sort" title="Order the results" aria-label="Sort results by">
-        <option value="score">best score</option>
-        <option value="community">most voted</option>
-        <option value="precision">closest to target</option>
-        <option value="stability">most reliable</option>
-        <option value="bounces">fewest bounces</option>
-        <option value="flight">fastest</option>
-      </select>
-      <button id="row-detail" class="btn head-toggle" title="Show the raw numbers on each result" aria-pressed="false">detailed</button>
-      <span class="list-pager" id="list-pager" hidden>
-        <button class="pager-arrow" id="pager-prev" aria-label="Previous page">
-          <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M12 5l-5 5 5 5"/></svg></button>
-        <span class="pager-label" id="pager-label">1/1</span>
-        <button class="pager-arrow" id="pager-next" aria-label="Next page">
+      <div class="head-row">
+        <div class="tile-row seg-mode" id="panel-mode" role="group" aria-label="What the panel shows">
+          <button class="tile active" data-mode="results" aria-pressed="true" title="The lineups the solver found for the current target">Results</button>
+          <button class="tile" data-mode="saved" aria-pressed="false" title="Lineups you starred, across every map. With Steam sign-in they follow you to any browser">Saved</button>
+        </div>
+        <span class="head-count" id="head-count"></span>
+        <button id="panel-collapse" class="panel-collapse" title="Hide results" aria-label="Hide results" aria-expanded="true">
           <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M8 5l5 5-5 5"/></svg></button>
-      </span>
+      </div>
+      <div class="head-row head-tools">
+        <select id="sort-by" class="head-sort" title="Order the results" aria-label="Sort results by">
+          <option value="score">best score</option>
+          <option value="community">most voted</option>
+          <option value="precision">closest to target</option>
+          <option value="stability">most reliable</option>
+          <option value="bounces">fewest bounces</option>
+          <option value="flight">fastest</option>
+        </select>
+        <button id="row-detail" class="btn head-toggle" title="Show the raw numbers on each result" aria-pressed="false">detailed</button>
+        <span class="list-pager" id="list-pager" hidden>
+          <button class="pager-arrow" id="pager-prev" aria-label="Previous page">
+            <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M12 5l-5 5 5 5"/></svg></button>
+          <span class="pager-label" id="pager-label">1/1</span>
+          <button class="pager-arrow" id="pager-next" aria-label="Next page">
+            <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M8 5l5 5-5 5"/></svg></button>
+        </span>
+      </div>
     </div>
     <div id="preview-pane" hidden>
       <div class="preview-thumb" id="preview-thumb"></div>
@@ -413,6 +418,6 @@ give weapon_smokegrenade<button data-copy="cmd-setup" class="btn">copy</button><
      4h, so bumping ?v= here is what busts that cache. Bump on any change to a
      directly-referenced asset. (The permanent cure is CF Browser Cache TTL ->
      "Respect Existing Headers", after which this is belt-and-suspenders.) -->
-<script type="module" src="viewer/js/main.js?v=98"></script>
+<script type="module" src="viewer/js/main.js?v=99"></script>
 </body>
 </html>

@@ -4,7 +4,7 @@
 // selecting a lineup route through the callbacks main.js registers.
 
 import { state, filtered, clickShort, clickClass, esc, skyAngle, proMatched, scoreBreakdown, referenceBand, referenceFallback,
-  movementWords, clickWords, aimWords, difficultyWords, TARGET_SNAP_RADIUS } from "./state.js?v=98";
+  movementWords, clickWords, aimWords, difficultyWords, TARGET_SNAP_RADIUS } from "./state.js?v=99";
 
 const statusEl = state.statusEl;
 const PAGE_SIZE = 50;
@@ -91,7 +91,9 @@ let callbacks = {
 // stability percent, aim degrees, ranking score) is real and still reachable:
 // Detailed mode puts it back on the row, and the opened card shows the full
 // score working either way.
-function lineupSummaryHtml(l) {
+// `starTag` is for the plain rows, which have no star button of their own;
+// the selected card carries one in its corner and would show the star twice.
+function lineupSummaryHtml(l, { starTag = true } = {}) {
   const detailed = state.expertRows;
   const diff = difficultyWords(l);
   // The whole execution - how you stand, what you press, what you point at -
@@ -170,7 +172,7 @@ function stanceTag(l) {
       : referenceBand(l) >= 4 ? `<span class="ref weakref" title="Rough: the only thing to line up against sits far out on the reticle arm. CS2's grenade-crosshair ticks are 10° apart, so this is over a tick off centre and hard to judge under pressure">Rough</span>`
       : referenceBand(l) === 0 ? `<span class="ref tightref" title="Pinpoint: a silhouette sits within 1° of the crosshair - put the crosshair on it and the aim is set, with nothing to estimate">Pinpoint</span>` : "",
     detailed && l._spawn ? `<span class="ref spawn" title="Spawn: throwable from where the round starts you">Spawn</span>` : "",
-    l._favorite ? `<span class="ref fav" title="saved">★</span>` : "",
+    starTag && l._favorite ? `<span class="ref fav" title="saved">★</span>` : "",
   ].filter(Boolean).join("");
 
   // Detailed mode keeps the aim line and the raw numbers on the row; simple
@@ -250,8 +252,7 @@ export function renderLineups() {
   }
   // The sort and the detailed toggle describe a result list; they have no
   // meaning over the saved one.
-  document.getElementById("sort-by").hidden = saved;
-  document.getElementById("row-detail").hidden = saved;
+  document.querySelector(".panel-head .head-tools").hidden = saved;
   const list = document.getElementById("lineup-list");
   const focusIdx = list.contains(document.activeElement)
     ? document.activeElement.dataset.idx : undefined;
@@ -552,7 +553,7 @@ function detailCard(l) {
     `<button type="button" class="card-copy" data-copy-text="${esc(l.console)}" title="Copy the throw position and angles (setpos)" aria-label="Copy position command">` +
     `<svg viewBox="0 0 20 20" aria-hidden="true"><rect x="7" y="7" width="9" height="9" rx="1.5"/><path d="M13 7V5.5A1.5 1.5 0 0 0 11.5 4H5.5A1.5 1.5 0 0 0 4 5.5v6A1.5 1.5 0 0 0 5.5 13H7"/></svg></button>` +
     `<button type="button" class="card-remove remove-btn" title="Remove this lineup from the list" aria-label="Remove this lineup">×</button>` +
-    `<div class="row1">${lineupSummaryHtml(l)}</div>` +
+    `<div class="row1">${lineupSummaryHtml(l, { starTag: false })}</div>` +
     // No how-text here: the same sentence is the hover on the row above it,
     // in the card as well as in the list, and printing it twice made the
     // opened lineup taller without saying anything new.
@@ -564,7 +565,29 @@ function detailCard(l) {
   // Only the summary row collapses the card. It used to be the whole card, so
   // opening the score breakdown, or clicking anywhere near the console command,
   // closed the lineup instead of doing the thing that was clicked.
-  el.querySelector(".row1")?.addEventListener("click", () => callbacks.onSelect(i));
+  el.querySelector(".row1")?.addEventListener("click", e => {
+    // The vote arrows live on this row too, and a vote is not a request to
+    // close the card - which is what every vote on a selected lineup did.
+    const v = e.target.closest("[data-vote]");
+    if (v) {
+      e.stopPropagation();
+      const chosen = Number(v.dataset.vote);
+      const mine = state.votes?.mine?.[l.id] ?? 0;
+      callbacks.onVote(l, mine === chosen ? 0 : chosen);
+      return;
+    }
+    callbacks.onSelect(i);
+  });
+  el.querySelector(".row1")?.addEventListener("keydown", e => {
+    const v = e.target.closest("[data-vote]");
+    if (v && (e.key === "Enter" || e.key === " ")) {
+      e.preventDefault();
+      e.stopPropagation();
+      const chosen = Number(v.dataset.vote);
+      const mine = state.votes?.mine?.[l.id] ?? 0;
+      callbacks.onVote(l, mine === chosen ? 0 : chosen);
+    }
+  });
   // The numbers behind the ranking, one click away rather than on the row:
   // whoever opens this has asked for them, which is the only time they help.
   el.querySelector(".details-toggle")?.addEventListener("click", e => {
