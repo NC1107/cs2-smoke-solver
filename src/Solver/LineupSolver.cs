@@ -156,7 +156,14 @@ public static partial class LineupSolver
         // The same, for particular origins only: the spot a player clicked
         // and its wall pins are the ones they asked about, so those keep a
         // candidate per kind while the lattice around them keeps one each.
-        Func<Vector3, bool>? keepEveryKindAt = null)
+        Func<Vector3, bool>? keepEveryKindAt = null,
+        // Origins that never share a bucket with their neighbours: the wall
+        // and corner pins. One survivor per 64u cell is what keeps a map-wide
+        // list readable, but the survivor was chosen by bounces and rest
+        // distance, both blind to whether the feet are placed by geometry - so
+        // the corner wedge at a site lost its cell to the open ground beside
+        // it every time, and the lineups people actually use never surfaced.
+        Func<Vector3, bool>? ownBucketAt = null)
     {
         if (zoneCrossings.Count == 0)
         {
@@ -285,7 +292,9 @@ public static partial class LineupSolver
                 var kind = keepEveryKind || (keepEveryKindAt?.Invoke(feet) ?? false)
                     ? (int)type * 1000 + (int)MathF.Round(strength * 10f) * 10 + (int)MathF.Round(runOffset / 45f) + 2
                     : 0;
-                var key = ((int)MathF.Floor(feet.X / dedupeBucketSize), (int)MathF.Floor(feet.Y / dedupeBucketSize), kind);
+                var key = ownBucketAt?.Invoke(feet) ?? false
+                    ? ((int)MathF.Round(feet.X * 4f), (int)MathF.Round(feet.Y * 4f), kind)
+                    : ((int)MathF.Floor(feet.X / dedupeBucketSize), (int)MathF.Floor(feet.Y / dedupeBucketSize), kind);
                 best.AddOrUpdate(key, lineup, (_, current) => Better(lineup, current, target) ? lineup : current);
                 return 0f;
             }

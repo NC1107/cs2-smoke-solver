@@ -148,4 +148,50 @@ public class StanceGeometryTests
             Assert.True(MathF.Abs(feet.Z - slopeZ) < 2.5f, $"pin at {feet} is not resting on the slope (z={slopeZ:F1})");
         }
     }
+
+    [Fact]
+    public void AKneeHighWallPinsTheFeetLikeAFullOne()
+    {
+        // The corners a player wedges into at de_dust2's A site are knee-high
+        // walls and crates, ~28u tall. Waist-height probes sailed over them
+        // and every one of those spots was "open ground".
+        var mesh = SyntheticMeshes.FromQuads(
+        [
+            SyntheticMeshes.Ground(-64, 512, 0),
+            SyntheticMeshes.WallX(0, -64, 512, 0, 28),
+            SyntheticMeshes.WallY(-64, 512, 0, 0, 28),
+        ]);
+        var collider = new TriangleCollider(mesh, BoundsMin, BoundsMax);
+
+        Assert.Equal(2, LineupSolver.PositionStance(collider, new Vector3(16f, 16f, 0f)).Pin);
+        Assert.Equal(1, LineupSolver.PositionStance(collider, new Vector3(16f, 200f, 0f)).Pin);
+        // And the corner pin is generated from a lattice spot nearby.
+        var origins = new List<Vector3> { new(48f, 48f, 0f) };
+        LineupSolver.AddPinnedOriginsTo(VoxelGrid.Build(mesh, 16f, BoundsMin, BoundsMax), collider, origins);
+        Assert.Contains(origins, o => MathF.Abs(o.X - 16f) < 1f && MathF.Abs(o.Y - 16f) < 1f);
+    }
+
+    [Fact]
+    public void AStaircaseIsNotAWall()
+    {
+        // Each riser is under the step height, so walking into it climbs it;
+        // a "pin" against a riser would be a spot nobody can stop at.
+        var quads = new List<(float[], float[], float[], float[])> { SyntheticMeshes.Ground(-64, 512, 0) };
+        for (var i = 0; i < 6; i++)
+        {
+            var x0 = 128 + i * 24;
+            quads.Add(SyntheticMeshes.WallX(x0, -64, 512, i * 16, (i + 1) * 16));
+            quads.Add(([x0, -64, (i + 1) * 16], [x0 + 24, -64, (i + 1) * 16], [x0 + 24, 512, (i + 1) * 16], [x0, 512, (i + 1) * 16]));
+        }
+        var mesh = SyntheticMeshes.FromQuads(quads);
+        var collider = new TriangleCollider(mesh, BoundsMin, BoundsMax);
+
+        // At the foot of the stairs, and standing on the second tread.
+        Assert.Equal(0, LineupSolver.PositionStance(collider, new Vector3(100f, 200f, 0f)).Pin);
+        Assert.Equal(0, LineupSolver.PositionStance(collider, new Vector3(160f, 200f, 32f)).Pin);
+        // And no pin gets generated against a riser from a spot at the foot.
+        var origins = new List<Vector3> { new(100f, 200f, 0f) };
+        LineupSolver.AddPinnedOriginsTo(VoxelGrid.Build(mesh, 16f, BoundsMin, BoundsMax), collider, origins);
+        Assert.Single(origins);
+    }
 }

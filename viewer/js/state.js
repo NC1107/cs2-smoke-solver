@@ -130,6 +130,7 @@ export const state = {
     pin: document.getElementById("f-pin"),
     reference: document.getElementById("f-reference"),
     stance: document.getElementById("f-stance"),
+    repro: document.getElementById("f-repro"),
   },
 };
 
@@ -254,6 +255,12 @@ function computeFiltered() {
   // something remains. The rows badge themselves, so a weak reference or an
   // airborne throw is visibly that rather than silently absent.
   const prefs = [];
+  // Most important first: the ladder below relaxes from the end, so a
+  // reproducible jump throw outlives an unreproducible standing one.
+  if (filters.repro.value !== "") {
+    const limit = Number.parseFloat(filters.repro.value);
+    prefs.push({ name: `a throw a person can land within ${limit}u`, keep: l => humanError(l) <= limit });
+  }
   if (filters.stance.value === "ground") {
     prefs.push({ name: "feet on the ground", keep: l => !AIRBORNE.has(l.type) });
   }
@@ -283,6 +290,24 @@ function computeFiltered() {
 // Older cached results predate the field; treat those as "has some landmark"
 // rather than dropping them.
 export const referenceBand = l => l.aimRef?.band ?? (l.aimRef?.tier === "sky" ? 6 : 3);
+
+// How far off a person's throw of this lineup can be expected to land: the
+// server's HumanError (src/Solver/HumanError.cs), recomputed here for results
+// cached before the field existed. Keep the two in step.
+const POSITION_ERROR = { corner: 2, wall: 8 };
+const MOVEMENT_ERROR = { JumpThrow: 6, CrouchJumpThrow: 6, RunJumpThrow: 16 };
+const aimErrorDeg = band => band === 0 ? 0.5 : band <= 2 ? 1 : band === 3 ? 1.5 : band <= 5 ? 2.5 : 5;
+export function humanError(l) {
+  if (typeof l.humanError === "number") {
+    return l.humanError;
+  }
+  const dist = Math.hypot(l.rest[0] - l.feet[0], l.rest[1] - l.feet[1]);
+  const scatter = l.scatter ?? 0;
+  return (POSITION_ERROR[l.pin] ?? 24)
+    + dist * Math.tan(aimErrorDeg(referenceBand(l)) * Math.PI / 180)
+    + (MOVEMENT_ERROR[l.type] ?? 0)
+    + (scatter > 16 ? scatter : 0);
+}
 
 // A lineup's stable identity across solves: the throw itself, quantised to
 // what a player could reproduce. Feet to the unit and angles to a tenth of a
@@ -589,42 +614,28 @@ export const aimWords = l => {
 const DIFFICULTY = ["Tricky", "Practice", "Reliable", "Easy"];
 
 // The best a throw of this kind can be called, whatever else is in its favour.
-// Leaving the ground is the dividing line. A stationary throw is your crosshair
-// and a click; anything airborne adds a jump to time and a release to hit while
-// the body is moving, and stability - which only measures how far the crosshair
-// may drift - says nothing about landing that. So an airborne throw is never
-// "Easy", and it does not get "Reliable" for free either: it has to earn that
-// back below by placing the feet against geometry and putting a real edge under
-// the crosshair.
+// Leaving the ground is the dividing line: a jump adds a timing to hit while
+// the body is moving, so an airborne throw is never "Easy", and a running
+// jump - your own run speed on top - is never better than "Practice".
 const MOVEMENT_CEILING = {
   Stand: 3, Crouch: 3,
-  JumpThrow: 1, CrouchJumpThrow: 1,
+  JumpThrow: 2, CrouchJumpThrow: 2,
   RunJumpThrow: 1,
 };
 
 // And the best an aim with this much to line up against can be called.
-const AIM_CEILING = { edge: 3, reticle: 3, flat: 1, sky: 0 };
+// The difficulty word is the reproducibility estimate in four steps, so the
+// tag, the order and the default filter all say the same thing about a
+// lineup. A blind corner lob at a site is Easy: two units of foot error and
+// a few degrees of sky at 100u is nothing. The old tag capped every sky aim
+// at Tricky, and put that word on exactly the throws people use most.
+// Leaving the ground still holds a throw below Easy: a jump adds a timing.
+const EASY_ERROR = 12, RELIABLE_ERROR = 20, PRACTICE_ERROR = 32;
 
 export const difficultyWords = l => {
-  const pinned = l.pin === "wall" || l.pin === "corner";
-  const tier = l.aimRef?.tier ?? "flat";
-  const stability = l.stability ?? 0;
-
-  // Start from how forgiving the throw is, then credit a stand spot the
-  // geometry places for you.
-  let rank = stability >= 0.95 ? 3 : stability >= 0.8 ? 2 : stability >= 0.5 ? 1 : 0;
-  if (pinned) {
-    rank += 1;
-  }
-  // An airborne throw earns its way back to "Reliable" - never past it - by
-  // removing the two things that actually go wrong: the feet, placed by walking
-  // into geometry rather than judged, and the aim, set on an edge sitting on the
-  // crosshair rather than estimated off a reticle arm. With both, the jump is
-  // the only variable left. With either missing it stays something to practise,
-  // however forgiving the stability number looks.
-  const airborne = AIRBORNE.has(l.type);
-  const earnedBack = airborne && pinned && referenceBand(l) <= 1 ? 2 : (MOVEMENT_CEILING[l.type] ?? 3);
-  rank = Math.min(rank, earnedBack, AIM_CEILING[tier] ?? 1);
+  const err = humanError(l);
+  let rank = err <= EASY_ERROR ? 3 : err <= RELIABLE_ERROR ? 2 : err <= PRACTICE_ERROR ? 1 : 0;
+  rank = Math.min(rank, MOVEMENT_CEILING[l.type] ?? 3);
   const word = DIFFICULTY[Math.max(0, Math.min(DIFFICULTY.length - 1, rank))];
   return { word, cls: word === "Easy" ? "easy" : word === "Reliable" ? "reliable"
     : word === "Tricky" ? "tricky" : "practice" };

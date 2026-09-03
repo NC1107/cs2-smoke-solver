@@ -472,7 +472,7 @@ public static class LineupApi
             : "all";
         // Bump when solver or sim behavior changes: cached answers from older code
         // must never be replayed as current results.
-        const int QueryVersion = 31;
+        const int QueryVersion = 32;
         // meshVersion is the content-hashed mesh identity (not just the game
         // build), so re-extracting a map - e.g. dropping the Retake tape - forces
         // a re-solve instead of replaying results computed against the old mesh.
@@ -606,10 +606,14 @@ public static class LineupApi
         // shift a single movement tick is not reproducible either, whatever it
         // has to aim at, so it drops the equivalent of three bands and can
         // never sit at the top of the list.
-        const float ChaosScatter = 16f;
-        const int ChaosBands = 3;
-        int Reproducibility(Lineup l) =>
-            aimRefs[l].Band + (l.RestScatter > ChaosScatter ? ChaosBands : 0);
+        // The lead key is the landing error a person would add (HumanError):
+        // feet placement by pin, aim by reference band scaled by how far the
+        // grenade flies, movement, chaos. In 8u steps so the tiebreaks below
+        // still order near-equals.
+        var humanError = solve.Lineups.ToDictionary(
+            l => l,
+            l => HumanError.Estimate(l, pins[l], aimRefs[l].Band));
+        int Reproducibility(Lineup l) => (int)(humanError[l] / 8f);
 
         var bySky = solve.Lineups
             .OrderBy(Reproducibility)
@@ -667,6 +671,9 @@ public static class LineupApi
                 // viewer badges it so the player knows the spot is exposed and
                 // why it ranks below concealed throws.
                 exposed = l.DirectLos,
+                // Expected miss in units when a person throws it: what the
+                // ranking led with, so the viewer can filter by the same number.
+                humanError = humanError[l],
                 aimRef = new
                 {
                     tier = aimRefs[l].Tier,

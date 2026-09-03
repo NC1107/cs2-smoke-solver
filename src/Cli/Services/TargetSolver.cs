@@ -316,11 +316,19 @@ public static class TargetSolver
             origins = LineupSolver.ExactOriginOnly(
                 grid, playerCollider, new Vector3(originClick.X, originClick.Y, exactZ), crouchOnlyExtras);
         }
-        else if (standSpots is { Count: > 0 } && !spawnsOnly)
+        // The pinned origins keep a candidate each in the sweep rather than
+        // competing with their cell's open ground (see Solve's ownBucketAt).
+        var pinnedOrigins = new HashSet<(int, int)>();
+        if (!(exactOrigin && hasOrigin) && standSpots is { Count: > 0 } && !spawnsOnly)
         {
             // Walking into a wall is still the most reproducible way to place
             // feet exactly, and the lattice never lands on those spots.
+            var before = origins.Count;
             LineupSolver.AddPinnedOriginsTo(grid, playerCollider, origins, crouchOnlyExtras);
+            foreach (var o in origins.Skip(before))
+            {
+                pinnedOrigins.Add(((int)MathF.Round(o.X * 4f), (int)MathF.Round(o.Y * 4f)));
+            }
         }
         if (hasOrigin && !exactOrigin)
         {
@@ -380,6 +388,9 @@ public static class TargetSolver
             // from there while the lattice a step away had plenty.
             keepEveryKindAt: hasOrigin && !deepSpot
                 ? feet => Vector2.Distance(new Vector2(feet.X, feet.Y), originClick) <= ClickKindRadius
+                : null,
+            ownBucketAt: pinnedOrigins.Count > 0
+                ? feet => pinnedOrigins.Contains(((int)MathF.Round(feet.X * 4f), (int)MathF.Round(feet.Y * 4f)))
                 : null,
             // Ordering only, and only for a map-wide sweep: a one-spot probe
             // has a single origin, so there is no order to grow.

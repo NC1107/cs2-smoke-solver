@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Smoke Solver</title>
 <link rel="icon" href="viewer/favicon.svg" type="image/svg+xml">
-<link rel="stylesheet" href="viewer/app.css?v=102">
+<link rel="stylesheet" href="viewer/app.css?v=103">
 </head>
 <body>
 
@@ -110,6 +110,13 @@
       <summary>filters <span class="filter-count" id="filter-count"></span><button type="button" class="card-reset" id="filters-reset" title="Reset filters to defaults" aria-label="Reset filters">
         <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M15.5 7.5a6 6 0 1 0 .8 4"/><path d="M15.9 3.4v4.3h-4.3"/></svg></button></summary>
       <div class="card-body" id="filter-body">
+        <select id="f-repro" aria-label="How far a person's throw can be expected to miss" data-default="32"
+                data-label="Reproducible" data-desc="How far off a real throw of this lineup would land, adding up what a person cannot control: feet placed by a corner (2u), a wall (8u) or open ground (24u); aim set on a silhouette (half a degree) or into blank sky (five degrees), scaled by how far the smoke flies; a jump or run. A corner lob from 200u out passes easily; a pinpoint aim from open ground 1500u away does not. The list is ordered by this same number.">
+          <option value="32" selected>within 32u (recommended)</option>
+          <option value="16">within 16u (strict)</option>
+          <option value="64">within 64u</option>
+          <option value="">any, however hard to reproduce</option>
+        </select>
         <select id="f-stance" aria-label="Feet on the ground" data-default="ground"
                 data-label="Stance" data-desc="Prefer throws made standing still. A jump adds a timing to hit and a release to judge while the body is moving, and a run-jump adds your own run speed straight into the grenade - measured against the real game, run-jumps land within 3 units only 71% of the time against 90% for a crouching throw. Airborne throws are still shown when a target has nothing else; this only decides what leads.">
           <option value="ground" selected>feet on the ground (recommended)</option>
@@ -168,18 +175,18 @@
           <option value="2">≤2u</option>
           <option value="1">≤1u (perfect)</option>
         </select>
-        <select id="f-reference" aria-label="Aim reference quality" data-default="1"
+        <select id="f-reference" aria-label="Aim reference quality" data-default=""
                 data-label="Aim reference" data-desc="How close the thing you line up against sits to your crosshair. CS2's grenade crosshair puts its ticks 10° apart, so a landmark 18° out is nearly two ticks away - technically a reference, useless in a round. &quot;On the crosshair&quot; wants a silhouette within 3°. If no lineup for a target clears the bar, all of them are shown anyway rather than none.">
-          <option value="1" selected>on the crosshair (≤3°)</option>
+          <option value="" selected>any - the reproducible filter above weighs it by distance</option>
           <option value="0">dead on (≤1°)</option>
+          <option value="1">on the crosshair (≤3°)</option>
           <option value="2">near the crosshair (≤6°)</option>
           <option value="3">anything with a landmark</option>
-          <option value="">any, including no landmark</option>
         </select>
-        <select id="f-sky" aria-label="Sky-aimed lineups" data-default="65"
+        <select id="f-sky" aria-label="Sky-aimed lineups" data-default=""
                 data-label="Sky throws" data-desc="Sky-aimed lineups have no wall or silhouette under the crosshair to line up against - only the horizon. Allowed keeps the reasonable ones (up to 65° above the horizon); none shows only throws aimed against real geometry. Applies instantly to shown results.">
-          <option value="65" selected>allowed ≤65° up (recommended)</option>
-          <option value="">any angle</option>
+          <option value="" selected>any angle - the reproducible filter weighs sky aim by distance</option>
+          <option value="65">allowed ≤65° up</option>
           <option value="off">none - wall aim only</option>
         </select>
       </div>
@@ -363,6 +370,7 @@ give weapon_smokegrenade<button data-copy="cmd-setup" class="btn">copy</button><
       </div>
       <div class="head-row head-tools">
         <select id="sort-by" class="head-sort" title="Order the results" aria-label="Sort results by">
+          <option value="repro">most reproducible</option>
           <option value="score">best score</option>
           <option value="community">most voted</option>
           <option value="precision">closest to target</option>
@@ -418,6 +426,6 @@ give weapon_smokegrenade<button data-copy="cmd-setup" class="btn">copy</button><
      4h, so bumping ?v= here is what busts that cache. Bump on any change to a
      directly-referenced asset. (The permanent cure is CF Browser Cache TTL ->
      "Respect Existing Headers", after which this is belt-and-suspenders.) -->
-<script type="module" src="viewer/js/main.js?v=102"></script>
+<script type="module" src="viewer/js/main.js?v=103"></script>
 </body>
 </html>

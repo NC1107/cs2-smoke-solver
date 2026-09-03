@@ -4,7 +4,7 @@
 // selecting a lineup route through the callbacks main.js registers.
 
 import { state, filtered, clickShort, clickClass, esc, skyAngle, proMatched, scoreBreakdown, referenceBand, referenceFallback,
-  movementWords, clickWords, aimWords, difficultyWords, TARGET_SNAP_RADIUS } from "./state.js?v=102";
+  movementWords, clickWords, aimWords, difficultyWords, TARGET_SNAP_RADIUS, humanError } from "./state.js?v=103";
 
 const statusEl = state.statusEl;
 const PAGE_SIZE = 50;
@@ -50,6 +50,11 @@ function sortForList(list, target) {
 // tiebreaker instead of restating every case.
 function ranker(by, target, missOf) {
   switch (by) {
+    // The server's own order: the landing error a person adds, in 8u steps
+    // so the score still decides between near-equals.
+    case "repro": return (a, b) =>
+      (Math.floor(humanError(a) / 8) - Math.floor(humanError(b) / 8)) ||
+      (scoreBreakdown(b, target).total - scoreBreakdown(a, target).total);
     case "precision": return (a, b) => missOf(a) - missOf(b);
     case "stability": return (a, b) => (b.stability ?? 0) - (a.stability ?? 0);
     case "bounces": return (a, b) => (a.Bounces ?? 0) - (b.Bounces ?? 0);
@@ -524,7 +529,13 @@ function scoreRowsHtml(l) {
       `<b class="${p.delta >= 0 ? "up" : "down"}">${p.delta >= 0 ? "+" : ""}${p.delta}</b></div>`)
     .join("");
   const total = scoreBreakdown(l, target).total;
-  return `<div class="score-rows"><div class="score-row"><span>base</span><b>140</b></div>${rows}` +
+  // What the list is ordered by, said first: how far a person's throw of
+  // this lineup can be expected to land from where the solver put it.
+  const err = humanError(l);
+  const why = l.pin === "corner" ? "corner places your feet" : l.pin === "wall" ? "wall places your feet" : "feet judged on open ground";
+  const aim = aimWords(l);
+  return `<div class="score-rows"><div class="score-row score-repro"><span>a person lands this within about <b>${err.toFixed(0)}u</b> - ${why}${aim ? `, aim on ${aim}` : ""}</span></div>` +
+    `<div class="score-row"><span>base</span><b>140</b></div>${rows}` +
     `<div class="score-row score-total"><span>Match score</span><b>${total}</b></div></div>`;
 }
 

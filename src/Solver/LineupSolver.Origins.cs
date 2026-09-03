@@ -244,11 +244,18 @@ public static partial class LineupSolver
     // A surface steeper than this is a wall for pinning purposes (the grenade
     // sim's floor test is normal.Z > 0.7; walls are the near-vertical rest).
     const float WallNormalMaxZ = 0.35f;
-    // Two probe heights, both above floor trim: waist (36) catches full walls
+    // Three probe heights, all above floor trim: waist (36) catches full walls
     // and the clip brushes laid along most railings; the second (46) catches
     // the top bar of an unclipped railing whose sparse balusters a single
-    // waist ray can slip between.
-    static readonly float[] ProbeHeights = [36f, 46f];
+    // waist ray can slip between; the low one (22) catches what the first
+    // two sailed over - the knee-high walls and crates a player wedges into
+    // just as readily. de_dust2's A site is ringed with them, and every
+    // corner Nick stands in there was "open ground" to the waist probes. It
+    // sits above the step height so a step is not a wall, and a hit from it
+    // is kept only if the hull cannot climb the thing it hit (see
+    // NearbyWallPlanes), which rules out the risers of a staircase.
+    const float LowProbeHeight = 22f;
+    static readonly float[] ProbeHeights = [LowProbeHeight, 36f, 46f];
     static readonly Vector3[] ProbeDirs = [.. Enumerable.Range(0, 8)
         .Select(i => new Vector3(MathF.Cos(i * MathF.PI / 4f), MathF.Sin(i * MathF.PI / 4f), 0f))];
 
@@ -275,6 +282,10 @@ public static partial class LineupSolver
                 }
                 n = Vector2.Normalize(n);
                 var hitPoint = probe + dir * (hit.T * range);
+                if (height <= LowProbeHeight && Climbable(collider, feet, dir, hit.T * range))
+                {
+                    continue;
+                }
                 // Plane in Hesse form n.x = d; the pinned position satisfies
                 // n.x = d + hull half-width.
                 var d = Vector2.Dot(n, new Vector2(hitPoint.X, hitPoint.Y));
@@ -286,6 +297,30 @@ public static partial class LineupSolver
             }
         }
         return walls;
+    }
+
+    // Whether walking into the low obstacle the probe hit simply climbs it: the
+    // crouched hull, pushed a little past the face and lifted by one step,
+    // finds nothing in the way. A stair riser passes (the tread above is the
+    // way up); a knee-high wall does not.
+    static bool Climbable(TriangleCollider collider, Vector3 feet, Vector3 dir, float hitDistance)
+    {
+        // The floor the hull stands on just short of the obstacle - on a
+        // staircase, the tread it has already climbed onto, not the floor it
+        // left. Measured short of the face so the footprint does not reach
+        // over the obstacle's own top, which is not a tread. Only a floor
+        // within a step of the feet counts.
+        var shortOf = feet + dir * (hitDistance - PlayerHalfWidth - 1f);
+        var floor = FloorUnderHull(collider, shortOf, StandSpots.StepHeight * 2, StandSpots.StepHeight * 2) is { } f && f <= feet.Z + StandSpots.StepHeight
+            ? f
+            : feet.Z;
+        // Then the crouched hull pushed a little into the face and lifted one
+        // step from that floor: if nothing is in the way, walking into it
+        // simply climbs it.
+        var pushed = feet + dir * (hitDistance - PlayerHalfWidth + 2f);
+        var lifted = pushed with { Z = floor + StandSpots.StepHeight };
+        var half = new Vector3(PlayerHalfWidth - 0.5f, PlayerHalfWidth - 0.5f, StandSpots.CrouchHeight / 2 - 0.5f);
+        return !collider.BoxIntersects(lifted + new Vector3(0, 0, StandSpots.CrouchHeight / 2), half);
     }
 
     /// <summary>
