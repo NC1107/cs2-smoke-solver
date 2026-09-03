@@ -4,7 +4,7 @@
 // selecting a lineup route through the callbacks main.js registers.
 
 import { state, filtered, clickShort, clickClass, esc, skyAngle, proMatched, scoreBreakdown, referenceBand, referenceFallback,
-  movementWords, clickWords, aimWords, difficultyWords } from "./state.js?v=87";
+  movementWords, clickWords, aimWords, difficultyWords } from "./state.js?v=91";
 
 const statusEl = state.statusEl;
 const PAGE_SIZE = 50;
@@ -28,12 +28,32 @@ function sortForList(list, target) {
   const by = document.getElementById("sort-by")?.value ?? "score";
   const copy = [...list];
   const missOf = l => Math.hypot(l.rest[0] - target[0], l.rest[1] - target[1]);
+  // An execute's rows are grouped by smoke first, whatever the sort. Sorting
+  // purely by score interleaves the smokes, and the headings then repeat every
+  // time the list crosses back into one - four headings for two smokes.
+  // Ordering WITHIN each smoke still honours the chosen sort.
+  if (state.result?.execute) {
+    const rank = ranker(by, target, missOf);
+    return copy.sort((a, b) => (a._smoke ?? 0) - (b._smoke ?? 0) || rank(a, b));
+  }
   switch (by) {
     case "precision": return copy.sort((a, b) => missOf(a) - missOf(b));
     case "stability": return copy.sort((a, b) => (b.stability ?? 0) - (a.stability ?? 0));
     case "bounces": return copy.sort((a, b) => (a.Bounces ?? 0) - (b.Bounces ?? 0));
     case "flight": return copy.sort((a, b) => (a.flightTime ?? 0) - (b.flightTime ?? 0));
     default: return copy.sort((a, b) => scoreBreakdown(b, target).total - scoreBreakdown(a, target).total);
+  }
+}
+
+// The comparator behind each sort option, so the execute path can reuse it as a
+// tiebreaker instead of restating every case.
+function ranker(by, target, missOf) {
+  switch (by) {
+    case "precision": return (a, b) => missOf(a) - missOf(b);
+    case "stability": return (a, b) => (b.stability ?? 0) - (a.stability ?? 0);
+    case "bounces": return (a, b) => (a.Bounces ?? 0) - (b.Bounces ?? 0);
+    case "flight": return (a, b) => (a.flightTime ?? 0) - (b.flightTime ?? 0);
+    default: return (a, b) => scoreBreakdown(b, target).total - scoreBreakdown(a, target).total;
   }
 }
 
@@ -93,10 +113,10 @@ function lineupSummaryHtml(l) {
 // judging a gap in a round is not something people can do.
 function stanceTag(l) {
   if (l.pin === "corner") {
-    return `<span class="ref pin" title="Wedged into a corner: walk into both walls and your feet are exactly right every time, with nothing to measure and nothing to remember">Wedge into corner</span>`;
+    return `<span class="ref pin" title="Corner: wedged into one - walk into both walls and your feet are exactly right every time, with nothing to measure and nothing to remember">Corner</span>`;
   }
   if (l.pin === "wall") {
-    return `<span class="ref pin" title="Flush against the wall: walk into it and your feet are exactly right every time, with nothing to measure">Walk into wall</span>`;
+    return `<span class="ref pin" title="Wall: flush against it - walk into it and your feet are exactly right every time, with nothing to measure">Wall</span>`;
   }
   const gap = l.wallGap;
   if (typeof gap !== "number") {
@@ -107,7 +127,7 @@ function stanceTag(l) {
   }
   // Close enough that people will read the marker as "against that wall" and
   // be wrong about it - which is exactly the case worth naming.
-  return `<span class="ref nearwall" title="Near a wall but NOT touching it - your shoulder sits about ${gap.toFixed(0)} units short. Walking into the wall puts you in the wrong place; this spot has to come from the pasted position, not from the wall">${gap.toFixed(0)}u off the wall</span>`;
+  return `<span class="ref nearwall" title="Near a wall but NOT touching it - your shoulder sits about ${gap.toFixed(0)} units short. Walking into the wall puts you in the wrong place; this spot has to come from the pasted position, not from the wall">${gap.toFixed(0)}u off</span>`;
 }
 
 // At most one line of tags, and only facts a player would change their pick
@@ -119,15 +139,15 @@ function stanceTag(l) {
     // hover with the rest of the execution detail, and a whole class of lineup
     // people hunt for became invisible.
     stanceTag(l),
-    proMatched(l) ? `<span class="ref pro" title="pros throw this exact smoke from this spot in real matches - same spot, and it lands where this one lands">Pro pick</span>` : "",
+    proMatched(l) ? `<span class="ref pro" title="Pro: pros throw this exact smoke from this spot in real matches - same spot, and it lands where this one lands">Pro</span>` : "",
     l.exposed ? `<span class="ref exposed" title="Seen while throwing: a clear line of sight from this spot to where the smoke lands, so anyone holding that area sees you throw it">Exposed</span>` : "",
     // The other half of ranking by reproducibility: when a throw survives to
     // the list with a weak reference (or none), say so on the row instead of
     // letting it borrow the visual weight of a lineup you can actually copy.
-    referenceBand(l) >= 6 ? `<span class="ref nolandmark" title="Nothing under the crosshair or the reticle arms to line this up against - the angle can only be set in practice mode, not eyeballed in a round">No landmark</span>`
-      : referenceBand(l) >= 4 ? `<span class="ref weakref" title="The only thing to line up against sits far out on the reticle arm. CS2's grenade-crosshair ticks are 10° apart, so this is over a tick off centre and hard to judge under pressure">Loose aim</span>`
-      : referenceBand(l) === 0 ? `<span class="ref tightref" title="A silhouette sits within 1° of the crosshair - put the crosshair on it and the aim is set, with nothing to estimate">On the crosshair</span>` : "",
-    detailed && l._spawn ? `<span class="ref spawn" title="throwable from a player spawn">spawn</span>` : "",
+    referenceBand(l) >= 6 ? `<span class="ref nolandmark" title="Blind: nothing under the crosshair or the reticle arms to line this up against - the angle can only be set in practice mode, not eyeballed in a round">Blind</span>`
+      : referenceBand(l) >= 4 ? `<span class="ref weakref" title="Rough: the only thing to line up against sits far out on the reticle arm. CS2's grenade-crosshair ticks are 10° apart, so this is over a tick off centre and hard to judge under pressure">Rough</span>`
+      : referenceBand(l) === 0 ? `<span class="ref tightref" title="Pinpoint: a silhouette sits within 1° of the crosshair - put the crosshair on it and the aim is set, with nothing to estimate">Pinpoint</span>` : "",
+    detailed && l._spawn ? `<span class="ref spawn" title="Spawn: throwable from where the round starts you">Spawn</span>` : "",
     l._favorite ? `<span class="ref fav" title="saved">★</span>` : "",
   ].filter(Boolean).join("");
 
@@ -213,6 +233,9 @@ export function renderLineups() {
   }
   const shown = filtered();
   statusEl.textContent = resultStatusText(shown.length);
+  // An execute's rows belong to a numbered smoke, and without saying so the
+  // list is just every throw for several different targets run together.
+  const exec = state.result.execute ?? null;
 
   // The preview lives in the panel's fixed header, outside the scrolling list,
   // so hunting down the results never scrolls the render you are comparing
@@ -269,11 +292,43 @@ export function renderLineups() {
   box.className = "lineup-options";
   box.setAttribute("role", "group");
   box.setAttribute("aria-label", `lineup results, page ${page + 1} of ${pageCount}, ${shown.length} total`);
+  let lastSmoke = -1;
   for (const l of pageItems) {
+    // An execute's rows belong to a numbered smoke; without a heading the list
+    // is every throw for several different targets run together, in an order
+    // that looks arbitrary.
+    if (exec && l._smoke !== undefined && l._smoke !== lastSmoke) {
+      lastSmoke = l._smoke;
+      const smoke = exec.smokes[l._smoke];
+      const head = document.createElement("div");
+      head.className = "exec-head";
+      const t = smoke?.target ?? l._smokeTarget ?? [];
+      // "best 8 of 45" rather than implying 8 was all there was.
+      const kept = exec.smokes[l._smoke]
+        ? state.result.lineups.filter(x => x._smoke === l._smoke).length
+        : 0;
+      const more = smoke && smoke.found > kept ? ` \u00b7 best ${kept} of ${smoke.found}` : "";
+      head.textContent = `Smoke ${l._smoke + 1} of ${exec.smokes.length}` +
+        (t.length ? ` \u00b7 ${t[0].toFixed(0)}, ${t[1].toFixed(0)}` : "") + more;
+      box.appendChild(head);
+    }
     // The selected lineup expands where it sits. Rendering its detail card at
     // the top of the panel instead meant that picking the 40th result put the
     // preview image somewhere far above the scroll position, out of sight.
     box.appendChild(l._idx === state.selected ? detailCard(l) : optionButton(l));
+  }
+  // Smokes that found nothing still need a line, or an execute quietly looks
+  // like it has fewer parts than it has.
+  if (exec) {
+    exec.smokes.forEach((smoke, i) => {
+      if (smoke.found === 0) {
+        const head = document.createElement("div");
+        head.className = "exec-head exec-empty";
+        head.textContent = `Smoke ${i + 1} of ${exec.smokes.length} \u00b7 nothing from this spot`;
+        head.title = smoke.emptyReason ?? "";
+        box.appendChild(head);
+      }
+    });
   }
   box.addEventListener("keydown", onListKeydown);
   const home = box.querySelector(".lineup-option") ?? box.firstElementChild;

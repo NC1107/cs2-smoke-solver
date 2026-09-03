@@ -88,6 +88,12 @@ export const state = {
   // asked while placing the target, before any lineup exists.
   coverage: null,
   coverageOn: false,
+  // The smokes of an execute, in the order they will be thrown. Held apart from
+  // `target` because the current target is the one being placed; these are the
+  // ones already decided on.
+  executeTargets: [],
+  // Places that can throw every smoke in the list, from /api/execute/spots.
+  executeSpots: null,
   hovered: -1,
   canvas: document.getElementById("map"),
   stage3d: document.getElementById("stage3d"),
@@ -184,7 +190,14 @@ function computeFiltered() {
   // filters describe what to surface in a sweep, so applying them here could
   // hide the very throw the link was meant to open (a sky shot under the
   // default sky filter, say).
-  if (state.result.single) {
+  // A shared single lineup, and every smoke of an execute, are explicit picks
+  // rather than search results. The filters describe what to surface in a
+  // sweep; applying them to an execute drops whole SMOKES out of it - measured:
+  // the second smoke of a two-smoke execute disappeared entirely under the
+  // default reference filter, leaving an execute that silently had one part.
+  // The server has already trimmed each smoke to its best few, which is the
+  // curation that matters here.
+  if (state.result.single || state.result.execute) {
     referenceFallback.active = false;
     return state.result.lineups.filter(l => !l._removed);
   }
@@ -456,7 +469,7 @@ export const aimWords = l => {
 // player has a mental model for "219". Difficulty deliberately says nothing
 // about danger - being seen while throwing is a separate fact with a separate
 // tag, and folding it in here would hide it.
-const DIFFICULTY = ["Tricky", "Needs practice", "Reliable", "Easy"];
+const DIFFICULTY = ["Tricky", "Practice", "Reliable", "Easy"];
 
 // The best a throw of this kind can be called, whatever else is in its favour.
 // Leaving the ground is the dividing line. A stationary throw is your crosshair

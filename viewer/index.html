@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Smoke Solver</title>
 <link rel="icon" href="viewer/favicon.svg" type="image/svg+xml">
-<link rel="stylesheet" href="viewer/app.css?v=87">
+<link rel="stylesheet" href="viewer/app.css?v=91">
 </head>
 <body>
 
@@ -61,6 +61,20 @@
             <button class="tile" data-search="spot" title="The throw position above and the stand spots around it, including the ones a wall pins your feet against">Spot</button>
             <button class="tile" data-search="map" title="Every spot on the map that can throw this smoke">Map</button>
             <button class="tile" data-search="spawns" title="Only the T and CT spawn positions themselves - what you can throw standing where the round puts you">Spawns</button>
+          </div>
+
+          <!-- An execute: several smokes from one stance. Two questions, and
+               which one you ask depends on what you already know - the spot,
+               or the smokes. Both live here rather than in a mode of their
+               own, because you get to them from the same two positions the
+               card is already about. -->
+          <span class="action-label key-subhead" id="execute-label" hidden>execute</span>
+          <ul id="execute-list" hidden aria-label="Smokes in this execute"></ul>
+          <button id="execute-add" class="btn" hidden title="Add the current target to this execute, then pick another one">Add this smoke</button>
+          <ul id="execute-spots" hidden aria-label="Spots that can throw every smoke"></ul>
+          <div class="tile-row" id="execute-seg" role="group" aria-label="Solve this execute" hidden>
+            <button class="tile" data-execute="here" title="Solve every smoke in the list from the throw position above">From here</button>
+            <button class="tile" data-execute="spots" title="Find the places on the map where one player can throw every smoke in the list without repositioning">Find a spot</button>
           </div>
         </div>
 
@@ -377,6 +391,6 @@ give weapon_smokegrenade<button data-copy="cmd-setup" class="btn">copy</button><
      4h, so bumping ?v= here is what busts that cache. Bump on any change to a
      directly-referenced asset. (The permanent cure is CF Browser Cache TTL ->
      "Respect Existing Headers", after which this is belt-and-suspenders.) -->
-<script type="module" src="viewer/js/main.js?v=87"></script>
+<script type="module" src="viewer/js/main.js?v=91"></script>
 </body>
 </html>

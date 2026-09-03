@@ -3,8 +3,8 @@
 // actions (set target, select, run query) go through callbacks that main.js
 // registers, so this module never imports the orchestrator.
 
-import { cacheBust } from "./api.js?v=87";
-import { isDrag, state, filtered, clickWords, movementWords, clickClass, esc, SMOKE_BLOOM_RADIUS, PICK_RADIUS_PX, TOUCH_PICK_RADIUS_PX, HEAT_CELL } from "./state.js?v=87";
+import { cacheBust } from "./api.js?v=91";
+import { isDrag, state, filtered, clickWords, movementWords, clickClass, esc, SMOKE_BLOOM_RADIUS, PICK_RADIUS_PX, TOUCH_PICK_RADIUS_PX, HEAT_CELL } from "./state.js?v=91";
 
 const canvas = state.canvas;
 const ctx = canvas.getContext("2d");
@@ -201,6 +201,49 @@ export function draw() {
     }
     ctx.stroke();
     ctx.globalAlpha = 1;
+  }
+  // The smokes already queued into an execute, numbered in throw order. Drawn
+  // under the live target so the one being placed still reads as the current
+  // one rather than blending into the set.
+  if (state.executeTargets.length) {
+    ctx.save();
+    ctx.lineWidth = 1.5 / scale;
+    ctx.font = `700 ${11 / scale}px ui-sans-serif, system-ui, sans-serif`;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    state.executeTargets.forEach((t, i) => {
+      const x = t[0], y = -t[1], r = 9 / scale;
+      ctx.beginPath();
+      ctx.arc(x, y, r, 0, Math.PI * 2);
+      ctx.fillStyle = colors.surface;
+      ctx.globalAlpha = 0.85;
+      ctx.fill();
+      ctx.globalAlpha = 1;
+      ctx.strokeStyle = colors.target;
+      ctx.stroke();
+      ctx.fillStyle = colors.target;
+      ctx.fillText(String(i + 1), x, y);
+    });
+    ctx.restore();
+  }
+  // Places one player can stand and throw every smoke in the list.
+  if (state.executeSpots?.spots?.length) {
+    ctx.save();
+    ctx.lineWidth = 2 / scale;
+    state.executeSpots.spots.forEach((s, i) => {
+      const x = s.feet[0], y = -s.feet[1], r = 10 / scale;
+      // The best spot leads, so it is the one drawn solid.
+      ctx.globalAlpha = i === 0 ? 1 : 0.55;
+      ctx.strokeStyle = colors.accent ?? colors.target;
+      ctx.beginPath();
+      ctx.moveTo(x - r, y); ctx.lineTo(x + r, y);
+      ctx.moveTo(x, y - r); ctx.lineTo(x, y + r);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(x, y, r, 0, Math.PI * 2);
+      ctx.stroke();
+    });
+    ctx.restore();
   }
   if (state.target) {
     // Circle = the landing zone in play: the precision filter radius when

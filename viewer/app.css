@@ -939,6 +939,49 @@
     font-variant-numeric: tabular-nums;
     font-size: 0.9em;
   }
+  /* Execute grouping: a quiet rule with the smoke's number, so several
+     targets' throws in one list stay attributable without competing with the
+     rows themselves. */
+  .exec-head {
+    margin: 10px 0 4px;
+    padding-bottom: 3px;
+    border-bottom: var(--border);
+    color: var(--muted);
+    font-size: 0.82em;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+  .exec-head:first-child { margin-top: 0; }
+  .exec-empty { color: var(--ref-sky-ink); border-bottom-style: dashed; }
+  /* The queued smokes in the sidebar. */
+  #execute-list { margin: 0 0 6px; padding: 0; list-style: none; display: grid; gap: 3px; }
+  .exec-row {
+    display: flex; align-items: center; gap: 6px;
+    font-variant-numeric: tabular-nums; font-size: 0.9em; color: var(--muted);
+  }
+  .exec-row span { flex: 1; }
+  .exec-drop {
+    border: var(--border); background: none; color: var(--muted);
+    cursor: pointer; line-height: 1; padding: 1px 6px; border-radius: 4px;
+  }
+  .exec-drop:hover { color: var(--danger); border-color: var(--danger); }
+  /* Capped and scrollable: a dozen spots is a useful answer but pushes every
+     control below it off the card. */
+  #execute-spots {
+    margin: 0 0 6px; padding: 0; list-style: none; display: grid; gap: 3px;
+    max-height: 148px; overflow-y: auto;
+  }
+  .exec-spot {
+    width: 100%; display: flex; justify-content: space-between; gap: 8px;
+    border: var(--border); background: none; color: var(--fg);
+    padding: 3px 7px; border-radius: 4px; cursor: pointer;
+    font-variant-numeric: tabular-nums; font-size: 0.9em; text-align: left;
+  }
+  .exec-spot em { color: var(--muted); font-style: normal; font-size: 0.92em; }
+  .exec-spot:hover { border-color: var(--accent); }
+  /* The ranking already put the most reproducible spot first; say so. */
+  .exec-spot.best { border-color: var(--accent); font-weight: 700; }
   .ref.pin { color: var(--click-left); border: 1px solid var(--click-left); font-weight: 600; }
   /* Near a wall but NOT touching. Deliberately not the pin colour: the whole
      point is that this one looks like a wall spot on the map and is not one,

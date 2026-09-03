@@ -2,18 +2,18 @@
 // import the feature modules; they call back into the orchestrators defined
 // here (setTarget, select, runQuery) via the init*/set*Callbacks hooks.
 
-import { state, filtered, esc, lowMemoryDevice, loadFavorites, setFavorite, isFavorite, DEFAULT_EYE_HEIGHT, EYE_HEIGHT_BY_TYPE } from "./state.js?v=87";
-import { loadMapList, loadMapData, runQuery as postLineupQuery, fetchTrajectory, fetchLineupOne, fetchSlack, fetchSpawns, fetchProSmokes, fetchMeshDiff, meshDiffExists, fetchLevels, fetchSmokeCoverage} from "./api.js?v=87";
-import { loadRadar, readColors, recolorRadar, draw, scheduleDraw, resize, resetView, initMap2d, screenOf } from "./map2d.js?v=87";
-import { ensure3d, resetEnsure3d, teardown3d, current3d, sync3d, syncProgress3d, syncMeshDiff3d, set3dCallbacks, applyTheme3d, verticalFovFromDesired } from "./view3d.js?v=87";
-import { resetEnsureTexturedScene } from "./textured-scene.js?v=87";
-import { capturePreview } from "./preview.js?v=87";
+import { state, filtered, esc, lowMemoryDevice, loadFavorites, setFavorite, isFavorite, DEFAULT_EYE_HEIGHT, EYE_HEIGHT_BY_TYPE } from "./state.js?v=91";
+import { loadMapList, loadMapData, runQuery as postLineupQuery, fetchTrajectory, fetchLineupOne, fetchSlack, fetchSpawns, fetchProSmokes, fetchMeshDiff, meshDiffExists, fetchLevels, fetchSmokeCoverage, runExecute, findExecuteSpots} from "./api.js?v=91";
+import { loadRadar, readColors, recolorRadar, draw, scheduleDraw, resize, resetView, initMap2d, screenOf } from "./map2d.js?v=91";
+import { ensure3d, resetEnsure3d, teardown3d, current3d, sync3d, syncProgress3d, syncMeshDiff3d, set3dCallbacks, applyTheme3d, verticalFovFromDesired } from "./view3d.js?v=91";
+import { resetEnsureTexturedScene } from "./textured-scene.js?v=91";
+import { capturePreview } from "./preview.js?v=91";
 // Every local import across viewer/js carries the SAME ?v= token, bumped
 // together on any change. The HTML is served no-cache, so a fresh load pulls
 // main.js?v=N, which pulls every module at ?v=N - the whole graph refreshes as
 // one consistent set past Cloudflare's 4h JS cache, with no duplicate module
 // instances (which a partial versioning would cause). Bump the token everywhere.
-import { renderLineups, initPanel, revealSelected, resultStatusText } from "./panel.js?v=87";
+import { renderLineups, initPanel, revealSelected, resultStatusText } from "./panel.js?v=91";
 
 (async () => {
   // Map switching means a failed load is no longer necessarily terminal (the
@@ -78,6 +78,11 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
   const collisionBtn = overlayBtn("collision");
   const meshdiffBtn = overlayBtn("meshdiff");
   const coverageBtn = overlayBtn("coverage");
+  const executeLabel = document.getElementById("execute-label");
+  const executeList = document.getElementById("execute-list");
+  const executeAdd = document.getElementById("execute-add");
+  const executeSeg = document.getElementById("execute-seg");
+  const executeSpots = document.getElementById("execute-spots");
   const rulerEl = document.getElementById("lineup-ruler");
   const clearBtn = document.getElementById("clear");
   const panelEl = document.getElementById("panel");
@@ -166,6 +171,165 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
       return;
     }
     await loadCoverage();
+  });
+
+  // ---- executes: several smokes from one stance ----
+
+  function renderExecuteList() {
+    executeList.innerHTML = "";
+    state.executeTargets.forEach((t, i) => {
+      const li = document.createElement("li");
+      li.className = "exec-row";
+      const label = document.createElement("span");
+      label.textContent = `${i + 1}. ${t[0].toFixed(0)}, ${t[1].toFixed(0)}`;
+      const drop = document.createElement("button");
+      drop.className = "exec-drop";
+      drop.type = "button";
+      drop.textContent = "\u00d7";
+      drop.title = "Remove this smoke from the execute";
+      drop.setAttribute("aria-label", `Remove smoke ${i + 1}`);
+      drop.addEventListener("click", () => {
+        state.executeTargets.splice(i, 1);
+        state.executeSpots = null;
+        syncControls();
+        scheduleDraw();
+        sync3d();
+      });
+      li.append(label, drop);
+      executeList.append(li);
+    });
+  }
+
+  function renderExecuteSpots() {
+    executeSpots.innerHTML = "";
+    const found = state.executeSpots?.spots ?? [];
+    executeSpots.hidden = found.length === 0;
+    // The label says what "worst" means, because a spot is only as good as its
+    // hardest smoke and ranking on the average would hide exactly that.
+    // What the HARDEST smoke of the set has to aim against - the thing that
+    // decides whether the whole execute is reproducible. Same vocabulary the
+    // rows use, so a spot and a lineup describe aim the same way.
+    const worstWords = ["pinpoint", "close", "near", "reticle", "rough", "flat", "blind"];
+    found.forEach((spot, i) => {
+      const li = document.createElement("li");
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "exec-spot" + (i === 0 ? " best" : "");
+      btn.textContent = `${spot.feet[0].toFixed(0)}, ${spot.feet[1].toFixed(0)} `;
+      const note = document.createElement("em");
+      note.textContent = worstWords[Math.min(spot.worst, 6)] ?? "";
+      btn.append(note);
+      btn.title = `Solve all ${state.executeTargets.length} smokes from here. Hardest of them lines up against: ${note.textContent}`;
+      btn.addEventListener("click", () => solveExecuteFrom([spot.feet[0], spot.feet[1]]));
+      li.append(btn);
+      executeSpots.append(li);
+    });
+  }
+
+  async function solveExecuteFrom(origin) {
+    if (state.busy) {
+      return;
+    }
+    const gen = state.mapGeneration;
+    state.busy = true;
+    syncControls();
+    statusEl.textContent = `solving ${state.executeTargets.length} smokes from ${origin[0].toFixed(0)}, ${origin[1].toFixed(0)}\u2026`;
+    try {
+      const { error, data } = await runExecute(state.currentMap, origin, state.executeTargets);
+      if (state.mapGeneration !== gen) { return; }
+      if (error) { statusEl.textContent = error; return; }
+      state.lastOrigin = origin;
+      adoptExecute(data);
+    } finally {
+      state.busy = false;
+      syncControls();
+    }
+  }
+
+  // An execute answers as one result whose lineups carry which smoke they
+  // belong to, so every existing thing - the markers, the selection, the
+  // trajectory, the badges - keeps working without knowing about executes.
+  function adoptExecute(data) {
+    const lineups = [];
+    data.smokes.forEach((smoke, i) => {
+      smoke.lineups.forEach(l => {
+        l._smoke = i;
+        l._smokeTarget = smoke.target;
+        lineups.push(l);
+      });
+    });
+    lineups.forEach((l, i) => { l._idx = i; l._favorite = isFavorite(l); });
+    state.result = {
+      target: data.smokes[0]?.target ?? state.target,
+      origins: 0,
+      coverage: [],
+      lineups,
+      execute: { origin: data.origin, smokes: data.smokes.map(s => ({ target: s.target, found: s.found, emptyReason: s.emptyReason })) },
+    };
+    state.selected = lineups.length ? 0 : -1;
+    const missing = data.smokes.filter(s => s.found === 0).length;
+    statusEl.textContent = missing === 0
+      ? `execute solved - ${data.smokes.length} smokes from one spot`
+      : `${data.smokes.length - missing} of ${data.smokes.length} smokes work from that spot`;
+    renderLineups();
+    scheduleDraw();
+    sync3d();
+  }
+
+  executeAdd.addEventListener("click", () => {
+    if (!state.target) {
+      return;
+    }
+    state.executeTargets.push([...state.target]);
+    state.executeSpots = null;
+    statusEl.textContent = `${state.executeTargets.length} smoke${state.executeTargets.length === 1 ? "" : "s"} in this execute - pick the next target, or solve it`;
+    syncControls();
+    scheduleDraw();
+    sync3d();
+  });
+
+  executeSeg.addEventListener("click", async e => {
+    const btn = e.target.closest("[data-execute]");
+    if (!btn || state.busy) {
+      return;
+    }
+    const targets = state.executeTargets;
+    if (targets.length === 0) {
+      return;
+    }
+    const gen = state.mapGeneration;
+    state.busy = true;
+    syncControls();
+    try {
+      if (btn.dataset.execute === "here") {
+        const origin = state.lastOrigin ?? state.pendingOrigin;
+        if (!origin) {
+          statusEl.textContent = "set a throw position first, or use \u201cFind a spot\u201d";
+          return;
+        }
+        state.busy = false;
+        await solveExecuteFrom(origin);
+        return;
+      } else {
+        // Cold, this is a full map-wide solve per smoke; warm it is instant.
+        statusEl.textContent = `looking for a spot that throws all ${targets.length}\u2026 (first time on a map this takes a while)`;
+        const { error, data } = await findExecuteSpots(state.currentMap, targets);
+        if (state.mapGeneration !== gen) { return; }
+        if (error) { statusEl.textContent = error; return; }
+        state.executeSpots = data;
+        const n = data.spots.length;
+        statusEl.textContent = n
+          ? `${n} spot${n === 1 ? "" : "s"} can throw all ${targets.length} - pick one from the list to solve from it`
+          : data.impossibleTargets.length
+            ? `smoke ${data.impossibleTargets.map(i => i + 1).join(", ")} cannot be thrown at all - try moving it`
+            : "no single spot can throw all of those - try fewer smokes, or move one";
+        scheduleDraw();
+        sync3d();
+      }
+    } finally {
+      state.busy = false;
+      syncControls();
+    }
   });
 
   meshdiffBtn.addEventListener("click", async () => {
@@ -457,6 +621,17 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
     meshdiffBtn.hidden = !(state.meshdiffAvailable || state.meshdiff?.cells.length);
     press(meshdiffBtn, state.meshdiffOn);
     press(coverageBtn, state.coverageOn);
+    // The execute block appears once there is a target to add, and the solve
+    // row once there is something to solve.
+    const anyExec = state.executeTargets.length > 0;
+    executeLabel.hidden = !(hasTarget || anyExec);
+    executeAdd.hidden = !hasTarget;
+    executeAdd.disabled = state.busy;
+    executeList.hidden = !anyExec;
+    executeSeg.hidden = !anyExec;
+    for (const b of executeSeg.children) { b.disabled = state.busy; }
+    renderExecuteList();
+    renderExecuteSpots();
     document.body.classList.toggle("crosshair-3d", in3d && state.crosshairOn);
     rulerEl.hidden = !(in3d && state.reticleOn);
 

@@ -1,6 +1,6 @@
 // Fetch wrappers. No DOM access here; callers own status text and overlays.
 
-import { state } from "./state.js?v=87";
+import { state } from "./state.js?v=91";
 
 // Cache-bust a data URL with the map build: re-processed radars/GLBs change
 // content without changing name, and the query string gets a fresh copy past
@@ -220,4 +220,32 @@ export async function fetchSmokeCoverage(map, at, full = false) {
     throw new Error(`smoke coverage HTTP ${res.status}`);
   }
   return res.json();
+}
+
+// An execute: every smoke in the list, solved from one throw position.
+export async function runExecute(map, origin, targets) {
+  const res = await fetch("/api/execute", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ map, origin, targets }),
+  });
+  if (!res.ok) {
+    return { error: (await res.json().catch(() => ({}))).error ?? `error ${res.status}` };
+  }
+  return { data: await res.json() };
+}
+
+// The other half: where can one player stand and throw all of them. Each target
+// costs a full map-wide solve the first time, so this can take minutes cold and
+// is nearly instant once they are cached.
+export async function findExecuteSpots(map, targets) {
+  const res = await fetch("/api/execute/spots", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ map, targets }),
+  });
+  if (!res.ok) {
+    return { error: (await res.json().catch(() => ({}))).error ?? `error ${res.status}` };
+  }
+  return { data: await res.json() };
 }
