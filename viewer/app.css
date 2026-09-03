@@ -998,6 +998,9 @@
   .exec-row .exec-name { flex: 1; color: var(--fg); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .exec-hint { margin: 0 0 6px; color: var(--muted); font-size: 0.88em; line-height: 1.35; }
   #execute-add { width: 100%; margin-bottom: 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* Two ways to solve, two tiles: a third of the row for each in a row of
+     three left the labels truncated on a phone ("From ...") for nothing. */
+  #execute-seg { grid-template-columns: repeat(2, 1fr); }
   .exec-drop {
     border: var(--border); background: none; color: var(--muted);
     cursor: pointer; line-height: 1; padding: 1px 6px; border-radius: 4px;

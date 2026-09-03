@@ -319,6 +319,7 @@ public static class ServeCommand
                 hasLineups = kv.Value.NavAreas != null,
                 hasProSmokes = File.Exists(Path.Combine(root, "data", $"{kv.Key}.prosmokes.json")),
                 hasMeshDiff = File.Exists(Path.Combine(root, "data", $"{kv.Key}.meshdiff.json")),
+                hasTextured = File.Exists(Path.Combine(root, "data", $"{kv.Key}_textured.glb")),
             })));
 
         // Player spawn positions, read straight from the extracted entity lump

@@ -2,18 +2,18 @@
 // import the feature modules; they call back into the orchestrators defined
 // here (setTarget, select, runQuery) via the init*/set*Callbacks hooks.
 
-import { state, filtered, esc, lowMemoryDevice, loadFavorites, setFavorite, isFavorite, DEFAULT_EYE_HEIGHT, EYE_HEIGHT_BY_TYPE, TARGET_SNAP_RADIUS, favoriteHooks, loadSavedLocal, persistSavedLocal} from "./state.js?v=100";
-import { loadMapList, loadMapData, runQuery as postLineupQuery, fetchTrajectory, fetchLineupOne, fetchSlack, fetchSpawns, fetchProSmokes, fetchMeshDiff, meshDiffExists, fetchLevels, fetchSmokeCoverage, runExecute, findExecuteSpots, fetchTargets, fetchMe, signOut, fetchSavedLineups, putSavedLineups, fetchVotes, castVote} from "./api.js?v=100";
-import { loadRadar, readColors, recolorRadar, draw, scheduleDraw, resize, resetView, initMap2d, screenOf } from "./map2d.js?v=100";
-import { ensure3d, resetEnsure3d, teardown3d, current3d, sync3d, syncProgress3d, syncMeshDiff3d, set3dCallbacks, applyTheme3d, verticalFovFromDesired } from "./view3d.js?v=100";
-import { resetEnsureTexturedScene } from "./textured-scene.js?v=100";
-import { capturePreview } from "./preview.js?v=100";
+import { state, filtered, esc, lowMemoryDevice, loadFavorites, setFavorite, isFavorite, DEFAULT_EYE_HEIGHT, EYE_HEIGHT_BY_TYPE, TARGET_SNAP_RADIUS, favoriteHooks, loadSavedLocal, persistSavedLocal} from "./state.js?v=101";
+import { loadMapList, loadMapData, runQuery as postLineupQuery, fetchTrajectory, fetchLineupOne, fetchSlack, fetchSpawns, fetchProSmokes, fetchMeshDiff, meshDiffExists, fetchLevels, fetchSmokeCoverage, runExecute, findExecuteSpots, fetchTargets, fetchMe, signOut, fetchSavedLineups, putSavedLineups, fetchVotes, castVote} from "./api.js?v=101";
+import { loadRadar, readColors, recolorRadar, draw, scheduleDraw, resize, resetView, initMap2d, screenOf } from "./map2d.js?v=101";
+import { ensure3d, resetEnsure3d, teardown3d, current3d, sync3d, syncProgress3d, syncMeshDiff3d, set3dCallbacks, applyTheme3d, verticalFovFromDesired } from "./view3d.js?v=101";
+import { resetEnsureTexturedScene } from "./textured-scene.js?v=101";
+import { capturePreview } from "./preview.js?v=101";
 // Every local import across viewer/js carries the SAME ?v= token, bumped
 // together on any change. The HTML is served no-cache, so a fresh load pulls
 // main.js?v=N, which pulls every module at ?v=N - the whole graph refreshes as
 // one consistent set past Cloudflare's 4h JS cache, with no duplicate module
 // instances (which a partial versioning would cause). Bump the token everywhere.
-import { renderLineups, initPanel, revealSelected, resultStatusText } from "./panel.js?v=100";
+import { renderLineups, initPanel, revealSelected, resultStatusText } from "./panel.js?v=101";
 
 (async () => {
   // Map switching means a failed load is no longer necessarily terminal (the
@@ -88,6 +88,10 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
   // ReferenceError - which silently failed every ?t= link's first render.
   const FEET_ABOVE_FLOOR = 0.03125;
   const coord = v => Number.parseFloat(v.toFixed(2)).toString();
+  // What /api/maps said about each map; filled in at boot, read by
+  // syncControls, so it lives up here rather than in the temporal dead zone
+  // of a `let` further down.
+  let mapList = [];
   const cardExecute = document.getElementById("card-execute");
   const executeCount = document.getElementById("execute-count");
   const executeClear = document.getElementById("execute-clear");
@@ -785,6 +789,9 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
       b.classList.toggle("active", on);
       b.setAttribute("aria-pressed", String(on));
     }
+    // A map with no textured export (de_boulder: the exporter crashes on it)
+    // offers no tile for it rather than a tile that fails when pressed.
+    viewBtn("textured").hidden = !(mapList?.find(m => m.map === state.currentMap)?.hasTextured ?? true);
     spawnsBtn.hidden = !(state.spawns && (state.spawns.t.length || state.spawns.ct.length));
     press(spawnsBtn, state.spawnsOn);
     targetsBtn.hidden = state.targets.length === 0;
@@ -968,7 +975,7 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
     state.targetName = null;
     fetchTargets(name).then(t => {
       if (state.mapGeneration !== gen) { return; }
-      state.targets = Array.isArray(t) ? t : [];
+      state.targets = disambiguateTargetNames(Array.isArray(t) ? t : []);
       // A target that arrived by link, before the names did, gets its name now.
       if (state.target && !state.targetName) {
         state.targetName = nearestNamedTarget(state.target)?.name ?? null;
@@ -1010,7 +1017,6 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
     return true;
   }
 
-  let mapList;
   try {
     mapList = await loadMapList();
   } catch {
@@ -1564,6 +1570,23 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
       `throwing from ${team} spawn - now click the spot you want to smoke`;
     draw();
     sync3d();
+  }
+
+  // Provisional names come from the nearest callout, and one callout can
+  // have several smoke clusters around it - two pins both called "near
+  // MidDoors" tell nobody which is which, in the list or on the map. Until a
+  // person names them, the later ones get a number. Ids are untouched, so
+  // votes and saved lineups still land on the right pin.
+  function disambiguateTargetNames(targets) {
+    const seen = new Map();
+    for (const t of targets) {
+      const n = (seen.get(t.name) ?? 0) + 1;
+      seen.set(t.name, n);
+      if (n > 1 && !t.named) {
+        t.name = `${t.name} ${n}`;
+      }
+    }
+    return targets;
   }
 
   // The named target within snapping distance of a point, or null.
