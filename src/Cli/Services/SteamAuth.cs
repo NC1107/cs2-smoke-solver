@@ -164,6 +164,13 @@ public static partial class SteamAuth
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
         var temp = path + ".tmp";
         File.WriteAllText(temp, Convert.ToHexString(secret));
+        // Owner-only. Anyone who can read this file can mint a session for any
+        // account, and the data directory is shared with backups and the
+        // occasional shell on the host.
+        if (!OperatingSystem.IsWindows())
+        {
+            File.SetUnixFileMode(temp, UnixFileMode.UserRead | UnixFileMode.UserWrite);
+        }
         File.Move(temp, path, overwrite: true);
         return secret;
     }
