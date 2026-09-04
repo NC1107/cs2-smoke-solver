@@ -92,7 +92,7 @@ Per tick:
    - Back off to the contact point (`t - 1e-3`).
    - **Reflect** the whole velocity about the surface normal (`w - 2·(w·n)·n`), then **snap** any component with magnitude `< STOP_EPSILON (0.1)` to exactly zero *before* the restitution multiply.
    - **Restitution** multiplies the *whole* reflected vector by `Elasticity = 0.45`. There is no tangential-friction term in the grenade path.
-   - **Angle damp (floor only)**: if impact speed `> DampGateSpeed (689 u/s)` *and* the impact angle is steeper than 60° (`|w·n|/|w| > 0.5`) *and* the surface is floor-like (`n.z > 0.7`), additionally scale by `(1.5 - |cos angle|)`. Walls never damp (validated: 0/122 gated wall bounces damped vs 68/76 gated ground bounces).
+   - **Angle damp (floor only)**: if impact speed `> DampGateSpeed (690 u/s)` *and* the impact angle is steeper than 60° (`|w·n|/|w| > 0.5`) *and* the surface is floor-like (`n.z > 0.7`), additionally scale by `(1.5 - |cos angle|)`. Walls never damp (validated: 0/122 gated wall bounces damped vs 68/76 gated ground bounces).
    - **Stop rule**: if post-bounce speed `< StopSpeed (19.685 u/s ≈ 0.5 m/s)` on a floor (or with floor directly below), the grenade rests. There is no rolling phase.
    - Otherwise consume the remainder of the tick with the bounced velocity (single bounce resolved per tick). Slow contact against a wall with no floor beneath **slides** along the surface rather than freezing.
 
@@ -107,7 +107,7 @@ The voxel `Simulate` is the coarse stage-1 model (inflated voxels, axis-aligned 
 | `BaseGravity` (`sv_gravity`) | 800 u/s² | Engine convar |
 | `Elasticity` | 0.45 | Measured; matches CS:GO `grenade` surfaceprop |
 | `StopSpeed` | 19.685 u/s | Measured bracket (19.498, 19.782] |
-| `DampGateSpeed` | 689 u/s | Measured bracket (684.1, 696.6] |
+| `DampGateSpeed` | 690 u/s | Bracket (689.75, 690.75] from 3,030 recorded floor bounces (2026-09-04); the flatgrass batch gave (684.1, 696.6] |
 | `MaxVelocityPerAxis` (`sv_maxvelocity`) | 3500 u/s | Engine convar |
 | `StopEpsilon` (`STOP_EPSILON`) | 0.1 | Source SDK |
 | `FloorNormalZ` | 0.7 | `sv_standable_normal` |

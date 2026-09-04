@@ -55,8 +55,13 @@ public sealed record ThrowConstants(
     // FLOOR impacts faster than this AND steeper than 60 degrees additionally
     // scale by (1.5 - |cos impact angle|); wall impacts never damp (validated:
     // 0/122 gated wall bounces damped vs 68/76 ground). Measured bracket
-    // (684.1, 696.6]; 689 = 17.5 m/s. Not in the SDK-era code; measured in CS2.
-    float DampGateSpeed = 689f,
+    // (684.1, 696.6] from the flatgrass batch; narrowed to (689.75, 690.75]
+    // on 2026-09-04 from 3,030 steep floor bounces in the validation
+    // captures (every bounce from 690.75 up damped, 689.25 to 689.75 none,
+    // a mixed quarter-tick band between). Not in the SDK-era code; measured
+    // in CS2. 690.0 scored 380 -> 373 corpus misses; 689.5 and 690.5 both
+    // moved single maps by more than the loop allows.
+    float DampGateSpeed = 690f,
     // Vertical velocity a jump adds to the throw. MEASURED at 273.6 (12 live
     // jump throws, spread 0.2), not the 300 a naive "release with full jump
     // velocity" model assumes: the grenade leaves the hand several ticks into

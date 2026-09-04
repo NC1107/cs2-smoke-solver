@@ -1810,3 +1810,7 @@ Loop state after six iterations: kept 1 (two contacts per tick), falsified 4 (re
 On comparable builds the corpus is at 150 misses of 7,447 with every map at or above 90% within 3u except mirage (88.6%), whose remaining clusters are world hulls real grenades pass through and may be the same map-version story.
 Both remaining moves need Nick: the gate constant, and a validation pass on the current build (2000899) across the maps.
 Edge tipping re-scored on comparable builds only (constants override EdgeTipping=true): 198 misses over 8u versus 150 with it off (mirage 34 to 45, ancient 28 to 37, anubis 6 to 13). Off stands.
+
+### Loop, later on 2026-09-04: gate set to 690, rig validation on the current build
+
+Nick: "do whatever you recommend, don't stop for me". `DampGateSpeed` 689 -> 690.0 (measured band; corpus 380 -> 373, comparable builds 150 -> 143 expected). The rig runs `accuracy-run.sh` over every map with nav data on build 2000899 so the corpus finally matches the meshes.

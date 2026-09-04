@@ -62,7 +62,7 @@ Existing tools (scope.gg grenade predictor, grenades.website, lineup videos) onl
   RESOLVED (2026-07-09): flight physics were measured directly from per-tick server telemetry (18,280 in-air tick pairs, 358 bounce events on cs_flatgrass) and cross-confirmed against the public Source SDK 2013 grenade code, replacing the earlier end-to-end fitted constants.
   The engine integrates once per 64/s tick: velocity gets full-tick gravity (scale 0.40, zero drag), position advances by the trapezoid of old/new velocity.
   A bounce is a pure reflection (overbounce 2.0) with STOP_EPSILON component snapping, scaled uniformly by elasticity 0.45 (no tangential friction term exists).
-  FLOOR impacts (normal z > 0.7) faster than 689 u/s and steeper than 60 degrees additionally damp by (1.5 - cos impact angle); wall impacts never damp (0/122 gated wall bounces damped across the dust2 validation runs vs 68/76 ground bounces - the flatgrass batch could not constrain this because its wall hits were all below the speed gate).
+  FLOOR impacts (normal z > 0.7) faster than 690 u/s and steeper than 60 degrees additionally damp by (1.5 - cos impact angle); wall impacts never damp (0/122 gated wall bounces damped across the dust2 validation runs vs 68/76 ground bounces - the flatgrass batch could not constrain this because its wall hits were all below the speed gate).
   A floor impact whose post-bounce speed is under 19.685 u/s (0.5 m/s) stops dead instantly; no rolling phase exists.
   The grenade sweeps as a +-2 unit hull, not a large sphere.
   Replaying all 96 flatgrass calibration captures through the C# integrator gives median 1.7u / p90 4.7u / max 18u rest error; remaining de_dust2 error (median 22u) is collision-mesh fidelity, not physics.
