@@ -27,6 +27,11 @@ public static class BatchValidateCommand
 
         var failures = 0;
         var ran = 0;
+        // Every target of every map is planned up front so the next target's
+        // solve can run while the current one's throws fly, across map
+        // boundaries too: the last target of a map and the 45 s level change
+        // are otherwise idle CPU, and a solve costs one to six minutes.
+        var runs = new List<(string Map, string Name, float[] Pos, Dictionary<string, string> Options)>();
         foreach (var map in maps)
         {
             var geo = Path.Combine(dataDir, $"{map}.s2geo");
@@ -56,43 +61,44 @@ public static class BatchValidateCommand
                 failures++;
                 continue;
             }
-            Console.WriteLine($"=== {map}: {targets.Count} target(s): {string.Join(", ", targets.Select(t => t.Name))} ===");
-            if (!options.ContainsKey("no-changelevel") && !ChangeLevel(map, calibDir))
-            {
-                Console.Error.WriteLine($"[{map}] rig server did not consume the changelevel request - is it running with the plugin loaded?");
-                return 1;
-            }
-
-            var subs = targets.Select(t =>
+            foreach (var (name, pos) in targets)
             {
                 var sub = new Dictionary<string, string>(options)
                 {
                     ["geo"] = geo,
                     ["nav"] = navPath,
-                    ["target"] = FormattableString.Invariant($"{t.Pos[0]},{t.Pos[1]},{t.Pos[2]}"),
-                    ["name"] = t.Name,
+                    ["target"] = FormattableString.Invariant($"{pos[0]},{pos[1]},{pos[2]}"),
+                    ["name"] = name,
                     ["batch"] = batch,
                     ["calib"] = calibDir,
                 };
                 sub.Remove("maps");
                 sub.Remove("targets-per-map");
-                return sub;
-            }).ToList();
-            for (var i = 0; i < subs.Count; i++)
+                runs.Add((map, name, pos, sub));
+            }
+        }
+
+        string? liveMap = null;
+        for (var i = 0; i < runs.Count; i++)
+        {
+            var (map, name, pos, sub) = runs[i];
+            if (map != liveMap)
             {
-                var (name, pos) = targets[i];
-                Console.WriteLine($"--- {map} / {name} ({pos[0]:F0},{pos[1]:F0},{pos[2]:F0}) ---");
-                ran++;
-                // The next target's solve runs while this one's throws fly:
-                // the solve is most of a target's wall time and the throw
-                // phase leaves every core idle. Same map only, so at most one
-                // extra mesh is resident and the change of level stays where
-                // it is.
-                var next = i + 1 < subs.Count ? subs[i + 1] : null;
-                if (ValidateCommand.Run(subs[i], next == null ? null : () => ValidateCommand.Prefetch(next)) != 0)
+                var count = runs.Count(r => r.Map == map);
+                Console.WriteLine($"=== {map}: {count} target(s): {string.Join(", ", runs.Where(r => r.Map == map).Select(r => r.Name))} ===");
+                if (!options.ContainsKey("no-changelevel") && !ChangeLevel(map, calibDir))
                 {
-                    failures++;
+                    Console.Error.WriteLine($"[{map}] rig server did not consume the changelevel request - is it running with the plugin loaded?");
+                    return 1;
                 }
+                liveMap = map;
+            }
+            Console.WriteLine($"--- {map} / {name} ({pos[0]:F0},{pos[1]:F0},{pos[2]:F0}) ---");
+            ran++;
+            var next = i + 1 < runs.Count ? runs[i + 1].Options : null;
+            if (ValidateCommand.Run(sub, next == null ? null : () => ValidateCommand.Prefetch(next)) != 0)
+            {
+                failures++;
             }
         }
         RebuildValidationIndex(Path.Combine(dataDir, "validation"));

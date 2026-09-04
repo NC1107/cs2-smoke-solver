@@ -190,6 +190,12 @@ public static class ValidateCommand
         var submitted = 0;
         var stopPath = Path.Combine(calibDir, "stop-request");
         File.Delete(stopPath);
+        // --throw-rate N: throws per second, 4 by default (6 per request every
+        // 1.5 s). The rig matches captures on launch position and velocity, so
+        // denser batches stay separable; the cost is more smokes airborne at
+        // once, which the engine has been seen to cull in dense batches.
+        var throwRate = float.Parse(options.GetValueOrDefault("throw-rate", "4"), CultureInfo.InvariantCulture);
+        var batchPause = TimeSpan.FromSeconds(6f / Math.Max(0.5f, throwRate));
         foreach (var batch in plans.Chunk(6))
         {
             if (File.Exists(stopPath))
@@ -228,7 +234,7 @@ public static class ValidateCommand
             }
             // ~4 throws/sec keeps concurrent smoke volumes (~20s lifetime) under
             // control so the server stays smooth for anyone spectating.
-            Thread.Sleep(1500);
+            Thread.Sleep(batchPause);
         }
 
         Console.WriteLine($"all {submitted} submitted; waiting for captures (smokes persist ~20s each) ...");
