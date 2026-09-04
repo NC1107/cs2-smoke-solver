@@ -1837,3 +1837,29 @@ cs_shelter on matching builds was the weakest map (16 misses in 388, 86% within 
 The extractor searched only the map VPK and csgo/pak01_dir.vpk; community maps (cs_shelter, de_boulder, de_fachwerk) keep every prop in game/csgo_community_addons/<map>/<map>_dir.vpk, so all of their window props, static props and entity models were "model not found" and skipped without a word.
 The extractor now searches that VPK too, prints "NOT FOUND" for any model it still cannot resolve, and `rig/s2geo-dump.py` reads a mesh from the shell.
 Corpus: cs_shelter 16 to 9 on same-build throws (2.3% over 8u, 87.9% within 3u); official maps unaffected. de_boulder and de_fachwerk re-extracted with the same fix.
+
+### First full pass on matching builds (2026-09-04, 15:16 to 17:51)
+
+Server and meshes both on CS2 build 2000899, 15 maps, 56 targets, 3,904 graded throws, no failures. Scored against the current meshes and physics (`replay --build 2000899`):
+
+| map | throws | median | within 3u | over 8u |
+|-----|-------:|-------:|----------:|--------:|
+| cs_italy | 240 | 0.46 | 93.8% | 4 |
+| cs_office | 239 | 0.69 | 89.1% | 8 |
+| cs_shelter | 388 | 0.41 | 87.9% | 9 |
+| de_ancient | 240 | 0.67 | 93.8% | 3 |
+| de_anubis | 230 | 0.51 | 93.5% | 2 |
+| de_boulder | 239 | 0.62 | 90.4% | 3 |
+| de_cache | 240 | 0.39 | 95.4% | 1 |
+| de_dust2 | 422 | 0.40 | 95.5% | 5 |
+| de_fachwerk | 240 | 0.41 | 95.4% | 4 |
+| de_inferno | 232 | 0.47 | 93.1% | 2 |
+| de_mirage | 240 | 0.39 | 95.8% | 1 |
+| de_nuke | 240 | 0.40 | 95.4% | 1 |
+| de_overpass | 234 | 0.72 | 89.7% | 6 |
+| de_train | 240 | 0.41 | 90.8% | 3 |
+| de_vertigo | 240 | 0.46 | 92.5% | 2 |
+| total | 3,904 | | 92.8% | 54 (1.4%) |
+
+The loop's first target (fewer than 200 over 8u) is met on this corpus; office, shelter and overpass sit under the 90% within-3u bar.
+Seven of these maps had never been validated before today.
