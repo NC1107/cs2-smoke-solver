@@ -52,13 +52,20 @@ public static class HumanError
     // and the scatter itself is the honest error.
     public const float ChaosScatter = 16f;
 
+    // How much a throw the verifier found aim-fragile costs. Stability is the
+    // share of small aim perturbations that still land within tolerance; the
+    // three validated throws that missed by 200u all sat at the 0.4 gate, on
+    // a beam edge, and the model had no term that could see it.
+    public const float FragilityError = 24f;
+
     /// <summary>Expected landing miss, in units, for a person throwing this lineup.</summary>
-    public static float Estimate(int pin, int band, float horizontalDistance, ThrowType type, float restScatter) =>
+    public static float Estimate(int pin, int band, float horizontalDistance, ThrowType type, float restScatter, float stability = 1f) =>
         PositionError(pin)
         + horizontalDistance * MathF.Tan(AimErrorDeg(band) * MathF.PI / 180f)
         + MovementError(type)
-        + (restScatter > ChaosScatter ? restScatter : 0f);
+        + (restScatter > ChaosScatter ? restScatter : 0f)
+        + (1f - Math.Clamp(stability, 0f, 1f)) * FragilityError;
 
     public static float Estimate(Lineup l, int pin, int band) =>
-        Estimate(pin, band, Vector2.Distance(new Vector2(l.Feet.X, l.Feet.Y), new Vector2(l.RestPoint.X, l.RestPoint.Y)), l.Type, l.RestScatter);
+        Estimate(pin, band, Vector2.Distance(new Vector2(l.Feet.X, l.Feet.Y), new Vector2(l.RestPoint.X, l.RestPoint.Y)), l.Type, l.RestScatter, l.Stability);
 }

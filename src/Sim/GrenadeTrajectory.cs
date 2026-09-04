@@ -223,6 +223,67 @@ public static class GrenadeTrajectory
     public const float GrenadeRadius = 2f;
     static readonly Vector3 HullHalfExtents = new(GrenadeRadius, GrenadeRadius, GrenadeRadius);
 
+    // Support probes around the hull's centre: a point ray each, straight
+    // down through where the hull rests, on a ring wide enough to reach past
+    // the hull's own footprint and find which side the floor is on.
+    // How far past the edge line the centre may sit and still be held: a
+    // box balanced with half its base on the ledge does not tip.
+    const float EdgeNeutralBand = 0.75f;
+    static readonly Vector2[] SupportOffsets = [.. Enumerable.Range(0, 8)
+        .Select(i => new Vector2(3f * MathF.Cos(i * MathF.PI / 4f), 3f * MathF.Sin(i * MathF.PI / 4f)))];
+
+    /// <summary>
+    /// Null when the floor holds the hull's centre; otherwise the horizontal
+    /// direction it tips in - away from where the floor is - or, with no
+    /// floor anywhere around, along <paramref name="heading"/>.
+    /// </summary>
+    static Vector3? EdgeTip(TriangleCollider collider, Vector3 position, Vector3 heading)
+    {
+        var reach = GrenadeRadius + 1f;
+        bool Held(float dx, float dy)
+        {
+            var from = new Vector3(position.X + dx, position.Y + dy, position.Z);
+            return collider.FirstHit(from, from + new Vector3(0, 0, -reach)) is { } h && h.Normal.Z > FloorNormalZ;
+        }
+        if (Held(0f, 0f))
+        {
+            return null;
+        }
+        var supported = Vector2.Zero;
+        var count = 0;
+        foreach (var o in SupportOffsets)
+        {
+            if (Held(o.X, o.Y))
+            {
+                supported += o;
+                count++;
+            }
+        }
+        Vector2 dir;
+        if (count > 0 && supported.LengthSquared() > 1e-6f)
+        {
+            // Tip away from the side that holds it - unless the edge runs
+            // within a unit of the centre: the engine keeps a grenade whose
+            // centre sits on the edge line (validated on the T side of the
+            // same beam: real rest exactly on the edge, ours had tipped it).
+            dir = -Vector2.Normalize(supported);
+            if (Held(-dir.X * EdgeNeutralBand, -dir.Y * EdgeNeutralBand))
+            {
+                return null;
+            }
+        }
+        else
+        {
+            var h = new Vector2(heading.X, heading.Y);
+            if (h.LengthSquared() < 1e-6f)
+            {
+                return null;
+            }
+            dir = Vector2.Normalize(h);
+        }
+        return new Vector3(dir.X, dir.Y, 0f);
+    }
+
     /// <summary>
     /// Initial projectile state for a throw spec: release position (eye plus
     /// 16u along the aim direction) and launch velocity (pitch-biased aim,
@@ -323,18 +384,27 @@ public static class GrenadeTrajectory
 
                 if (vAfter.Length() < k.StopSpeed)
                 {
-                    if (hit.Normal.Z > FloorNormalZ)
+                    // At rest only with floor under the CENTRE of the hull. The
+                    // box hull touching a ledge with a corner was enough to
+                    // stop here, and the grenade sat balanced on the edge of
+                    // the beam over de_dust2's mid doors while the real one
+                    // tipped off it and dropped to the ground 200u away
+                    // (validation batch beta-check-dust2, three of twenty).
+                    // Over an edge, it tips instead: a nudge toward the side
+                    // with nothing under it, and the fall continues.
+                    if (hit.Normal.Z > FloorNormalZ || collider.FirstHitHull(position, position + new Vector3(0f, 0f, -2f), HullHalfExtents, minNormalZ: FloorNormalZ) is not null)
                     {
-                        return new TrajectoryResult(position, bounces, time + TimeStep, Lost: false, firstTouch);
-                    }
-                    // A wall or edge contact at negligible speed can still be a
-                    // grenade at rest ON the floor (wedged against a tilted
-                    // wall, or settling onto a triangle edge); probe straight
-                    // down considering only floor-like surfaces before treating
-                    // it as a wall slide.
-                    if (collider.FirstHitHull(position, position + new Vector3(0f, 0f, -2f), HullHalfExtents, minNormalZ: FloorNormalZ) is not null)
-                    {
-                        return new TrajectoryResult(position, bounces, time + TimeStep, Lost: false, firstTouch);
+                        if (EdgeTip(collider, position, w) is not { } tip)
+                        {
+                            return new TrajectoryResult(position, bounces, time + TimeStep, Lost: false, firstTouch);
+                        }
+                        trace?.Add($"t={time:F2} balanced on an edge at ({position.X:F0},{position.Y:F0},{position.Z:F0}), tipping ({tip.X:F2},{tip.Y:F2})");
+                        velocity = tip * (k.StopSpeed * 0.3f);
+                        velocity.Z -= gravityStep * (1f - hit.T);
+                        position += velocity * ((1f - hit.T) * TimeStep);
+                        time += TimeStep;
+                        tickTrace?.Add((position, velocity));
+                        continue;
                     }
                     // Slow wall contact with no floor beneath: slide along the
                     // surface instead of stopping dead. Zeroing the velocity

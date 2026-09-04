@@ -155,3 +155,41 @@ public class SimulateExactTests
             $"voxel rest {voxel.RestPoint} and exact rest {exact.RestPoint} disagree by {distance:F1}u");
     }
 }
+
+/// <summary>
+/// A grenade balanced on the edge of a ledge tips off it; one with the ledge
+/// under its centre stays.
+/// </summary>
+// From the beam over de_dust2's mid doors: the box hull touching the ledge
+// with a corner was enough for the simulator to call it at rest, and three
+// validated throws that the sim parked on the edge were on the ground 200u
+// away in the game.
+public class EdgeTipTests
+{
+    static TriangleCollider Ledge() => new(SyntheticMeshes.FromQuads(
+    [
+        SyntheticMeshes.Ground(-256, 512, 0),      // the ground
+        ([0f, -256f, 64f], [100f, -256f, 64f], [100f, 256f, 64f], [0f, 256f, 64f]), // a ledge 64u up, ending at x=100
+        SyntheticMeshes.WallX(100, -256, 256, 0, 64),
+    ]), new Vector3(-256, -256, -16), new Vector3(512, 256, 256));
+
+    [Fact]
+    public void AGrenadeDroppedOnTheEdgeTipsOffAndLandsBelow()
+    {
+        // Centre 1u past the edge: a corner of the box still touches the top.
+        var r = GrenadeTrajectory.SimulateExactRaw(Ledge(), new Vector3(101f, 0f, 70f), new Vector3(0f, 0f, 0f));
+
+        Assert.False(r.Lost);
+        Assert.True(r.RestPoint.Z < 10f, $"rested at z={r.RestPoint.Z:F1}, still on the ledge");
+        Assert.True(r.RestPoint.X > 100f, $"tipped the wrong way: x={r.RestPoint.X:F1}");
+    }
+
+    [Fact]
+    public void AGrenadeDroppedWithTheLedgeUnderItsCentreStaysOnIt()
+    {
+        var r = GrenadeTrajectory.SimulateExactRaw(Ledge(), new Vector3(96f, 0f, 70f), new Vector3(0f, 0f, 0f));
+
+        Assert.False(r.Lost);
+        Assert.Equal(66f, r.RestPoint.Z, 1f);
+    }
+}

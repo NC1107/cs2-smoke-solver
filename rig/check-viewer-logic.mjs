@@ -43,6 +43,7 @@ for (const f of fixtures) {
     rest: [f.distance, 0, 0],
     type: f.type,
     scatter: f.scatter,
+    stability: f.stability ?? 1,
   };
   const js = humanError(l);
   check(Math.abs(js - f.expected) < 0.05, `humanError(${JSON.stringify(f)}) = ${js.toFixed(2)} in JS, ${f.expected.toFixed(2)} in C#`);

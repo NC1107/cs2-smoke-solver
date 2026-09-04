@@ -309,10 +309,12 @@ export function humanError(l) {
   }
   const dist = Math.hypot(l.rest[0] - l.feet[0], l.rest[1] - l.feet[1]);
   const scatter = l.scatter ?? 0;
+  const stability = Math.min(1, Math.max(0, l.stability ?? 1));
   return (POSITION_ERROR[l.pin] ?? 24)
     + dist * Math.tan(aimErrorDeg(referenceBand(l)) * Math.PI / 180)
     + (MOVEMENT_ERROR[l.type] ?? 0)
-    + (scatter > 16 ? scatter : 0);
+    + (scatter > 16 ? scatter : 0)
+    + (1 - stability) * 24;
 }
 
 // A lineup's stable identity across solves: the throw itself, quantised to

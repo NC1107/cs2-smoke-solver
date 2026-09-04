@@ -3,8 +3,8 @@
 // previews. Loading, axis conversion, and material sanitization live here;
 // the interactive view and the preview path only consume the finished scene.
 
-import { state, lowMemoryDevice } from "./state.js?v=108";
-import { cacheBust } from "./api.js?v=108";
+import { state, lowMemoryDevice } from "./state.js?v=109";
+import { cacheBust } from "./api.js?v=109";
 
 const scriptPromises = {};
 export function loadScript(src) {
