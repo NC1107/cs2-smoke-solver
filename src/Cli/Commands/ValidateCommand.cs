@@ -243,7 +243,10 @@ public static class ValidateCommand
         // by initial position + velocity (synthetic throws echo them exactly).
         var matches = new Dictionary<int, JsonElement>();
         var idleMs = 0;
-        while (matches.Count < submitted && idleMs < 120000)
+        // The plugin flushes a capture at detonation, a few seconds after the
+        // last submit, so 30 s of silence means a throw was lost, not slow.
+        // At 120 s every lost capture cost two idle minutes per target.
+        while (matches.Count < submitted && idleMs < 30000)
         {
             Thread.Sleep(2000);
             idleMs += 2000;
