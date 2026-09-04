@@ -35,6 +35,7 @@ public static class DivergeCommand
         // (phantom contacts, up to the split), ranked by how many misses they
         // appear in. The surfaces the game does not collide with, by count.
         var summary = options.ContainsKey("summary");
+        TraceEnabled = options.ContainsKey("trace");
         var reportFiles = options.TryGetValue("report", out var one)
             ? [one]
             : Directory.EnumerateFiles(options.GetValueOrDefault("reports", Path.Combine(Path.GetDirectoryName(Path.GetFullPath(Require(options, "geo"))) ?? ".", "validation")), $"{mesh.MapName}-*.json").OrderBy(f => f).ToList();
@@ -118,6 +119,7 @@ public static class DivergeCommand
 
     /// <summary>The replayed rest error of the last throw, under the current physics and mesh.</summary>
     public static float LastError { get; private set; }
+    static bool TraceEnabled;
 
     static List<(int Triangle, Vector3 Where)> Replay(TriangleCollider collider, ThrowConstants constants, JsonElement row, Vector3 pos, Vector3 vel, float[][] samples, bool quiet = false)
     {
@@ -125,7 +127,17 @@ public static class DivergeCommand
         var output = quiet ? TextWriter.Null : Console.Out;
         var simTicks = new List<(Vector3 Position, Vector3 Velocity)>();
         var simBounces = new List<BounceRecord>();
-        var result = GrenadeTrajectory.SimulateExactRaw(collider, pos, vel, constants, tickTrace: simTicks, bounceTrace: simBounces);
+        // --trace prints the sim's own contact log next to the pairing: the
+        // pairing shows bounces, the log also shows slides and rest checks.
+        var simTrace = TraceEnabled ? new List<string>() : null;
+        var result = GrenadeTrajectory.SimulateExactRaw(collider, pos, vel, constants, trace: simTrace, tickTrace: simTicks, bounceTrace: simBounces);
+        if (simTrace is not null)
+        {
+            foreach (var line in simTrace)
+            {
+                output.WriteLine($"    trace {line}");
+            }
+        }
         var realBounces = RealBounces(samples, vel);
         var realRest = Vec(row.GetProperty("RealRest"));
         LastError = Vector3.Distance(result.RestPoint, realRest);

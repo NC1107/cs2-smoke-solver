@@ -94,7 +94,9 @@ Per tick:
    - **Restitution** multiplies the *whole* reflected vector by `Elasticity = 0.45`. There is no tangential-friction term in the grenade path.
    - **Angle damp (floor only)**: if impact speed `> DampGateSpeed (690 u/s)` *and* the impact angle is steeper than 60° (`|w·n|/|w| > 0.5`) *and* the surface is floor-like (`n.z > 0.7`), additionally scale by `(1.5 - |cos angle|)`. Walls never damp (validated: 0/122 gated wall bounces damped vs 68/76 gated ground bounces).
    - **Stop rule**: if post-bounce speed `< StopSpeed (19.685 u/s ≈ 0.5 m/s)` on a floor (or with floor directly below), the grenade rests. There is no rolling phase.
-   - Otherwise consume the remainder of the tick with the bounced velocity (single bounce resolved per tick). Slow contact against a wall with no floor beneath **slides** along the surface rather than freezing.
+   - Otherwise consume the remainder of the tick with the bounced velocity (up to two contacts resolved per tick).
+     A slow contact against a wall with no floor beneath is an ordinary bounce, not a rest and not a slide.
+     The sim used to slide along the wall there, dropping the velocity component the wall had just reversed; the rig's captures (dust2 top_door, 2026-09-04) show the real grenade leaving at the reflected velocity, and the corpus replay went from 59 to 56 misses over 8u with no map worse when the slide was removed.
 
 The voxel `Simulate` is the coarse stage-1 model (inflated voxels, axis-aligned reflection); `SimulateExact` re-verifies finalist lineups against true triangle normals.
 

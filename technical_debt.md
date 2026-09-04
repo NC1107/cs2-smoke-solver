@@ -1877,3 +1877,12 @@ Tried: `ThrowConstants.HullHalfExtent` swept over 2.0 / 1.5 / 1.0 on all 15 maps
 Over 8u totals: 2.0 = 59 (baseline at the time), 1.5 = 227, 1.0 = 457; dust2 within 3u fell from 95.5% to 69.0% at 1.0.
 Every map got worse at every narrower size, so the box half-extent is 2u and the rim misses are not a hull-size effect.
 The knob was reverted; do not retry.
+
+### Loop iteration 10 (2026-09-04): slow wall contacts bounce, they do not slide - KEPT
+
+dust2 top_door [17] (214u): sim and capture agree tick for tick until a 41 u/s contact with the door frame; the real grenade leaves at the reflected velocity (-4,17,-8) and later rolls over a ledge, the sim slid along the frame with the sideways component removed and rested on the ledge.
+Cause: the rest branch (`|vAfter| < StopSpeed`) handled the no-floor case by sliding along the wall with the incoming velocity's tangential part, which drops exactly the component the wall reversed.
+Fix: a slow contact with no floor under the hull is an ordinary bounce; the rest check stays as it was.
+Corpus (same build, 15 maps): 59 -> 56 over 8u; within 3u up on italy, office, anubis, dust2 (95.5 -> 96.0) and vertigo, no map down.
+Test: `SlowWallContactTests`.
+Still open on the same target: [11] and [16] rest balanced on the top edge of a wall the real grenade rolls off (the rim case that edge tipping, faces-only and centre-support all failed on).

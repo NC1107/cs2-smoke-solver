@@ -449,54 +449,39 @@ public static class GrenadeTrajectory
                 trace?.Add($"t={time:F2} contact ({contact.X:F0},{contact.Y:F0},{contact.Z:F0}) normal ({hit.Normal.X:F2},{hit.Normal.Y:F2},{hit.Normal.Z:F2}) v after ({vAfter.X:F0},{vAfter.Y:F0},{vAfter.Z:F0})");
                 bounceTrace?.Add(new BounceRecord(tick, contact, hit.Normal, hit.Triangle, w, vAfter));
 
-                if (vAfter.Length() < k.StopSpeed)
+                // At rest only when slow AND on something that can hold the
+                // grenade: a floor-facing contact, or floor within 2u under
+                // the hull. A slow contact with a wall and nothing beneath is
+                // an ordinary bounce (below). The sim used to slide along the
+                // wall there with the sideways velocity removed; the rig's
+                // tick captures show the real grenade reflecting instead
+                // (dust2 top_door, 41 u/s into the door frame, out at 18 u/s
+                // with the full sideways component, then over the ledge the
+                // sliding sim never reached - 214u apart, 2026-09-04).
+                // An edge-axis contact (a box corner on a rim) holds a
+                // grenade just like a face does: requiring a face here was
+                // tried on the corpus (2026-09-04) and broke 17 dust2
+                // throws, 8 on mirage and 15 on ancient while fixing none.
+                // Nor does a grenade need floor under its centre: requiring
+                // a point of support under the hull centre (2026-09-04)
+                // broke 31 dust2 throws and fixed 4. Real grenades park on
+                // rims with the centre hanging past the edge.
+                if (vAfter.Length() < k.StopSpeed
+                    && (hit.Normal.Z > FloorNormalZ || collider.FirstHitHull(position, position + new Vector3(0f, 0f, -2f), HullHalfExtents, minNormalZ: FloorNormalZ) is not null))
                 {
-                    // At rest only with floor under the CENTRE of the hull. The
-                    // box hull touching a ledge with a corner was enough to
-                    // stop here, and the grenade sat balanced on the edge of
-                    // the beam over de_dust2's mid doors while the real one
-                    // tipped off it and dropped to the ground 200u away
-                    // (validation batch beta-check-dust2, three of twenty).
-                    // Over an edge, it tips instead: a nudge toward the side
-                    // with nothing under it, and the fall continues.
-                    // An edge-axis contact (a box corner on a rim) holds a
-                    // grenade just like a face does: requiring a face here was
-                    // tried on the corpus (2026-09-04) and broke 17 dust2
-                    // throws, 8 on mirage and 15 on ancient while fixing none.
-                    // Nor does a grenade need floor under its centre: requiring
-                    // a point of support under the hull centre (2026-09-04)
-                    // broke 31 dust2 throws and fixed 4. Real grenades park on
-                    // rims with the centre hanging past the edge.
-                    if (hit.Normal.Z > FloorNormalZ || collider.FirstHitHull(position, position + new Vector3(0f, 0f, -2f), HullHalfExtents, minNormalZ: FloorNormalZ) is not null)
+                    if (!k.EdgeTipping || EdgeTip(collider, position, w) is not { } tip)
                     {
-                        if (!k.EdgeTipping || EdgeTip(collider, position, w) is not { } tip)
-                        {
-                            return new TrajectoryResult(position, bounces, time + TimeStep, Lost: false, firstTouch);
-                        }
-                        trace?.Add($"t={time:F2} balanced on an edge at ({position.X:F0},{position.Y:F0},{position.Z:F0}), tipping ({tip.X:F2},{tip.Y:F2})");
-                        velocity = tip * (k.StopSpeed * 0.3f);
-                        velocity.Z -= gravityStep * (1f - hit.T);
-                        position += velocity * ((1f - hit.T) * TimeStep);
-                        time += TimeStep;
-                        tick++;
-                        tickTrace?.Add((position, velocity));
-                        continue;
+                        return new TrajectoryResult(position, bounces, time + TimeStep, Lost: false, firstTouch);
                     }
-                    // Slow wall contact with no floor beneath: slide along the
-                    // surface instead of stopping dead. Zeroing the velocity
-                    // here froze the hull permanently against near-vertical
-                    // walls (each subsequent fall tick re-grazed the wall at
-                    // the contact point); real grenades slide down to the
-                    // ground in this situation.
-                    velocity = w - Vector3.Dot(w, hit.Normal) * hit.Normal;
-                    var slideRemainder = 1f - hit.T;
-                    velocity.Z -= gravityStep * slideRemainder;
-                    var slideNext = position + velocity * (slideRemainder * TimeStep);
-                    position = collider.FirstHitHull(position, slideNext, HullHalfExtents) is { } slideHit
-                        ? Vector3.Lerp(position, slideNext, Math.Max(0f, slideHit.T - 1e-3f))
-                        : slideNext;
+                    trace?.Add($"t={time:F2} balanced on an edge at ({position.X:F0},{position.Y:F0},{position.Z:F0}), tipping ({tip.X:F2},{tip.Y:F2})");
+                    velocity = tip * (k.StopSpeed * 0.3f);
+                    velocity.Z -= gravityStep * (1f - hit.T);
+                    position += velocity * ((1f - hit.T) * TimeStep);
+                    time += TimeStep;
+                    tick++;
+                    tickTrace?.Add((position, velocity));
+                    continue;
                 }
-                else
                 {
                     velocity = vAfter;
                     var remainder = 1f - hit.T;

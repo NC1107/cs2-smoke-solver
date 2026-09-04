@@ -204,6 +204,42 @@ public class CornerContactTests
 }
 
 /// <summary>
+/// A slow contact with a wall and nothing under the hull is an ordinary
+/// bounce. The sim used to slide along the wall there, dropping the
+/// component of velocity the wall had just reversed; the rig's captures on
+/// dust2 top_door (2026-09-04) show the real grenade leaving the door frame
+/// at the reflected velocity and going on over a ledge the slide never
+/// reached. Corpus replay: 59 -> 56 misses over 8u, no map worse.
+/// </summary>
+public class SlowWallContactTests
+{
+    static TriangleCollider WallInMidAir() => new(SyntheticMeshes.FromQuads(
+    [
+        SyntheticMeshes.Ground(-256, 256, 0),
+        SyntheticMeshes.WallX(100, -256, 256, 0, 128), // a wall at x=100 facing the thrower
+    ]), new Vector3(-256, -256, -16), new Vector3(256, 256, 256));
+
+    [Fact]
+    public void ASlowGrenadeMeetingAWallHighAboveTheFloorReflectsOffIt()
+    {
+        // 60u up, a fraction of a unit short of the wall, drifting into it at
+        // 20 u/s: the rebound is well under StopSpeed and there is no floor
+        // within reach of the hull.
+        var ticks = new List<(Vector3 Position, Vector3 Velocity)>();
+        var r = GrenadeTrajectory.SimulateExactRaw(WallInMidAir(), new Vector3(97.6f, 0f, 60f), new Vector3(20f, 8f, 0f), ThrowConstants.Default, tickTrace: ticks);
+
+        var afterContact = ticks.Take(3).FirstOrDefault(t => t.Velocity.X < 0f);
+        Assert.True(afterContact != default, "the wall never reversed the grenade");
+        Assert.True(afterContact.Velocity.X <= -8f, $"reflected too weakly: vx={afterContact.Velocity.X:F1}");
+        // The sideways component is scaled by the bounce, not dropped: the
+        // slide kept only the tangential part of the INCOMING velocity.
+        Assert.True(afterContact.Velocity.Y > 2f, $"sideways velocity lost: vy={afterContact.Velocity.Y:F1}");
+        Assert.False(r.Lost);
+        Assert.True(r.RestPoint.X < 96f, $"stayed against the wall: x={r.RestPoint.X:F1}");
+    }
+}
+
+/// <summary>
 /// Intact breakable glass (window props, func_breakable) lets a grenade
 /// through at 0.40 of its speed on the same heading, and is gone for the
 /// rest of that flight. Measured on cs_office, 2026-09-04: five throws
