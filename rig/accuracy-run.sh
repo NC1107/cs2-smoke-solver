@@ -46,6 +46,22 @@ if [[ -z "$MAPS" ]]; then
 fi
 [[ -n "$MAPS" ]] || { echo "no maps with nav data under $REPO/data" >&2; exit 1; }
 
+# A CS2 update moves the client install on its own but leaves the rig server
+# on its pinned branch and wipes the metamod line from gameinfo.gi; both
+# silently graded seven weeks of throws against a different map in 2026.
+SERVER_INF="$CS2_RIG_DIR/server/game/csgo/steam.inf"
+CLIENT_INF="${CS2_GAME_DIR:-$HOME/.local/share/Steam/steamapps/common/Counter-Strike Global Offensive}/game/csgo/steam.inf"
+if [[ -f "$SERVER_INF" && -f "$CLIENT_INF" ]]; then
+  sv=$(grep -oP 'ClientVersion=\K\d+' "$SERVER_INF"); cl=$(grep -oP 'ClientVersion=\K\d+' "$CLIENT_INF")
+  if [[ "$sv" != "$cl" ]]; then
+    echo "WARNING: rig server is CS2 build $sv, client (where meshes come from) is $cl - update the server: steamcmd +force_install_dir $CS2_RIG_DIR/server +login anonymous +app_update 730 -beta public +quit" >&2
+  fi
+fi
+if ! grep -q 'addons/metamod' "$CS2_RIG_DIR/server/game/csgo/gameinfo.gi"; then
+  echo "ERROR: gameinfo.gi has no metamod search path (a CS2 update wipes it); the plugin cannot load. Re-add 'Game csgo/addons/metamod' before Game_LowViolence." >&2
+  exit 1
+fi
+
 if ! systemctl --user is-active --quiet cs2-server; then
   echo "==> starting cs2-server"
   systemctl --user start cs2-server
