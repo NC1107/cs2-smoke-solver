@@ -91,6 +91,20 @@ public static class BatchValidateCommand
                     Console.Error.WriteLine($"[{map}] rig server did not consume the changelevel request - is it running with the plugin loaded?");
                     return 1;
                 }
+                // --timescale N: run the game N times faster. Captures are per
+                // tick, so the physics is the same (dust2 markers at 3x matched
+                // 1x on every statistic, 2026-09-04); the throw phase takes a
+                // third of the wall clock. A level change resets it.
+                if (options.TryGetValue("timescale", out var timescale) && !options.ContainsKey("no-changelevel"))
+                {
+                    foreach (var cmd in new[] { "sv_cheats 1", $"host_timescale {timescale}" })
+                    {
+                        if (!SendCommand(cmd, calibDir))
+                        {
+                            Console.Error.WriteLine($"[{map}] rig server did not consume '{cmd}'");
+                        }
+                    }
+                }
                 liveMap = map;
             }
             Console.WriteLine($"--- {map} / {name} ({pos[0]:F0},{pos[1]:F0},{pos[2]:F0}) ---");
@@ -276,6 +290,25 @@ public static class BatchValidateCommand
     /// map is live, so consumption doubles as the liveness check), then gives
     /// the new map time to load and re-apply practice settings.
     /// </summary>
+    static bool SendCommand(string cmd, string calibDir)
+    {
+        var requestPath = Path.Combine(calibDir, "request.json");
+        var waited = 0;
+        while (File.Exists(requestPath) && waited < 10000)
+        {
+            Thread.Sleep(250);
+            waited += 250;
+        }
+        RequestFile.WriteAtomic(requestPath, JsonSerializer.Serialize(new { cmd }));
+        waited = 0;
+        while (File.Exists(requestPath) && waited < 10000)
+        {
+            Thread.Sleep(250);
+            waited += 250;
+        }
+        return !File.Exists(requestPath);
+    }
+
     static bool ChangeLevel(string map, string calibDir)
     {
         var requestPath = Path.Combine(calibDir, "request.json");

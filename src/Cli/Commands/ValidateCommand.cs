@@ -72,7 +72,7 @@ public static class ValidateCommand
         // first - the solver's own order put the top of the list last.
         var ordered = LineupApi.Ranked(solve);
         var lineups = limit > 0 ? ordered.Take(limit).ToList() : ordered;
-        Console.WriteLine($"{solve.Lineups.Count} lineups solved in {started.Elapsed.TotalSeconds:F0}s ({lineups.Count} selected, {solve.OriginCount} origins)");
+        Console.WriteLine($"[{DateTime.Now:HH:mm:ss}] {solve.Lineups.Count} lineups solved in {started.Elapsed.TotalSeconds:F0}s ({lineups.Count} selected, {solve.OriginCount} origins)");
         return new Prepared(mesh, constants, target, hasTargetZ, tolerance, solve, lineups);
     }
 
@@ -182,7 +182,7 @@ public static class ValidateCommand
         var capturesPath = Path.Combine(calibDir, "captures.jsonl");
         var tailer = new CaptureTailer(capturesPath);
         var baseline = tailer.InitializeAtEnd();
-        Console.WriteLine($"submitting {plans.Count} throws to {requestPath} (captures baseline offset {baseline}) ...");
+        Console.WriteLine($"[{DateTime.Now:HH:mm:ss}] submitting {plans.Count} throws to {requestPath} (captures baseline offset {baseline}) ...");
 
         // Batches of 6 per request file: the plugin polls every 8 ticks (~1/8s)
         // and launches the whole batch in one tick, so throughput is bounded by
@@ -237,7 +237,7 @@ public static class ValidateCommand
             Thread.Sleep(batchPause);
         }
 
-        Console.WriteLine($"all {submitted} submitted; waiting for captures (smokes persist ~20s each) ...");
+        Console.WriteLine($"[{DateTime.Now:HH:mm:ss}] all {submitted} submitted; waiting for captures ...");
 
         // Captures arrive when each projectile despawns; match them back to plans
         // by initial position + velocity (synthetic throws echo them exactly).
@@ -286,7 +286,7 @@ public static class ValidateCommand
                 Console.WriteLine($"  matched {matches.Count}/{submitted}");
             }
         }
-        Console.WriteLine($"matched {matches.Count}/{submitted} captures");
+        Console.WriteLine($"[{DateTime.Now:HH:mm:ss}] matched {matches.Count}/{submitted} captures");
 
         var results = new List<ValidateRow>();
         var errors = new List<float>();
