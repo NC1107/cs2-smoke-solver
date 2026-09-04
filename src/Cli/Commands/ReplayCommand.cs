@@ -60,6 +60,11 @@ public static class ReplayCommand
             var baseSolid = solid;
             solid = a => baseSolid(a) && !drop.Contains(a);
         }
+        if (options.TryGetValue("bounces-per-tick", out var perTick))
+        {
+            constants = constants with { BouncesPerTick = int.Parse(perTick, CultureInfo.InvariantCulture) };
+            Console.WriteLine($"bounces per tick: {constants.BouncesPerTick}");
+        }
         if (options.ContainsKey("no-edge-tip"))
         {
             constants = constants with { EdgeTipping = false };

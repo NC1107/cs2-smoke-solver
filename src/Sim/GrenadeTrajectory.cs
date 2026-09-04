@@ -69,6 +69,12 @@ public sealed record ThrowConstants(
     // leaves grenades balanced on pole tops, crate rims and beams far more
     // often than it tips them - tipping fixed 13 throws and broke 50.
     bool EdgeTipping = false,
+    // How many contacts one tick may resolve. The game's telemetry at a
+    // wall-floor corner shows both reflections landing inside one tick; with
+    // only the first resolved, the second surface merely stopped the hull
+    // until the next tick. Corpus replay 2026-09-04: 2 fixed 5 throws and
+    // broke 1 on dust2, 1 on nuke, nothing elsewhere; 3 adds nothing over 2.
+    int BouncesPerTick = 2,
     // Horizontal velocity a running jump throw adds along the facing. MEASURED
     // at 306 from two full-speed run jumps (left and right click both landed on
     // 306.1, confirming it is player velocity, independent of the throw). The
@@ -454,9 +460,29 @@ public static class GrenadeTrajectory
                     // straddling thin ridges, ping-ponging between their two
                     // opposing slopes for hundreds of fake bounces.
                     var next2 = position + vAfter * (remainder * TimeStep);
-                    position = collider.FirstHitHull(position, next2, HullHalfExtents) is { } hit2
-                        ? Vector3.Lerp(position, next2, Math.Max(0f, hit2.T - 1e-3f))
-                        : next2;
+                    for (var sub = 1; ; sub++)
+                    {
+                        if (collider.FirstHitHullIndexed(position, next2, HullHalfExtents) is not { } hit2)
+                        {
+                            position = next2;
+                            break;
+                        }
+                        position = Vector3.Lerp(position, next2, Math.Max(0f, hit2.T - 1e-3f));
+                        remainder *= 1f - hit2.T;
+                        if (sub >= k.BouncesPerTick || remainder <= 1e-4f)
+                        {
+                            break;
+                        }
+                        // A second surface inside the same tick (the wall right
+                        // after the floor at a corner): reflect again and spend
+                        // what is left of the tick on that velocity.
+                        bounces++;
+                        var w2 = velocity;
+                        velocity = Bounce(w2, hit2.Normal, k);
+                        trace?.Add($"t={time:F2} contact ({position.X:F0},{position.Y:F0},{position.Z:F0}) normal ({hit2.Normal.X:F2},{hit2.Normal.Y:F2},{hit2.Normal.Z:F2}) v after ({velocity.X:F0},{velocity.Y:F0},{velocity.Z:F0}) (same tick)");
+                        bounceTrace?.Add(new BounceRecord(tick, position, hit2.Normal, hit2.Triangle, w2, velocity));
+                        next2 = position + velocity * (remainder * TimeStep);
+                    }
                 }
             }
             else

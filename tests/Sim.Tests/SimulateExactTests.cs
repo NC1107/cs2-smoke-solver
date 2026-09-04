@@ -164,6 +164,45 @@ public class SimulateExactTests
 // tips a corner-balanced grenade off; the full corpus said otherwise (pole
 // tops, crate rims and that same beam hold balanced grenades 50 times for
 // every 13 they tip), so tipping is opt-in and off by default.
+/// <summary>
+/// A grenade that meets the floor and then the wall of a corner inside one
+/// tick reflects off both in that tick; the game's telemetry at such corners
+/// shows both reflections landing together, and resolving only the floor left
+/// the hull parked against the wall until the next tick.
+/// </summary>
+public class CornerContactTests
+{
+    static TriangleCollider Corner() => new(SyntheticMeshes.FromQuads(
+    [
+        SyntheticMeshes.Ground(-256, 256, 0),
+        SyntheticMeshes.WallX(100, -256, 256, 0, 128), // a wall at x=100 facing the thrower
+    ]), new Vector3(-256, -256, -16), new Vector3(256, 256, 256));
+
+    // Start 3u above the floor and 1u short of the wall, moving fast into
+    // the corner: the floor is met first, the wall a fraction of a tick later.
+    static readonly Vector3 Start = new(95f, 0f, 5f);
+    static readonly Vector3 Into = new(400f, 0f, -400f);
+
+    [Fact]
+    public void FloorThenWallInsideOneTickReflectsOffBoth()
+    {
+        var trace = new List<string>();
+        var r = GrenadeTrajectory.SimulateExactRaw(Corner(), Start, Into, ThrowConstants.Default, trace);
+
+        Assert.Contains(trace, line => line.Contains("(same tick)"));
+        Assert.True(r.RestPoint.X < 95f, $"the wall did not send it back: x={r.RestPoint.X:F1}");
+    }
+
+    [Fact]
+    public void WithOneContactPerTickTheWallWaitsForTheNextTick()
+    {
+        var trace = new List<string>();
+        GrenadeTrajectory.SimulateExactRaw(Corner(), Start, Into, ThrowConstants.Default with { BouncesPerTick = 1 }, trace);
+
+        Assert.DoesNotContain(trace, line => line.Contains("(same tick)"));
+    }
+}
+
 public class EdgeTipTests
 {
     static TriangleCollider Ledge() => new(SyntheticMeshes.FromQuads(

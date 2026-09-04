@@ -1749,3 +1749,9 @@ What the replays show is left in the tail:
 - de_dust2 B site and top_window rests: settle differences after tracked flights.
 
 Deploy note: `.s2geo` and `.standspots.json` are gitignored data; both must be rsynced to prod (the stand spots were regenerated because the player collider changed).
+
+### Loop iteration 1 (2026-09-04): two contacts per tick
+
+The dust2 CT-mid traces showed the game reflecting off the floor and then the wall of a corner inside one tick, where the sim resolved only the floor and let the wall stop the hull until the next tick.
+`ThrowConstants.BouncesPerTick` now defaults to 2 (3 adds nothing).
+Corpus: dust2 289 to 284 (5 fixed, 1 broke), nuke 4 to 3, six other maps unchanged; total 386 to 380.
