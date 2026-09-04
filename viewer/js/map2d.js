@@ -3,8 +3,8 @@
 // actions (set target, select, run query) go through callbacks that main.js
 // registers, so this module never imports the orchestrator.
 
-import { cacheBust } from "./api.js?v=109";
-import { isDrag, state, filtered, clickWords, movementWords, clickClass, esc, SMOKE_BLOOM_RADIUS, PICK_RADIUS_PX, TOUCH_PICK_RADIUS_PX, HEAT_CELL } from "./state.js?v=109";
+import { cacheBust } from "./api.js?v=110";
+import { isDrag, state, filtered, clickWords, movementWords, clickClass, esc, SMOKE_BLOOM_RADIUS, PICK_RADIUS_PX, TOUCH_PICK_RADIUS_PX, HEAT_CELL } from "./state.js?v=110";
 
 const canvas = state.canvas;
 const ctx = canvas.getContext("2d");
@@ -400,7 +400,7 @@ export function draw() {
   const shown = state.heatOn ? [] : filtered();
   shown.forEach(l => {
     const idx = l._idx;
-    const isSelected = idx === state.selected || idx === state.hovered;
+    const isSelected = idx === state.selected || idx === state.hovered || !!state.result.showAllArcs;
     const clickColor = colors[`click-${clickClass(l.strength)}`] || colors.accent;
     if (isSelected) {
       ctx.strokeStyle = clickColor;
@@ -732,11 +732,18 @@ export function initMap2d(cb) {
     // marker whose only job is to be clicked, and with a target already set
     // a plain click would otherwise mean "solve from here" or select a row.
     const pin = nearestNamedPin(wx, wy, (pickPx + SPAWN_GRAB_PX) / scale);
-    if (pin && !state.pickingOrigin) {
+    const spawn = state.picking ? null : nearestSpawn(wx, wy, (pickPx + SPAWN_GRAB_PX) / scale);
+    // "Set throw position" armed: this click is the throw spot, whatever it
+    // landed on, and the arming ends here (a spawn or pin click used to
+    // leave it armed).
+    if (state.pickingOrigin) {
+      callbacks.onPickThrowSpot(spawn ? [spawn[0], spawn[1]] : pin ? [...pin.pos] : [wx, wy]);
+      return;
+    }
+    if (pin) {
       callbacks.onSetTarget([...pin.pos]);
       return;
     }
-    const spawn = state.picking ? null : nearestSpawn(wx, wy, (pickPx + SPAWN_GRAB_PX) / scale);
     if (spawn) {
       if (state.target) {
         callbacks.onRunQuery({ target: state.target, origin: [spawn[0], spawn[1]] });
@@ -748,10 +755,6 @@ export function initMap2d(cb) {
     // The map takes the two positions in order: the first left click answers
     // "where does the smoke go", the second answers "where do you throw it
     // from". Either button in the sidebar can re-arm one of them out of turn.
-    if (state.pickingOrigin) {
-      callbacks.onPickThrowSpot([wx, wy]);
-      return;
-    }
     if (state.picking || !state.target) {
       // With the pro overlay up, a click on a landing dot means "smoke where
       // they smoke" - including the floor they smoke, which a 2D click alone

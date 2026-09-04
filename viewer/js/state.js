@@ -376,6 +376,41 @@ export function lineupSpec(map, l) {
   };
 }
 
+// An execute, saved the way a lineup is: the throw spot, the smokes in
+// order, and for each the throw that was picked for it (the top-ranked one
+// unless another is selected). Reopened, it renders every arc at once.
+export function executeSpec(map, result, selectedIdx) {
+  const smokes = result.execute.smokes.map((smoke, i) => {
+    const own = result.lineups.filter(l => l._smoke === i && !l._removed);
+    const chosen = own.find(l => l._idx === selectedIdx) ?? own[0];
+    return { target: smoke.target.map(v => Math.round(v * 10) / 10), lineup: chosen ? lineupSpec(map, chosen) : null };
+  });
+  const id = `exec:${result.execute.origin.map(v => Math.round(v)).join(",")}:${smokes.map(s => s.target.slice(0, 2).map(v => Math.round(v)).join(",")).join(";")}`;
+  return {
+    kind: "execute",
+    id,
+    map,
+    origin: result.execute.origin.map(v => Math.round(v * 10) / 10),
+    smokes,
+    savedAt: Date.now(),
+  };
+}
+
+export function isExecuteSaved(map, result) {
+  const id = executeSpec(map, result, -1).id;
+  return state.saved.some(s => s.map === map && s.id === id);
+}
+
+export function setExecuteSaved(map, result, selectedIdx, on) {
+  const spec = executeSpec(map, result, selectedIdx);
+  state.saved = state.saved.filter(s => !(s.map === map && s.id === spec.id));
+  if (on) {
+    state.saved.push(spec);
+  }
+  persistSavedLocal();
+  favoriteHooks.onChange?.();
+}
+
 // Called after every favourite change; main.js points it at the account sync
 // once someone is signed in. Kept here so state.js stays import-free.
 export const favoriteHooks = { onChange: null };

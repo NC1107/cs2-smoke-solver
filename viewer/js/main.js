@@ -2,19 +2,19 @@
 // import the feature modules; they call back into the orchestrators defined
 // here (setTarget, select, runQuery) via the init*/set*Callbacks hooks.
 
-import { state, filtered, esc, lowMemoryDevice, loadFavorites, setFavorite, isFavorite, DEFAULT_EYE_HEIGHT, EYE_HEIGHT_BY_TYPE, TARGET_SNAP_RADIUS, favoriteHooks, loadSavedLocal, persistSavedLocal} from "./state.js?v=109";
-import { loadMapList, loadMapData, runQuery as postLineupQuery, fetchTrajectory, fetchLineupOne, fetchSlack, fetchSpawns, fetchProSmokes, fetchMeshDiff, meshDiffExists, fetchLevels, fetchSmokeCoverage, runExecute, findExecuteSpots, fetchTargets, fetchMe, signOut, fetchSavedLineups, putSavedLineups, fetchVotes, castVote} from "./api.js?v=109";
-import { loadRadar, readColors, recolorRadar, draw, scheduleDraw, resize, resetView, initMap2d, screenOf } from "./map2d.js?v=109";
-import { ensure3d, resetEnsure3d, teardown3d, current3d, sync3d, syncProgress3d, syncMeshDiff3d, set3dCallbacks, applyTheme3d, verticalFovFromDesired } from "./view3d.js?v=109";
-import { initAdmin, renderAdmin, syncAdminMode } from "./admin.js?v=109";
-import { resetEnsureTexturedScene } from "./textured-scene.js?v=109";
-import { capturePreview } from "./preview.js?v=109";
+import { state, filtered, esc, lowMemoryDevice, loadFavorites, setFavorite, isFavorite, DEFAULT_EYE_HEIGHT, EYE_HEIGHT_BY_TYPE, TARGET_SNAP_RADIUS, favoriteHooks, loadSavedLocal, persistSavedLocal, isExecuteSaved, setExecuteSaved} from "./state.js?v=110";
+import { loadMapList, loadMapData, runQuery as postLineupQuery, fetchTrajectory, fetchLineupOne, fetchSlack, fetchSpawns, fetchProSmokes, fetchMeshDiff, meshDiffExists, fetchLevels, fetchSmokeCoverage, runExecute, findExecuteSpots, fetchTargets, fetchMe, signOut, fetchSavedLineups, putSavedLineups, fetchVotes, castVote} from "./api.js?v=110";
+import { loadRadar, readColors, recolorRadar, draw, scheduleDraw, resize, resetView, initMap2d, screenOf } from "./map2d.js?v=110";
+import { ensure3d, resetEnsure3d, teardown3d, current3d, sync3d, syncProgress3d, syncMeshDiff3d, set3dCallbacks, applyTheme3d, verticalFovFromDesired } from "./view3d.js?v=110";
+import { initAdmin, renderAdmin, syncAdminMode } from "./admin.js?v=110";
+import { resetEnsureTexturedScene } from "./textured-scene.js?v=110";
+import { capturePreview } from "./preview.js?v=110";
 // Every local import across viewer/js carries the SAME ?v= token, bumped
 // together on any change. The HTML is served no-cache, so a fresh load pulls
 // main.js?v=N, which pulls every module at ?v=N - the whole graph refreshes as
 // one consistent set past Cloudflare's 4h JS cache, with no duplicate module
 // instances (which a partial versioning would cause). Bump the token everywhere.
-import { renderLineups, initPanel, revealSelected, resultStatusText } from "./panel.js?v=109";
+import { renderLineups, initPanel, revealSelected, resultStatusText } from "./panel.js?v=110";
 
 (async () => {
   // Map switching means a failed load is no longer necessarily terminal (the
@@ -278,7 +278,7 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
     await signOut().catch(() => {});
     state.account = null;
     syncAccountUi();
-    statusEl.textContent = "signed out - favourites stay in this browser";
+    statusEl.textContent = "signed out - your saved lineups stay in this browser";
   });
 
   // The redirect back from Steam lands here with ?signin=ok|failed; say so
@@ -510,6 +510,19 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
     syncControls();
     scheduleDraw();
     sync3d();
+  });
+
+  const executeSave = document.getElementById("execute-save");
+  executeSave.addEventListener("click", () => {
+    if (!state.result?.execute) {
+      return;
+    }
+    const on = !isExecuteSaved(state.currentMap, state.result);
+    setExecuteSaved(state.currentMap, state.result, state.selected, on);
+    statusEl.textContent = on
+      ? "execute saved - find it under Saved, with every arc at once"
+      : "execute removed from saved";
+    syncControls();
   });
 
   executeClear.addEventListener("click", e => {
@@ -887,6 +900,15 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
         : "Click the map to set a target first";
     executeList.hidden = !anyExec;
     executeSolveLabel.hidden = !anyExec;
+    // Save is for a solved execute: the throws it picked are what get kept.
+    const solvedExec = !!state.result?.execute && !state.busy;
+    executeSave.hidden = !state.result?.execute;
+    executeSave.disabled = !solvedExec;
+    if (state.result?.execute) {
+      const saved = isExecuteSaved(state.currentMap, state.result);
+      executeSave.textContent = saved ? "\u2605 Saved" : "\u2606 Save this execute";
+      executeSave.setAttribute("aria-pressed", String(saved));
+    }
     executeSeg.hidden = !anyExec;
     for (const b of executeSeg.children) { b.disabled = state.busy; }
     renderExecuteList();
@@ -2163,6 +2185,10 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
         return;
       }
     }
+    if (spec.kind === "execute") {
+      await openSavedExecute(spec);
+      return;
+    }
     if (!spec.target) {
       statusEl.textContent = "this saved lineup has no target recorded - it was saved by an older version";
       return;
@@ -2170,6 +2196,58 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
     state.panelMode = "results";
     setTarget([...spec.target]);
     await showSingleLineup(spec);
+  }
+
+  // A saved execute comes back whole: the throw spot, every smoke as a
+  // queued target, and each chosen throw fetched with its arc so all of them
+  // draw at once - the picture of the execute, not one lineup of it.
+  async function openSavedExecute(spec) {
+    const gen = state.mapGeneration;
+    state.busy = true;
+    state.panelMode = "results";
+    statusEl.textContent = "loading the saved execute…";
+    syncControls();
+    try {
+      state.executeTargets = spec.smokes.map(sm => [...sm.target]);
+      state.executeSpots = null;
+      state.pendingOrigin = [...spec.origin];
+      state.lastOrigin = null;
+      const lineups = [];
+      const smokes = [];
+      for (const [i, sm] of spec.smokes.entries()) {
+        smokes.push({ target: sm.target, found: sm.lineup ? 1 : 0, emptyReason: sm.lineup ? null : "no throw was saved for this smoke" });
+        if (!sm.lineup) {
+          continue;
+        }
+        const { points, lineup } = await fetchLineupOne(state.currentMap, sm.target, sm.lineup, brokenParam());
+        if (state.mapGeneration !== gen) { return; }
+        lineup._smoke = i;
+        lineup._smokeTarget = sm.target;
+        lineup._path = points;
+        lineups.push(lineup);
+      }
+      lineups.forEach((l, i) => { l._idx = i; l._favorite = isFavorite(l); });
+      state.target = [...spec.smokes[0].target];
+      state.targetName = nearestNamedTarget(state.target)?.name ?? null;
+      state.result = {
+        target: [...spec.smokes[0].target],
+        origins: 0,
+        coverage: [],
+        lineups,
+        execute: { origin: spec.origin, smokes },
+        showAllArcs: true,
+      };
+      state.selected = -1;
+      renderLineups();
+      draw();
+      sync3d();
+      statusEl.textContent = `saved execute - ${lineups.length} smoke${lineups.length === 1 ? "" : "s"} from one spot, every arc shown`;
+    } catch (err) {
+      statusEl.textContent = `could not load the saved execute (${err.message})`;
+    } finally {
+      state.busy = false;
+      syncControls();
+    }
   }
 
   function forgetSaved(spec) {

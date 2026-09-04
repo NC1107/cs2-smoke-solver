@@ -515,10 +515,15 @@
     user-select: none;
     padding: 4px 10px;
     list-style: none;
+    display: inline-flex;
+    align-items: center;
+    white-space: nowrap;
+    font-size: 11px;
+    line-height: 1;
   }
   .key > summary::-webkit-details-marker { display: none; }
   .key > summary::before { content: "?"; display: inline-flex; align-items: center; justify-content: center;
-    width: 13px; height: 13px; margin-right: 6px; vertical-align: -2px;
+    width: 13px; height: 13px; margin-right: 6px; flex: 0 0 auto;
     border: var(--border); border-radius: 50%; font-size: 9px; font-weight: 700; }
   .key[open] > summary { border-bottom: var(--border); }
   .key-body { padding: 7px 10px; display: grid; gap: 5px; }
@@ -1053,6 +1058,7 @@
   .saved-empty a { color: var(--accent); }
   .saved-row .lu-head { align-items: center; }
   .saved-row .lu-nums { color: var(--muted); font-variant-numeric: tabular-nums; }
+  .exec-badge { color: var(--accent); font-weight: 700; letter-spacing: 0.03em; text-transform: uppercase; font-size: 0.85em; }
   .saved-drop {
     margin-left: auto; border: var(--border); border-radius: 4px; padding: 0 6px;
     color: var(--muted); line-height: 1.3; cursor: pointer;

@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Smoke Solver</title>
 <link rel="icon" href="viewer/favicon.svg" type="image/svg+xml">
-<link rel="stylesheet" href="viewer/app.css?v=109">
+<link rel="stylesheet" href="viewer/app.css?v=110">
 </head>
 <body>
 
@@ -207,6 +207,7 @@
           <button class="tile" data-execute="here" title="Throw every smoke in the list from the throw position set in the actions card"><svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="14" r="2.2"/><path d="M10 12V4M7 7l3-3 3 3"/></svg><span class="tile-label">From here</span></button>
           <button class="tile" data-execute="spots" title="Find every place on the map where one player can throw all of these without moving"><svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="6.5"/><path d="M10 3.5v3M10 13.5v3M3.5 10h3M13.5 10h3"/></svg><span class="tile-label">Find a spot</span></button>
         </div>
+        <button id="execute-save" class="btn" hidden title="Keep this execute - the throw spot and the throw picked for each smoke - under Saved; opening it draws every arc at once">☆ Save this execute</button>
         <span class="action-label key-subhead" id="execute-spots-label" hidden title="Ranked by the hardest smoke of the set: a spot is only as good as its worst aim">spots that throw all · hardest aim</span>
         <ul id="execute-spots" hidden aria-label="Spots that can throw every smoke"></ul>
       </div>
@@ -362,7 +363,7 @@ give weapon_smokegrenade<button data-copy="cmd-setup" class="btn">copy</button><
       <div class="head-row">
         <div class="tile-row seg-mode" id="panel-mode" role="group" aria-label="What the panel shows">
           <button class="tile active" data-mode="results" aria-pressed="true" title="The lineups the solver found for the current target">Results</button>
-          <button class="tile" data-mode="saved" aria-pressed="false" title="Lineups you starred, across every map. With Steam sign-in they follow you to any browser">Saved</button>
+          <button class="tile" data-mode="saved" aria-pressed="false" title="Lineups and executes you saved with the star, across every map. With Steam sign-in they follow you to any browser">Saved</button>
           <button class="tile" data-mode="targets" id="mode-targets" aria-pressed="false" hidden title="Admin: name, confirm, move, add and remove this map's target pins">Targets</button>
         </div>
         <span class="head-count" id="head-count"></span>
@@ -438,6 +439,6 @@ give weapon_smokegrenade<button data-copy="cmd-setup" class="btn">copy</button><
      4h, so bumping ?v= here is what busts that cache. Bump on any change to a
      directly-referenced asset. (The permanent cure is CF Browser Cache TTL ->
      "Respect Existing Headers", after which this is belt-and-suspenders.) -->
-<script type="module" src="viewer/js/main.js?v=109"></script>
+<script type="module" src="viewer/js/main.js?v=110"></script>
 </body>
 </html>

@@ -3,10 +3,10 @@
 // wraps init/sync. Raycast picks route through callbacks that main.js
 // registers, so this module never imports the orchestrator.
 
-import { state, filtered, clickClass, lowMemoryDevice, SMOKE_BLOOM_RADIUS, EYE_HEIGHT_BY_TYPE, DEFAULT_EYE_HEIGHT } from "./state.js?v=109";
-import { fetchMesh } from "./api.js?v=109";
-import { createFlyCamera } from "./flycam.js?v=109";
-import { loadScript, ensureTexturedScene, currentTexturedScene, disposeSceneContents, disposeTexturedScene } from "./textured-scene.js?v=109";
+import { state, filtered, clickClass, lowMemoryDevice, SMOKE_BLOOM_RADIUS, EYE_HEIGHT_BY_TYPE, DEFAULT_EYE_HEIGHT } from "./state.js?v=110";
+import { fetchMesh } from "./api.js?v=110";
+import { createFlyCamera } from "./flycam.js?v=110";
+import { loadScript, ensureTexturedScene, currentTexturedScene, disposeSceneContents, disposeTexturedScene } from "./textured-scene.js?v=110";
 
 const stage3d = state.stage3d;
 // Warning tint for phantom blockers (grenade-clips, physics-clips, glass) - a
@@ -579,10 +579,21 @@ async function init3d() {
       }
       const hit = pickAt(x, y, true);
       if (!hit) { return; }
+      // "Set throw position" is armed: whatever was tapped is where you
+      // throw from - a pin, a spawn, a marker's feet, the ground - and the
+      // arming ends with this tap. It used to end only on a terrain tap, so
+      // tapping a pin or a marker first left it armed for good and every
+      // later click kept setting the throw spot.
+      if (state.pickingOrigin) {
+        const at = hit.named ? hit.named.pos
+          : hit.spawnOrigin ? hit.spawnOrigin
+          : hit.markerIdx !== undefined ? state.result.lineups[hit.markerIdx].feet
+          : [hit.point.x, hit.point.y, hit.point.z];
+        callbacks.onPickThrowSpot([...at]);
+        return;
+      }
       if (hit.named) {
-        if (!state.pickingOrigin) {
-          callbacks.onSetTarget([...hit.named.pos]);
-        }
+        callbacks.onSetTarget([...hit.named.pos]);
         return;
       }
       if (hit.markerIdx !== undefined) {
@@ -606,9 +617,7 @@ async function init3d() {
         return;
       }
       const pnt = hit.point;
-      if (state.pickingOrigin) {
-        callbacks.onPickThrowSpot([pnt.x, pnt.y, pnt.z]);
-      } else if (state.picking || !state.target) {
+      if (state.picking || !state.target) {
         callbacks.onSetTarget([pnt.x, pnt.y, pnt.z], `target ${pnt.x.toFixed(0)}, ${pnt.y.toFixed(0)}, ${pnt.z.toFixed(0)} (3D)`);
       } else if (!state.heatOn && !state.busy) {
         callbacks.onPickThrowSpot([pnt.x, pnt.y, pnt.z]);
@@ -1155,8 +1164,11 @@ export function sync3d() {
       if (l._idx === state.selected) { m.scale.setScalar(1.8); }
       markerGroup.add(m);
     }
-    if (state.selected >= 0) {
-      const l = state.result.lineups[state.selected];
+    // A reopened execute draws every smoke's arc; otherwise the selected one.
+    const arcsFor = state.result.showAllArcs
+      ? state.result.lineups.filter(l => !l._removed)
+      : state.selected >= 0 ? [state.result.lineups[state.selected]] : [];
+    for (const l of arcsFor) {
       // The simulated arc once it has been fetched; until then a straight line
       // from the throw spot to where it lands, so selecting a lineup shows
       // something immediately rather than nothing.
@@ -1167,6 +1179,9 @@ export function sync3d() {
       const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), lineMat);
       line.userData.ownedGeometry = true;
       markerGroup.add(line);
+    }
+    if (state.selected >= 0) {
+      const l = state.result.lineups[state.selected];
       // The accuracy ring around the throw spot ("Go to" fetches it): a fan
       // draped on the ground, each vertex dropped onto the surface from just
       // above the feet so slopes and steps don't leave it floating.

@@ -4,7 +4,7 @@
 // selecting a lineup route through the callbacks main.js registers.
 
 import { state, filtered, clickShort, clickClass, esc, skyAngle, proMatched, scoreBreakdown, referenceBand, referenceFallback,
-  movementWords, clickWords, aimWords, difficultyWords, TARGET_SNAP_RADIUS, humanError } from "./state.js?v=109";
+  movementWords, clickWords, aimWords, difficultyWords, TARGET_SNAP_RADIUS, humanError } from "./state.js?v=110";
 
 const statusEl = state.statusEl;
 const PAGE_SIZE = 50;
@@ -462,6 +462,28 @@ function savedRow(spec) {
   const b = document.createElement("button");
   b.type = "button";
   b.className = "lineup-option saved-row";
+  if (spec.kind === "execute") {
+    const names = spec.smokes.map(sm => spec.map === state.currentMap ? smokeName(sm.target) : `${sm.target[0].toFixed(0)}, ${sm.target[1].toFixed(0)}`);
+    b.innerHTML =
+      `<span class="lu-head">` +
+      `<b class="exec-badge">Execute</b>` +
+      `<span class="lu-move">${spec.smokes.length} smoke${spec.smokes.length === 1 ? "" : "s"} from ${spec.origin[0].toFixed(0)}, ${spec.origin[1].toFixed(0)}</span>` +
+      `<span role="button" tabindex="0" class="saved-drop" data-drop="1" aria-label="Remove from saved" title="Remove from saved">\u00d7</span>` +
+      `</span>` +
+      `<span class="lu-tags">${names.map(n => `<span class="ref">${esc(n)}</span>`).join("")}</span>`;
+    b.title = spec.map === state.currentMap
+      ? "Open this execute: every smoke and its arc at once"
+      : `Open this execute - switches to ${spec.map}`;
+    b.addEventListener("click", e => {
+      if (e.target.closest("[data-drop]")) {
+        e.stopPropagation();
+        callbacks.onForgetSaved(spec);
+        return;
+      }
+      callbacks.onOpenSaved(spec);
+    });
+    return b;
+  }
   const fake = { type: spec.type, strength: spec.strength, runDeg: spec.runDeg, aimRef: null, pin: null };
   // Named from this map's targets when it is this map (names can change under
   // a saved lineup); the name recorded at save time stands in for other maps.
@@ -569,7 +591,7 @@ function detailCard(l) {
   // clipboard button beside it - the command itself was a whole row of
   // monospace nobody reads, in a card that is meant to be glanced at.
   el.innerHTML =
-    `<button type="button" class="card-fav fav-btn" title="${l._favorite ? "Remove from favourites" : "Save this lineup"}" aria-label="${l._favorite ? "Remove from favourites" : "Save this lineup"}" aria-pressed="${l._favorite}">${l._favorite ? "★" : "☆"}</button>` +
+    `<button type="button" class="card-fav fav-btn" title="${l._favorite ? "Remove from saved" : "Save this lineup"}" aria-label="${l._favorite ? "Remove from saved" : "Save this lineup"}" aria-pressed="${l._favorite}">${l._favorite ? "★" : "☆"}</button>` +
     `<button type="button" class="card-copy" data-copy-text="${esc(l.console)}" title="Copy the throw position and angles (setpos)" aria-label="Copy position command">` +
     `<svg viewBox="0 0 20 20" aria-hidden="true"><rect x="7" y="7" width="9" height="9" rx="1.5"/><path d="M13 7V5.5A1.5 1.5 0 0 0 11.5 4H5.5A1.5 1.5 0 0 0 4 5.5v6A1.5 1.5 0 0 0 5.5 13H7"/></svg></button>` +
     `<button type="button" class="card-remove remove-btn" title="Remove this lineup from the list" aria-label="Remove this lineup">×</button>` +
