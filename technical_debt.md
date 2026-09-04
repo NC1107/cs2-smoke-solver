@@ -1863,3 +1863,9 @@ Server and meshes both on CS2 build 2000899, 15 maps, 56 targets, 3,904 graded t
 
 The loop's first target (fewer than 200 over 8u) is met on this corpus; office, shelter and overpass sit under the 90% within-3u bar.
 Seven of these maps had never been validated before today.
+
+### host_timescale 3 on the rig (2026-09-04): physics identical, kept
+
+Nick asked whether the game could simply run faster. The plugin captures every tick, so game speed should not touch the physics; measured on dust2's eight markers at `host_timescale 3` against the normal-speed run of the same afternoon: median, p90, within-3u and over-8u identical on every marker (423 vs 422 throws, 404 vs 403 within 3u, 5 vs 5 over 8u).
+Wall time for the eight targets: 14.1 min at 3x versus 16.9 at 1x, the modest gain because the solve, not the throw phase, dominates a target now that solves are prefetched, and one lost capture cost the old 120 s idle wait (now 30 s).
+`batchvalidate --timescale N` sends the cvar after every level change (the plugin's command allowlist now includes it; a hot reload did not pick up the new allowlist, a server restart did).
