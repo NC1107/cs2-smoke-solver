@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Smoke Solver &middot; Accuracy</title>
 <link rel="icon" href="favicon.svg" type="image/svg+xml">
-<link rel="stylesheet" href="app.css?v=110">
+<link rel="stylesheet" href="app.css?v=111">
 </head>
 <body>
 
@@ -14,22 +14,36 @@
   <a class="btn" href="/">&larr; map</a>
 </div>
 
-<p class="accuracy-explainer">These are automated in-game validation runs: every lineup the solver produced was actually thrown on the real CS2 server, and its landing spot compared against the prediction.</p>
+<p class="accuracy-explainer">These are automated in-game validation runs: every lineup the solver produced was actually thrown on the real CS2 server, and its landing spot compared against the prediction. A throw counts as accurate when the smoke lands within 3 units of where the solver said it would.</p>
 
 <div class="accuracy-layout">
   <aside class="accuracy-sidebar">
     <details class="accuracy-picker" open>
       <summary>Runs <span id="run-count" class="muted"></span></summary>
+      <div id="run-filter" class="run-filter" hidden></div>
       <div id="run-list" class="run-list"></div>
     </details>
   </aside>
 
   <main class="accuracy-main" id="accuracy-main">
     <p id="report-error" class="report-error" hidden></p>
+
+    <section class="acc-section" id="section-scoreboard">
+      <h3>Scoreboard <span class="muted">latest pass per map on matching game builds; click a map to see its runs</span></h3>
+      <div class="metric-grid" id="scoreboard-total"></div>
+      <div class="scoreboard" id="scoreboard"></div>
+    </section>
+
     <h2 id="report-title">Accuracy report</h2>
+    <div id="report-meta" class="report-meta"></div>
 
     <section class="acc-section" id="section-cards">
       <div class="metric-grid" id="summary-cards"></div>
+    </section>
+
+    <section class="acc-section">
+      <h3>Landing map <span class="muted">where every throw was predicted to land and where it really did; click a throw to open its lineup</span></h3>
+      <div id="landing" class="landing"></div>
     </section>
 
     <section class="acc-section">
@@ -40,7 +54,7 @@
       <h3>Segments</h3>
       <div class="table-wrap">
         <table class="acc-table">
-          <thead><tr><th>segment</th><th>n</th><th>median</th><th>p90</th><th>max</th><th>&le;8u</th></tr></thead>
+          <thead><tr><th>segment</th><th>n</th><th>median</th><th>p90</th><th>max</th><th>&le;3u</th><th>&le;8u</th></tr></thead>
           <tbody id="segments-body"></tbody>
         </table>
       </div>
@@ -76,6 +90,6 @@
      reverse proxy briefly answers 404, and Cloudflare caches that 404 for
      hours under the bare URL. A versioned reference can never collide with
      an entry poisoned that way. -->
-<script type="module" src="js/validation.js?v=110"></script>
+<script type="module" src="js/validation.js?v=111"></script>
 </body>
 </html>

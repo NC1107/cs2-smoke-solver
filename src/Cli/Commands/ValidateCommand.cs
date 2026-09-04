@@ -615,6 +615,10 @@ public static class ValidateCommand
                     name = doc.TryGetProperty("name", out var nameEl) ? nameEl.GetString() : "",
                     batch = doc.TryGetProperty("batch", out var batchEl) ? batchEl.GetString() : "",
                     timestamp = doc.GetProperty("timestamp").GetString(),
+                    // The dashboard greys out a run whose server build differs
+                    // from its mesh build: those throws are not comparable.
+                    build = doc.TryGetProperty("build", out var buildEl) ? buildEl.GetString() : null,
+                    serverBuild = doc.TryGetProperty("serverBuild", out var serverEl) ? serverEl.GetString() : null,
                     target = doc.GetProperty("target").EnumerateArray().Select(e => e.GetSingle()).ToArray(),
                     summary = doc.GetProperty("summary"),
                 });

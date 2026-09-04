@@ -33,6 +33,7 @@ var commands = new Dictionary<string, Func<Dictionary<string, string>, int>>
     ["targets"] = TargetsCommand.Run,
     ["diverge"] = DivergeCommand.Run,
     ["replay"] = ReplayCommand.Run,
+    ["reindex"] = _ => { ValidateCommand.RebuildValidationIndex(); return 0; },
 };
 
 if (args.Length == 0 || !commands.TryGetValue(args[0], out var command))
@@ -61,6 +62,7 @@ if (args.Length == 0 || !commands.TryGetValue(args[0], out var command))
           crop       --geo <file.s2geo> --box x0,y0,z0,x1,y1,z1 [--out out.s2geo] (region subset, for test fixtures)
           meshdiff   --geo <file.s2geo> --vpk <map.vpk> [--out out.json] [--step 16] [--threshold 8] (physics-vs-render geometry diff, red/orange overlay data)
           exportgltf --vpk <map.vpk> [--out out.glb] (textured render mesh export)
+          reindex    (rebuild data/validation/index.json from the reports on disk)
         """);
     return 1;
 }

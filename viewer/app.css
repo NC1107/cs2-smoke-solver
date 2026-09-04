@@ -1261,10 +1261,107 @@
   .acc-chart text { fill: var(--muted); font-size: 9.5px; }
   .chart-legend { display: flex; flex-wrap: wrap; gap: 4px 14px; color: var(--muted); font-size: 11px; margin-top: 4px; }
   .chart-legend i { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 4px; vertical-align: -1px; }
+  .run-entry.build-mismatch { opacity: 0.55; }
+  .run-entry.build-unknown .run-entry-meta::after { content: " · build unverified"; }
+  .run-filter {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px;
+    font-size: 11.5px;
+    color: var(--muted);
+    margin-bottom: 6px;
+  }
+  .run-filter[hidden] { display: none; }
+  .report-meta { display: flex; flex-wrap: wrap; gap: 6px 14px; color: var(--muted); font-size: 11.5px; margin-top: -8px; }
+  .report-meta:empty { display: none; }
+  .badge {
+    display: inline-block;
+    border-radius: 999px;
+    padding: 1px 8px;
+    font-size: 10.5px;
+    font-weight: 600;
+    border: 1px solid currentColor;
+  }
+  .badge.build-match { color: var(--heat-ok); }
+  .badge.build-mismatch { color: var(--heat-none); }
+  .badge.build-unknown { color: var(--muted); }
+  /* Scoreboard: one card per map, sorted worst first. The card is a button
+     because it filters the run list; the ring is the map's within-3u share,
+     the sparkline its history over campaigns with the 90% bar dashed. */
+  .scoreboard {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+    gap: 8px;
+    margin-top: 8px;
+  }
+  .score-card {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    text-align: left;
+    font: inherit;
+    color: var(--ink);
+    background: var(--panel);
+    border: var(--border);
+    border-left: 3px solid var(--muted);
+    border-radius: 6px;
+    padding: 8px 10px;
+    cursor: pointer;
+    min-width: 0;
+  }
+  .score-card:hover { border-color: var(--muted); }
+  .score-card.selected { outline: 2px solid var(--accent); outline-offset: -1px; }
+  .score-card.good { border-left-color: var(--heat-ok); }
+  .score-card.bad { border-left-color: var(--heat-none); }
+  .score-card.stale { border-left-color: var(--line); opacity: 0.7; }
+  .score-head { display: flex; justify-content: space-between; align-items: center; gap: 6px; font-size: 12.5px; }
+  .pill {
+    border-radius: 999px;
+    padding: 1px 7px;
+    font-size: 10px;
+    font-weight: 600;
+    white-space: nowrap;
+    background: var(--surface);
+    color: var(--muted);
+  }
+  .pill.good { color: var(--heat-ok); }
+  .pill.bad { color: var(--heat-none); }
+  .score-main { display: flex; align-items: baseline; gap: 6px; }
+  .score-pct { font-size: 24px; font-weight: 700; font-variant-numeric: tabular-nums; letter-spacing: -0.01em; }
+  .score-pct-label { color: var(--muted); font-size: 11px; }
+  .score-stats { display: flex; flex-wrap: wrap; gap: 4px 10px; color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+  .score-stats .warn { color: var(--heat-none); font-weight: 600; }
+  .spark { width: 100%; height: 30px; display: block; margin-top: 2px; }
+  .score-foot { color: var(--muted); font-size: 10.5px; }
+  .metric-note { grid-column: span 2; }
+  .metric-text { font-size: 11.5px; margin-top: 3px; line-height: 1.35; }
+  /* Landing map: the recoloured radar crop underneath, an SVG in the same
+     pixel space on top. Both fill a frame whose aspect ratio is the crop's,
+     so preserveAspectRatio="none" on the overlay cannot distort anything. */
+  .landing { display: grid; gap: 8px; }
+  .landing-frame {
+    position: relative;
+    width: 100%;
+    margin: 0;
+    border: var(--border);
+    border-radius: 6px;
+    overflow: hidden;
+    background: var(--terrain-lo);
+  }
+  .landing-radar { position: absolute; inset: 0; width: 100%; height: 100%; display: block; image-rendering: auto; }
+  .landing-overlay { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+  .landing-overlay a { cursor: pointer; }
+  .landing-overlay a:hover line { stroke-width: 3px; }
+  .landing-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 16px; font-size: 11px; color: var(--muted); }
+  .landing-tools .chart-legend { margin-top: 0; }
+  .landing-toggle { display: inline-flex; align-items: center; gap: 5px; cursor: pointer; color: var(--ink); }
   @media (max-width: 760px) {
     .accuracy-layout { grid-template-columns: 1fr; padding: 8px; }
     .accuracy-main { padding: 0 8px 20px; }
     .run-list { max-height: 45vh; }
+    .scoreboard { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
+    .metric-note { grid-column: 1 / -1; }
   }
 
   /* Stacked-floor chooser: sits just under the toolbar, out of the map's way,
