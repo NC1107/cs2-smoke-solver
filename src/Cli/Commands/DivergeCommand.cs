@@ -84,6 +84,10 @@ public static class DivergeCommand
                 replayed++;
                 var cls = classes.GetValueOrDefault(LastClass);
                 classes[LastClass] = (cls.Count + 1, cls.ErrSum + LastError);
+                if (options.ContainsKey("list"))
+                {
+                    Console.WriteLine($"  {LastClass,-8} {LastError,6:F0}u (was {row.GetProperty("ErrPredicted").GetSingle():F0}u)  {Path.GetFileNameWithoutExtension(file)} [{row.GetProperty("Index").GetInt32()}] {row.GetProperty("Type").GetString()}");
+                }
                 foreach (var (triangle, where) in phantomHits)
                 {
                     var entry = phantoms.GetValueOrDefault(triangle);

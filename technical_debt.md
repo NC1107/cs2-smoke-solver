@@ -1869,3 +1869,11 @@ Seven of these maps had never been validated before today.
 Nick asked whether the game could simply run faster. The plugin captures every tick, so game speed should not touch the physics; measured on dust2's eight markers at `host_timescale 3` against the normal-speed run of the same afternoon: median, p90, within-3u and over-8u identical on every marker (423 vs 422 throws, 404 vs 403 within 3u, 5 vs 5 over 8u).
 Wall time for the eight targets: 14.1 min at 3x versus 16.9 at 1x, the modest gain because the solve, not the throw phase, dominates a target now that solves are prefetched, and one lost capture cost the old 120 s idle wait (now 30 s).
 `batchvalidate --timescale N` sends the cvar after every level change (the plugin's command allowlist now includes it; a hot reload did not pick up the new allowlist, a server restart did).
+
+### Loop iteration 9 (2026-09-04): a narrower grenade hull - FALSIFIED
+
+Hypothesis from the dust2 top_door, B-site lip and mirage rim misses: the real grenade leaves beam edges where our 2u box hull comes to rest, so the game's effective hull might be narrower than `GRENADE_DEFAULT_SIZE`.
+Tried: `ThrowConstants.HullHalfExtent` swept over 2.0 / 1.5 / 1.0 on all 15 maps, same-build corpus (`--build 2000899`).
+Over 8u totals: 2.0 = 59 (baseline at the time), 1.5 = 227, 1.0 = 457; dust2 within 3u fell from 95.5% to 69.0% at 1.0.
+Every map got worse at every narrower size, so the box half-extent is 2u and the rim misses are not a hull-size effect.
+The knob was reverted; do not retry.
