@@ -1814,3 +1814,11 @@ Edge tipping re-scored on comparable builds only (constants override EdgeTipping
 ### Loop, later on 2026-09-04: gate set to 690, rig validation on the current build
 
 Nick: "do whatever you recommend, don't stop for me". `DampGateSpeed` 689 -> 690.0 (measured band; corpus 380 -> 373, comparable builds 150 -> 143 expected). The rig runs `accuracy-run.sh` over every map with nav data on build 2000899 so the corpus finally matches the meshes.
+
+### 2026-09-04, later: the rig server was seven weeks stale
+
+Nick: "make sure we are updating the maps to the latest versions too".
+The rig's dedicated server was on CS2 build 2000872 (16 July) while the client, the meshes, and Steam's public branch were on 2000899 (25 Aug).
+Every validation report labelled its `build` from the mesh, not the server, so the reports since July claimed 2000877 and 2000899 for throws that happened on 2000872.
+The dust2 "map change between 2000839 and 2000872" is therefore real (the server did update on 16 July), and everything after that is a 2000872 map compared against newer meshes.
+Reports now record `serverBuild`, `validate` warns on a mismatch, the server is being updated, and the full validation pass restarts on the matching build.

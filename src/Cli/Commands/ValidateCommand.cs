@@ -48,6 +48,11 @@ public static class ValidateCommand
         var navAreas = LoadJson<List<NavAreaJson>>(options.GetValueOrDefault("nav", DefaultNavAreasPath(options, mesh)), "nav areas");
         var constants = LoadConstants(options);
 
+        if (RigServerBuild() is { } serverBuild && serverBuild != mesh.GameBuildId)
+        {
+            Console.Error.WriteLine($"WARNING: the rig server is on CS2 build {serverBuild} but {mesh.MapName}.s2geo was extracted from build {mesh.GameBuildId}; throws will be graded against a different map. Update the server (steamcmd app_update 730) or re-extract.");
+        }
+
         Vector3 target;
         bool hasTargetZ;
         if (options.TryGetValue("getpos", out var gp))
@@ -461,6 +466,11 @@ public static class ValidateCommand
         {
             map = mesh.MapName,
             build = mesh.GameBuildId,
+            // The build the rig SERVER threw on. Until 2026-09-04 only the mesh
+            // build was recorded, and the server sat on a July build for seven
+            // weeks while the meshes moved on: two months of throws graded
+            // against a different map, invisibly.
+            serverBuild = RigServerBuild(),
             timestamp = DateTime.Now.ToString("o"),
             // Human labels for the dashboard: which spot this was ("A site",
             // a marker name) and which batch run produced it.
@@ -578,5 +588,29 @@ public static class ValidateCommand
         }, new JsonSerializerOptions { WriteIndented = true }));
         File.Move(temp, indexPath, overwrite: true);
         Console.WriteLine($"index: {runs.Count} run(s) -> {indexPath}");
+    }
+
+    /// <summary>
+    /// ClientVersion from the rig server's steam.inf (CS2_RIG_DIR/server, the
+    /// directory rig.env names; ~/cs2-rig by default), or null when no server
+    /// install is present on this machine.
+    /// </summary>
+    public static string? RigServerBuild()
+    {
+        var rigDir = Environment.GetEnvironmentVariable("CS2_RIG_DIR")
+            ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "cs2-rig");
+        var inf = Path.Combine(rigDir, "server", "game", "csgo", "steam.inf");
+        if (!File.Exists(inf))
+        {
+            return null;
+        }
+        foreach (var line in File.ReadLines(inf))
+        {
+            if (line.StartsWith("ClientVersion=", StringComparison.Ordinal))
+            {
+                return line["ClientVersion=".Length..].Trim();
+            }
+        }
+        return null;
     }
 }
