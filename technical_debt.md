@@ -1809,3 +1809,4 @@ Comparable-build misses over 8u: window 0 (off) 150, 0.02 154, 0.1 166. Worse ei
 Loop state after six iterations: kept 1 (two contacts per tick), falsified 4 (rest on faces, centre support, face tie twice), measured 1 that needs a decision (damp gate).
 On comparable builds the corpus is at 150 misses of 7,447 with every map at or above 90% within 3u except mirage (88.6%), whose remaining clusters are world hulls real grenades pass through and may be the same map-version story.
 Both remaining moves need Nick: the gate constant, and a validation pass on the current build (2000899) across the maps.
+Edge tipping re-scored on comparable builds only (constants override EdgeTipping=true): 198 misses over 8u versus 150 with it off (mirage 34 to 45, ancient 28 to 37, anubis 6 to 13). Off stands.
