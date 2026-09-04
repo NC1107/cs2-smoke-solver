@@ -1800,3 +1800,12 @@ No map has any throw recorded on build 2000899, the build the meshes come from, 
 
 Consequence for the accuracy loop: the 3,423 July dust2 throws cannot be matched by any physics change and should not count; the comparable corpus is what was recorded on 2000872 and later.
 One fresh validation pass on the current build, per map, is what makes the scoreboard trustworthy again - it needs the rig (rule 5).
+
+### Loop iteration 6 (2026-09-04): face normal on a near-tie edge contact - FALSIFIED again, on comparable builds
+
+Re-scored the crate-rim idea (report the face contact when it lands within a window of the earliest edge-axis contact) on throws from builds 2000872 and later only, in case the first verdict was an artefact of the old-map corpus.
+Comparable-build misses over 8u: window 0 (off) 150, 0.02 154, 0.1 166. Worse either way; the SAT sweep's edge-axis normals are what the game does at crate rims.
+
+Loop state after six iterations: kept 1 (two contacts per tick), falsified 4 (rest on faces, centre support, face tie twice), measured 1 that needs a decision (damp gate).
+On comparable builds the corpus is at 150 misses of 7,447 with every map at or above 90% within 3u except mirage (88.6%), whose remaining clusters are world hulls real grenades pass through and may be the same map-version story.
+Both remaining moves need Nick: the gate constant, and a validation pass on the current build (2000899) across the maps.
