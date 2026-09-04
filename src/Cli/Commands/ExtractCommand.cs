@@ -27,6 +27,10 @@ public static class ExtractCommand
             MapExtractor.SolidEntityClassOverride = classes.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
             Console.WriteLine($"  solid entity classes: {string.Join(", ", MapExtractor.SolidEntityClassOverride)}");
         }
+        if (options.TryGetValue("probe", out var probes))
+        {
+            MapExtractor.ProbePoints = probes.Split(';', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries).Select(ParseVec).ToList();
+        }
         if (options.ContainsKey("dump"))
         {
             MapExtractor.Diagnostics = line => Console.WriteLine("  " + line);

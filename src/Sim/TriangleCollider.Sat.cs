@@ -20,12 +20,19 @@ public sealed partial class TriangleCollider
     /// FirstHitHull plus the index of the triangle that was hit, so a bounce
     /// can be traced back to the surface (and its attribute) it came from.
     /// </summary>
-    public (float T, Vector3 Normal, int Triangle)? FirstHitHullIndexed(Vector3 from, Vector3 to, Vector3 halfExtents, float minNormalZ = -2f)
+    /// <summary>
+    /// FirstHitHull plus the triangle index and whether the contact came
+    /// through the triangle's face plane (Face) or through an edge or box axis
+    /// of the separating-axis sweep. An edge-axis contact is a box corner
+    /// catching a rim: real, but not a surface a grenade can rest on.
+    /// </summary>
+    public (float T, Vector3 Normal, int Triangle, bool Face)? FirstHitHullIndexed(Vector3 from, Vector3 to, Vector3 halfExtents, float minNormalZ = -2f)
     {
         var direction = to - from;
         var bestT = float.MaxValue;
         var bestNormal = Vector3.Zero;
         var bestTriangle = -1;
+        var bestFace = false;
 
         var lo = Vector3.Min(from, to) - halfExtents;
         var hi = Vector3.Max(from, to) + halfExtents;
@@ -44,14 +51,14 @@ public sealed partial class TriangleCollider
                             && hit.T < bestT
                             && hit.Normal.Z >= minNormalZ)
                         {
-                            (bestT, bestNormal) = hit;
+                            (bestT, bestNormal, bestFace) = hit;
                             bestTriangle = _cellTris[i] / 3;
                         }
                     }
                 }
             }
         }
-        return bestT <= 1f ? (bestT, bestNormal, bestTriangle) : null;
+        return bestT <= 1f ? (bestT, bestNormal, bestTriangle, bestFace) : null;
     }
 
     /// <summary>
@@ -94,7 +101,7 @@ public sealed partial class TriangleCollider
             Vertex(_indices[triangleOffset + 1]),
             Vertex(_indices[triangleOffset + 2]));
 
-    (float T, Vector3 Normal)? SweptBoxTriangle(Vector3 origin, Vector3 direction, Vector3 h, int triangleOffset)
+    (float T, Vector3 Normal, bool Face)? SweptBoxTriangle(Vector3 origin, Vector3 direction, Vector3 h, int triangleOffset)
     {
         var a = Vertex(_indices[triangleOffset]) - origin;
         var b = Vertex(_indices[triangleOffset + 1]) - origin;
@@ -174,7 +181,7 @@ public sealed partial class TriangleCollider
             // Require a real incidence angle, not a parallel graze: a hull
             // sliding down flush against a wall must fall freely, not bounce
             // off the wall every tick (which deadlocked the rest detection).
-            return Vector3.Dot(Vector3.Normalize(direction), n0) < -0.01f ? (0f, n0) : null;
+            return Vector3.Dot(Vector3.Normalize(direction), n0) < -0.01f ? (0f, n0, true) : null;
         }
 
         // Contact normal from the axis that produced the entry time. Entering
@@ -187,7 +194,7 @@ public sealed partial class TriangleCollider
         {
             normal = -normal;
         }
-        return (tEnter, normal);
+        return (tEnter, normal, enterAxis == triNormal);
     }
 
 }

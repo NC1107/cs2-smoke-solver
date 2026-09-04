@@ -1755,3 +1755,28 @@ Deploy note: `.s2geo` and `.standspots.json` are gitignored data; both must be r
 The dust2 CT-mid traces showed the game reflecting off the floor and then the wall of a corner inside one tick, where the sim resolved only the floor and let the wall stop the hull until the next tick.
 `ThrowConstants.BouncesPerTick` now defaults to 2 (3 adds nothing).
 Corpus: dust2 289 to 284 (5 fixed, 1 broke), nuke 4 to 3, six other maps unchanged; total 386 to 380.
+
+### Loop iteration 2 (2026-09-04): rest on faces only - FALSIFIED
+
+Mirage A "Stairs" and dust2 B site: the box corner catches the top edge of a wall, the sweep reports a near-vertical edge-axis normal, the sim rests on the rim while the real grenade slid off.
+Tried: a grenade may only come to rest on a triangle face (or with a face under the hull), never on an edge-axis contact.
+Corpus: dust2 284 to 301, mirage 34 to 42, ancient 28 to 43, overpass 16 to 18; fixed nothing anywhere.
+The game does rest grenades on rims. Whatever separates the rim cases is not "edge versus face".
+
+### Loop iteration 3 (2026-09-04): the floor-damp gate sits above 689 - needs Nick's decision
+
+The biggest ancient (15 throws) and overpass (10 throws) clusters are the same event: a first floor bounce at an incoming speed the captures put at 690 u/s, where the game left the bounce undamped and the sim, with `DampGateSpeed = 689`, damped it to half the speed.
+Measured directly from 3,030 steep floor bounces above 600 u/s in the captures (ratio of outgoing to incoming speed, normalised by the damp factor): every bounce from 690.75 up is damped, 689.25 to 689.75 are all undamped, 690.0 to 690.5 are mixed (35 damped, 16 not).
+The sample speed carries about a quarter tick of gravity uncertainty, so the true gate is somewhere in 689.5 to 690.75.
+
+Candidate gates scored on the corpus (misses over 8u; baseline 689: dust2 284, mirage 34, ancient 28, overpass 16, inferno 9, anubis 6, nuke 3, office 0 = 380):
+
+| gate | dust2 | mirage | ancient | overpass | total |
+|------|------:|-------:|--------:|---------:|------:|
+| 689.5 | 284 | 32 | 33 | 11 | 378 |
+| 690.0 | 285 | 32 | 27 | 11 | 373 |
+| 690.5 | 281 | 34 | 22 | 37 | 375 |
+
+690.0 is the only candidate that passes the loop's rule (no map worse by more than 2) and it is the best total, but overpass swings from 11 to 37 between 690.0 and 690.5, so a lot of real throws sit right on the gate.
+Not applied: the loop's rule 3 protects the damp gate as an engine constant. Decision for Nick.
+Also from this iteration: `extract --dump --probe "x,y,z;..."` prints the world physics parts, the collision attribute table with interaction and exclusion layers, and the per-triangle surface materials around each probe point.

@@ -33,6 +33,56 @@ public static class MapExtractor
     /// <summary>Receives one line per collision attribute and per merged entity when set.</summary>
     public static Action<string>? Diagnostics { get; set; }
 
+    /// <summary>
+    /// Points of interest: every hull or mesh whose bounds contain one has its
+    /// descriptor properties dumped through Diagnostics. For asking "what is
+    /// this surface the game did not collide with?" without a map editor.
+    /// </summary>
+    public static IReadOnlyList<Vector3> ProbePoints { get; set; } = [];
+
+    static void ProbeShape(string kind, object descriptor, ReadOnlySpan<Vector3> positions, Func<Vector3, Vector3> transform)
+    {
+        if (Diagnostics == null || ProbePoints.Count == 0)
+        {
+            return;
+        }
+        var lo = new Vector3(float.MaxValue);
+        var hi = new Vector3(float.MinValue);
+        var n = 0;
+        foreach (var raw in positions)
+        {
+            var v = transform(raw);
+            lo = Vector3.Min(lo, v);
+            hi = Vector3.Max(hi, v);
+            n++;
+        }
+        foreach (var probe in ProbePoints)
+        {
+            if (probe.X < lo.X - 4 || probe.X > hi.X + 4 || probe.Y < lo.Y - 4 || probe.Y > hi.Y + 4 || probe.Z < lo.Z - 4 || probe.Z > hi.Z + 4)
+            {
+                continue;
+            }
+            var props = descriptor.GetType().GetProperties()
+                .Where(pr => pr.GetIndexParameters().Length == 0 && pr.Name != "Shape")
+                .Select(pr =>
+                {
+                    try
+                    {
+                        return $"{pr.Name}={FormatKv(pr.GetValue(descriptor))}";
+                    }
+                    catch (Exception e) when (e is System.Reflection.TargetInvocationException or NotSupportedException)
+                    {
+                        return $"{pr.Name}=?";
+                    }
+                });
+            Diagnostics($"probe ({probe.X:F0},{probe.Y:F0},{probe.Z:F0}) inside {kind} verts={n} bounds ({lo.X:F0},{lo.Y:F0},{lo.Z:F0})-({hi.X:F0},{hi.Y:F0},{hi.Z:F0}) {string.Join(" ", props)}");
+            if (descriptor.GetType().GetProperty("Shape")?.GetValue(descriptor) is { } shape)
+            {
+                Diagnostics($"  shape type {shape.GetType().Name}: props [{string.Join(", ", shape.GetType().GetProperties().Select(pr => pr.Name + ":" + pr.PropertyType.Name))}] methods [{string.Join(", ", shape.GetType().GetMethods().Where(mm => mm.DeclaringType == shape.GetType()).Select(mm => mm.Name + "->" + mm.ReturnType.Name))}]");
+            }
+        }
+    }
+
     public static CollisionMesh ExtractWorldPhysics(string mapVpkPath, string mapName, string gameBuildId)
     {
         using var package = new Package();
@@ -61,6 +111,8 @@ public static class MapExtractor
         }
         if (Diagnostics != null)
         {
+            var hashes = phys.SurfacePropertyHashes;
+            Diagnostics($"surface properties: {string.Join(" ", hashes.Select((h, i) => $"{i}:{h}({SurfaceName(h)})"))}");
             var ai = 0;
             foreach (var kv in phys.CollisionAttributes)
             {
@@ -121,11 +173,59 @@ public static class MapExtractor
         Func<int, byte> attributeMap,
         Func<Vector3, Vector3> transform)
     {
+        var partIndex = 0;
         foreach (var part in phys.Parts)
         {
+            if (Diagnostics != null)
+            {
+                var lo = new Vector3(float.MaxValue);
+                var hi = new Vector3(float.MinValue);
+                var count = 0;
+                foreach (var md in part.Shape.Meshes)
+                {
+                    foreach (var v in md.Shape.GetVertices())
+                    {
+                        lo = Vector3.Min(lo, transform(v));
+                        hi = Vector3.Max(hi, transform(v));
+                        count++;
+                    }
+                }
+                Diagnostics($"part {partIndex++}: meshes={part.Shape.Meshes.Length} hulls={part.Shape.Hulls.Length} verts={count} bounds ({lo.X:F0},{lo.Y:F0},{lo.Z:F0})-({hi.X:F0},{hi.Y:F0},{hi.Z:F0})");
+            }
             foreach (var meshDescriptor in part.Shape.Meshes)
             {
                 var mesh = meshDescriptor.Shape;
+                ProbeShape("mesh", meshDescriptor, mesh.GetVertices(), transform);
+                if (Diagnostics != null && ProbePoints.Count > 0)
+                {
+                    // Per-triangle surface materials around each probe point,
+                    // against the mesh-wide histogram: a phantom surface with
+                    // an unusual material index stands out at once.
+                    var verts = mesh.GetVertices();
+                    var tris = mesh.GetTriangles();
+                    var materials = mesh.Materials;
+                    var all = new Dictionary<int, int>();
+                    foreach (var probe in ProbePoints)
+                    {
+                        var near = new Dictionary<int, int>();
+                        for (var ti = 0; ti < tris.Length; ti++)
+                        {
+                            var t = tris[ti];
+                            var c = transform((verts[t.X] + verts[t.Y] + verts[t.Z]) / 3f);
+                            var mat = ti < materials.Length ? materials[ti] : -1;
+                            all[mat] = all.GetValueOrDefault(mat) + 1;
+                            if (Vector3.Distance(c, probe) < 160f)
+                            {
+                                near[mat] = near.GetValueOrDefault(mat) + 1;
+                            }
+                        }
+                        if (near.Count > 0)
+                        {
+                            Diagnostics($"probe ({probe.X:F0},{probe.Y:F0},{probe.Z:F0}) mesh attr#{meshDescriptor.CollisionAttributeIndex} materials within 64u: {string.Join(" ", near.OrderByDescending(kv => kv.Value).Select(kv => $"{kv.Key}x{kv.Value}"))}");
+                        }
+                    }
+                    Diagnostics($"mesh attr#{meshDescriptor.CollisionAttributeIndex} material histogram: {string.Join(" ", all.OrderByDescending(kv => kv.Value).Select(kv => $"{kv.Key}x{kv.Value}"))}");
+                }
                 var baseIndex = vertices.Count / 3;
                 foreach (var raw in mesh.GetVertices())
                 {
@@ -162,6 +262,49 @@ public static class MapExtractor
     // prop_dynamic hulls the game does not collide grenades with. Breakables
     // follow the same intact-at-round-start baseline as func_breakable glass.
     // prop_physics* stay out: loose junk (mugs, hard
+    static string FormatKv(object? value)
+    {
+        if (value == null)
+        {
+            return "null";
+        }
+        if (value is string s)
+        {
+            return s;
+        }
+        var t = value.GetType();
+        if (t.IsGenericType && t.GetGenericTypeDefinition() == typeof(KeyValuePair<,>))
+        {
+            return $"{t.GetProperty("Key")!.GetValue(value)}={FormatKv(t.GetProperty("Value")!.GetValue(value))}";
+        }
+        if (t.Name.StartsWith("KV", StringComparison.Ordinal) && t.GetProperty("Value") is { } inner)
+        {
+            return FormatKv(inner.GetValue(value));
+        }
+        if (value is System.Collections.IEnumerable e)
+        {
+            return "[" + string.Join(",", e.Cast<object>().Select(FormatKv)) + "]";
+        }
+        return value.ToString() ?? "";
+    }
+
+    static readonly string[] KnownSurfaces =
+    [
+        "default", "default_silent", "no_decal", "player", "player_control_clip", "playerclip", "clip", "grenadeclip",
+        "rock", "sand", "dirt", "grass", "gravel", "concrete", "brick", "wood", "metal", "glass", "tile", "plaster",
+        "carpet", "cardboard", "plastic", "rubber", "water", "mud", "snow", "ice", "chainlink", "canvas", "foliage",
+        "sky", "ladder", "tools", "toolsnodraw", "toolsclip", "toolsplayerclip", "toolsgrenadeclip", "toolsblocklos",
+        "toolsblocklight", "toolsblockbullets", "toolsskybox", "toolstrigger", "toolsinvisible", "toolsinvisibleladder",
+        "toolsblocksound", "solidmetal", "metalgrate", "metalvent", "metal_box", "wood_crate", "wood_plank", "wood_solid",
+        "asphalt", "boulder", "stone", "marble", "cobblestone", "papercardboard", "paper", "fabric", "vent", "tarp",
+        "flesh", "bloodyflesh", "antlion", "computer", "weapon", "porcelain", "pottery", "roller", "slipperyslide",
+        "slipperymetal", "slipperyslime", "jeeptire", "jalopytire", "dresser", "upholstery", "rubbertire", "quicksand",
+        "wet", "sandbags", "brass_bell", "strider", "dirt_soft", "grass_dry", "gravel_road", "mud_deep", "snow_deep",
+    ];
+
+    static string SurfaceName(uint hash) =>
+        KnownSurfaces.FirstOrDefault(n => ValveResourceFormat.Utils.StringToken.Get(n) == hash) ?? "?";
+
     static readonly string[] SolidEntityClasses = ["func_brush", "func_clip_vphysics", "func_door", "func_door_rotating", "func_breakable", "prop_door_rotating"];
 
     // Retake is a separate game mode: its brushes (the tape borders walling off
@@ -559,6 +702,7 @@ public static class MapExtractor
         var positions = hull.GetVertexPositions();
         var edges = hull.GetEdges();
         var faces = hull.GetFaces();
+        ProbeShape("hull", hullDescriptor, positions, transform);
 
         var baseIndex = vertices.Count / 3;
         foreach (var raw in positions)

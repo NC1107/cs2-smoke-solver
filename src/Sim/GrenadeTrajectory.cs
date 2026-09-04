@@ -418,6 +418,10 @@ public static class GrenadeTrajectory
                     // (validation batch beta-check-dust2, three of twenty).
                     // Over an edge, it tips instead: a nudge toward the side
                     // with nothing under it, and the fall continues.
+                    // An edge-axis contact (a box corner on a rim) holds a
+                    // grenade just like a face does: requiring a face here was
+                    // tried on the corpus (2026-09-04) and broke 17 dust2
+                    // throws, 8 on mirage and 15 on ancient while fixing none.
                     if (hit.Normal.Z > FloorNormalZ || collider.FirstHitHull(position, position + new Vector3(0f, 0f, -2f), HullHalfExtents, minNormalZ: FloorNormalZ) is not null)
                     {
                         if (!k.EdgeTipping || EdgeTip(collider, position, w) is not { } tip)
