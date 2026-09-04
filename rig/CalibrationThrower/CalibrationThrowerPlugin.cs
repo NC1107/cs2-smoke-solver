@@ -362,6 +362,10 @@ public class CalibrationThrowerPlugin : BasePlugin
     [
         "sv_cheats", "sv_infinite_ammo", "sv_autobunnyhopping", "sv_grenade_",
         "bot_kick", "bot_quota", "mp_", "css_plugins reload", "changelevel ",
+        // Game-time scaling: the captures are per tick, so a validation pass
+        // at host_timescale 3 records the same physics in a third of the
+        // wall clock.
+        "host_timescale ",
     ];
 
     // The console treats newlines as command separators exactly like ';', so
