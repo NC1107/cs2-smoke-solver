@@ -63,22 +63,33 @@ public static class BatchValidateCommand
                 return 1;
             }
 
-            foreach (var (name, pos) in targets)
+            var subs = targets.Select(t =>
             {
-                Console.WriteLine($"--- {map} / {name} ({pos[0]:F0},{pos[1]:F0},{pos[2]:F0}) ---");
                 var sub = new Dictionary<string, string>(options)
                 {
                     ["geo"] = geo,
                     ["nav"] = navPath,
-                    ["target"] = FormattableString.Invariant($"{pos[0]},{pos[1]},{pos[2]}"),
-                    ["name"] = name,
+                    ["target"] = FormattableString.Invariant($"{t.Pos[0]},{t.Pos[1]},{t.Pos[2]}"),
+                    ["name"] = t.Name,
                     ["batch"] = batch,
                     ["calib"] = calibDir,
                 };
                 sub.Remove("maps");
                 sub.Remove("targets-per-map");
+                return sub;
+            }).ToList();
+            for (var i = 0; i < subs.Count; i++)
+            {
+                var (name, pos) = targets[i];
+                Console.WriteLine($"--- {map} / {name} ({pos[0]:F0},{pos[1]:F0},{pos[2]:F0}) ---");
                 ran++;
-                if (ValidateCommand.Run(sub) != 0)
+                // The next target's solve runs while this one's throws fly:
+                // the solve is most of a target's wall time and the throw
+                // phase leaves every core idle. Same map only, so at most one
+                // extra mesh is resident and the change of level stays where
+                // it is.
+                var next = i + 1 < subs.Count ? subs[i + 1] : null;
+                if (ValidateCommand.Run(subs[i], next == null ? null : () => ValidateCommand.Prefetch(next)) != 0)
                 {
                     failures++;
                 }

@@ -13,7 +13,70 @@ namespace SmokeSolver.Cli;
 
 public static class ValidateCommand
 {
-    public static int Run(Dictionary<string, string> options)
+    public static int Run(Dictionary<string, string> options) => Run(options, null);
+
+    /// <summary>Everything a validation run needs before the first throw leaves the hand.</summary>
+    public sealed record Prepared(CollisionMesh Mesh, ThrowConstants Constants, Vector3 Target, bool HasTargetZ, float Tolerance, TargetSolve Solve, List<Lineup> Lineups);
+
+    static readonly System.Collections.Concurrent.ConcurrentDictionary<string, Task<Prepared>> Prefetched = new();
+
+    static string PrefetchKey(Dictionary<string, string> options) =>
+        string.Join("|", new[] { "geo", "nav", "target", "getpos", "tolerance", "limit", "attrs", "constants" }.Select(k => $"{k}={options.GetValueOrDefault(k, "")}"));
+
+    /// <summary>
+    /// Solve a target on a background thread so the sequencer can overlap
+    /// it with another target's throws: the solve is the bulk of a target's
+    /// wall time (130 to 234 s of 173 to 280 s measured 2026-09-04) and the
+    /// throw phase is idle CPU. The matching Run picks the result up.
+    /// </summary>
+    public static void Prefetch(Dictionary<string, string> options)
+    {
+        var clone = new Dictionary<string, string>(options);
+        clone.TryAdd("attrs", SingleTargetDefaultAttrs);
+        Prefetched.TryAdd(PrefetchKey(clone), Task.Run(() => Prepare(clone)));
+    }
+
+    static Prepared? TakePrefetched(Dictionary<string, string> options) =>
+        Prefetched.TryRemove(PrefetchKey(options), out var task) ? task.GetAwaiter().GetResult() : null;
+
+    static Prepared Prepare(Dictionary<string, string> options)
+    {
+        var (mesh, _, _, attributeFilter) = LoadCommon(options);
+        var navAreas = LoadJson<List<NavAreaJson>>(options.GetValueOrDefault("nav", DefaultNavAreasPath(options, mesh)), "nav areas");
+        var constants = LoadConstants(options);
+
+        if (RigServerBuild() is { } serverBuild && serverBuild != mesh.GameBuildId)
+        {
+            Console.Error.WriteLine($"WARNING: the rig server is on CS2 build {serverBuild} but {mesh.MapName}.s2geo was extracted from build {mesh.GameBuildId}; throws will be graded against a different map. Update the server (steamcmd app_update 730) or re-extract.");
+        }
+
+        Vector3 target;
+        bool hasTargetZ;
+        if (options.TryGetValue("getpos", out var gp))
+        {
+            var (eye, _, _) = ParseGetPos(gp);
+            target = eye - new Vector3(0, 0, 64);
+            hasTargetZ = true;
+        }
+        else
+        {
+            (target, hasTargetZ) = ParseVec2or3(Require(options, "target"));
+        }
+        var tolerance = float.Parse(options.GetValueOrDefault("tolerance", "80"), CultureInfo.InvariantCulture);
+        var limit = int.Parse(options.GetValueOrDefault("limit", "0"), CultureInfo.InvariantCulture);
+
+        Console.WriteLine($"solving target ({target.X:F0},{target.Y:F0}{(hasTargetZ ? $",{target.Z:F0}" : "")}) tolerance {tolerance:F0}u ...");
+        var started = System.Diagnostics.Stopwatch.StartNew();
+        var solve = SolveForTarget(mesh, attributeFilter, navAreas, target, hasTargetZ, null, 3100f, tolerance, constants);
+        // In the API's order, so a limited run throws what a player sees
+        // first - the solver's own order put the top of the list last.
+        var ordered = LineupApi.Ranked(solve);
+        var lineups = limit > 0 ? ordered.Take(limit).ToList() : ordered;
+        Console.WriteLine($"{solve.Lineups.Count} lineups solved in {started.Elapsed.TotalSeconds:F0}s ({lineups.Count} selected, {solve.OriginCount} origins)");
+        return new Prepared(mesh, constants, target, hasTargetZ, tolerance, solve, lineups);
+    }
+
+    public static int Run(Dictionary<string, string> options, Action? onSolved)
     {
         // --markers <file.json>: run the full validation once per saved in-game
         // marker (written by the plugin's !mark command), using each marker as the
@@ -44,42 +107,16 @@ public static class ValidateCommand
         // state and must not be mutated (--markers already clones for this).
         options = new Dictionary<string, string>(options);
         options.TryAdd("attrs", SingleTargetDefaultAttrs);
-        var (mesh, _, _, attributeFilter) = LoadCommon(options);
-        var navAreas = LoadJson<List<NavAreaJson>>(options.GetValueOrDefault("nav", DefaultNavAreasPath(options, mesh)), "nav areas");
-        var constants = LoadConstants(options);
-
-        if (RigServerBuild() is { } serverBuild && serverBuild != mesh.GameBuildId)
-        {
-            Console.Error.WriteLine($"WARNING: the rig server is on CS2 build {serverBuild} but {mesh.MapName}.s2geo was extracted from build {mesh.GameBuildId}; throws will be graded against a different map. Update the server (steamcmd app_update 730) or re-extract.");
-        }
-
-        Vector3 target;
-        bool hasTargetZ;
-        if (options.TryGetValue("getpos", out var gp))
-        {
-            var (eye, _, _) = ParseGetPos(gp);
-            target = eye - new Vector3(0, 0, 64);
-            hasTargetZ = true;
-        }
-        else
-        {
-            (target, hasTargetZ) = ParseVec2or3(Require(options, "target"));
-        }
-        var tolerance = float.Parse(options.GetValueOrDefault("tolerance", "80"), CultureInfo.InvariantCulture);
+        var prepared = TakePrefetched(options) ?? Prepare(options);
+        // The solve is done: whoever is sequencing targets can start the next
+        // one's solve now, while this target's throws are in the air.
+        onSolved?.Invoke();
+        var (mesh, constants, target, hasTargetZ, tolerance, solve, lineups) = prepared;
         var limit = int.Parse(options.GetValueOrDefault("limit", "0"), CultureInfo.InvariantCulture);
         var passRadius = float.Parse(options.GetValueOrDefault("pass", "3"), CultureInfo.InvariantCulture);
         var calibDir = options.GetValueOrDefault(
             "calib", Environment.GetEnvironmentVariable("SMOKESOLVER_CALIB_DIR") ?? "data/calib");
         var dryRun = options.ContainsKey("dry-run");
-
-        Console.WriteLine($"solving target ({target.X:F0},{target.Y:F0}{(hasTargetZ ? $",{target.Z:F0}" : "")}) tolerance {tolerance:F0}u ...");
-        var started = System.Diagnostics.Stopwatch.StartNew();
-        var solve = SolveForTarget(mesh, attributeFilter, navAreas, target, hasTargetZ, null, 3100f, tolerance, constants);
-        // In the API's order, so a limited run throws what a player sees
-        // first - the solver's own order put the top of the list last.
-        var ordered = LineupApi.Ranked(solve);
-        var lineups = limit > 0 ? ordered.Take(limit).ToList() : ordered;
-        Console.WriteLine($"{solve.Lineups.Count} lineups solved in {started.Elapsed.TotalSeconds:F0}s ({lineups.Count} selected, {solve.OriginCount} origins)");
         if (lineups.Count == 0)
         {
             return 1;
