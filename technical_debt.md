@@ -1780,3 +1780,23 @@ Candidate gates scored on the corpus (misses over 8u; baseline 689: dust2 284, m
 690.0 is the only candidate that passes the loop's rule (no map worse by more than 2) and it is the best total, but overpass swings from 11 to 37 between 690.0 and 690.5, so a lot of real throws sit right on the gate.
 Not applied: the loop's rule 3 protects the damp gate as an engine constant. Decision for Nick.
 Also from this iteration: `extract --dump --probe "x,y,z;..."` prints the world physics parts, the collision attribute table with interaction and exclusion layers, and the per-triangle surface materials around each probe point.
+
+### Loop iteration 4 (2026-09-04): rest needs support under the centre - FALSIFIED
+
+Narrower form of iteration 2: keep resting on edge contacts, but require a point of floor within 3u under the hull centre (a corner on a rim with the centre past the edge slides off).
+Corpus: dust2 284 to 311 (4 fixed, 31 broken), mirage 34 to 45, ancient 28 to 41, overpass 16 to 21.
+Real grenades park on rims with the centre overhanging. The mirage A stairs and dust2 B lip misses are not a rest-rule problem; the remaining suspect is geometry a unit off along those rims.
+
+### Loop iteration 5 (2026-09-04): the July dust2 corpus is a different map
+
+`diverge --summary` ranks the triangles the sim bounces off while the real grenade did not, across every miss of a map, with the game build each throw was recorded on.
+On dust2 every one of the top eight phantom surfaces is hit only by throws from build 2000839 (the 9 to 10 July reports): a post above the B top window (39 misses), the CT-mid wall, the B site lip, the long boost box.
+The same post takes 21 sim contacts from the 30 Aug and 3 Sep throws (builds 2000877 and 2000872) and every one of them is matched by a real bounce.
+Valve changed dust2 between builds 2000839 and 2000872; the meshes are extracted from build 2000899.
+
+Scoreboard by recorded build (over 8u): dust2 2000839 3,423 throws 6.7%; 2000872 1,135 throws 3.1%; 2000877 575 throws 3.3%.
+No map has any throw recorded on build 2000899, the build the meshes come from, so mirage's remaining clusters (A stairs block, ladder platform: world hulls real grenades pass through) may be the same story between 2000872 and 2000899.
+`replay --build <id>` scores one build's throws only.
+
+Consequence for the accuracy loop: the 3,423 July dust2 throws cannot be matched by any physics change and should not count; the comparable corpus is what was recorded on 2000872 and later.
+One fresh validation pass on the current build, per map, is what makes the scoreboard trustworthy again - it needs the rig (rule 5).

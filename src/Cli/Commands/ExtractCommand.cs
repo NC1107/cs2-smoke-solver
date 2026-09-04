@@ -30,6 +30,7 @@ public static class ExtractCommand
         if (options.TryGetValue("probe", out var probes))
         {
             MapExtractor.ProbePoints = probes.Split(';', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries).Select(ParseVec).ToList();
+            MapExtractor.ProbeRadius = float.Parse(options.GetValueOrDefault("probe-radius", "64"), CultureInfo.InvariantCulture);
         }
         if (options.ContainsKey("dump"))
         {

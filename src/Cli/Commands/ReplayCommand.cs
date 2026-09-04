@@ -73,6 +73,8 @@ public static class ReplayCommand
         var collider = new TriangleCollider(mesh, meshMin, meshMax, solid);
 
         var rows = new List<(string Report, int Index, Vector3 Pos, Vector3 Vel, Vector3 Real, float Reported)>();
+        var rowBuild = new List<string>();
+        var onlyBuild = options.GetValueOrDefault("build", "");
         foreach (var file in Directory.EnumerateFiles(reportsDir, $"{mesh.MapName}-*.json").OrderBy(f => f))
         {
             if (string.CompareOrdinal(Path.GetFileName(file), $"{mesh.MapName}-{since}") < 0)
@@ -80,6 +82,11 @@ public static class ReplayCommand
                 continue;
             }
             using var doc = JsonDocument.Parse(File.ReadAllText(file));
+            var build = doc.RootElement.TryGetProperty("build", out var b) ? b.ToString() : "?";
+            if (onlyBuild.Length > 0 && build != onlyBuild)
+            {
+                continue;
+            }
             foreach (var r in doc.RootElement.GetProperty("results").EnumerateArray())
             {
                 if (!r.TryGetProperty("Pos", out var pos) || !r.TryGetProperty("Vel", out var vel) || !r.TryGetProperty("RealRest", out var real)
@@ -88,6 +95,7 @@ public static class ReplayCommand
                     continue;
                 }
                 rows.Add((Path.GetFileNameWithoutExtension(file), r.GetProperty("Index").GetInt32(), Vec(pos), Vec(vel), Vec(real), r.GetProperty("ErrPredicted").GetSingle()));
+                rowBuild.Add(build);
             }
         }
         if (rows.Count == 0)
@@ -110,6 +118,13 @@ public static class ReplayCommand
         var reported = rows.Select(r => r.Reported).OrderBy(e => e).ToArray();
         Console.WriteLine($"{mesh.MapName}: {rows.Count} throws  median {Pct(0.5):F2}u  p90 {Pct(0.9):F1}u  p99 {Pct(0.99):F0}u  within 3u {errors.Count(e => e <= 3f) * 100.0 / rows.Count:F1}%  over 8u {errors.Count(e => e > 8f)} ({errors.Count(e => e > 8f) * 100.0 / rows.Count:F1}%)");
         Console.WriteLine($"  as reported at the time: median {reported[reported.Length / 2]:F2}u  over 8u {reported.Count(e => e > 8f)}");
+        // The game build each throw was recorded on, against the build the
+        // mesh came from: a map Valve changed in between cannot replay.
+        Console.WriteLine($"  mesh build {mesh.GameBuildId}; throws by recorded build: " + string.Join("  ", rowBuild.Distinct().OrderBy(x => x).Select(bld =>
+        {
+            var idx = Enumerable.Range(0, rows.Count).Where(i => rowBuild[i] == bld).ToList();
+            return $"{bld}: {idx.Count} throws, within 3u {idx.Count(i => errors[i] <= 3f) * 100.0 / idx.Count:F1}%, over 8u {idx.Count(i => errors[i] > 8f)} ({idx.Count(i => errors[i] > 8f) * 100.0 / idx.Count:F1}%)";
+        })));
         var changed = rows.Where((r, i) => Math.Abs(errors[i] - r.Reported) > 1f).Count();
         Console.WriteLine($"  throws whose error moved by more than 1u since they were graded: {changed}");
 

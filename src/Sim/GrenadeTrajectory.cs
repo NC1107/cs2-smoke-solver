@@ -422,6 +422,10 @@ public static class GrenadeTrajectory
                     // grenade just like a face does: requiring a face here was
                     // tried on the corpus (2026-09-04) and broke 17 dust2
                     // throws, 8 on mirage and 15 on ancient while fixing none.
+                    // Nor does a grenade need floor under its centre: requiring
+                    // a point of support under the hull centre (2026-09-04)
+                    // broke 31 dust2 throws and fixed 4. Real grenades park on
+                    // rims with the centre hanging past the edge.
                     if (hit.Normal.Z > FloorNormalZ || collider.FirstHitHull(position, position + new Vector3(0f, 0f, -2f), HullHalfExtents, minNormalZ: FloorNormalZ) is not null)
                     {
                         if (!k.EdgeTipping || EdgeTip(collider, position, w) is not { } tip)
