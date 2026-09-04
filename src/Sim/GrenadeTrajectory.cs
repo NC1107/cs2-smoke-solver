@@ -80,6 +80,13 @@ public sealed record ThrowConstants(
     // until the next tick. Corpus replay 2026-09-04: 2 fixed 5 throws and
     // broke 1 on dust2, 1 on nuke, nothing elsewhere; 3 adds nothing over 2.
     int BouncesPerTick = 2,
+    // A grenade meeting intact breakable glass breaks it and carries on in
+    // the same direction at this fraction of its speed; the pane is gone for
+    // the rest of the flight. MEASURED on cs_office 2026-09-04: five throws
+    // through intact window props left at exactly 0.40 of their speed with
+    // the direction unchanged, and one through an already broken pane lost
+    // nothing. Zero = treat glass as a solid wall.
+    float GlassPassFactor = 0.40f,
     // Horizontal velocity a running jump throw adds along the facing. MEASURED
     // at 306 from two full-speed run jumps (left and right click both landed on
     // 306.1, confirming it is player velocity, independent of the throw). The
@@ -254,6 +261,9 @@ public static class GrenadeTrajectory
     // flatgrass ground), and box corners catch surface edges that a same-size
     // sphere misses.
     public const float GrenadeRadius = 2f;
+
+    // How far from a break point breakable triangles count as the same pane.
+    const float BrokenPaneReach = 96f;
     static readonly Vector3 HullHalfExtents = new(GrenadeRadius, GrenadeRadius, GrenadeRadius);
 
     // Support probes around the hull's centre: a point ray each, straight
@@ -392,6 +402,11 @@ public static class GrenadeTrajectory
         var time = 0f;
         var tick = 0;
         Vector3? firstTouch = null;
+        // Glass this flight has already broken: every breakable triangle near
+        // a break point is air from then on (a pane is several triangles and
+        // the mesh does not say which belong together).
+        List<Vector3>? broken = null;
+        Func<int, bool>? ignore = null;
 
         while (time < MaxFlightSeconds)
         {
@@ -401,12 +416,33 @@ public static class GrenadeTrajectory
             var move = new Vector3(velocity.X, velocity.Y, (vzOld + velocity.Z) * 0.5f) * TimeStep;
             var next = position + move;
 
-            if (collider.FirstHitHullIndexed(position, next, HullHalfExtents) is { } hit)
+            if (collider.FirstHitHullIndexed(position, next, HullHalfExtents, ignore: ignore) is { } hit)
             {
                 var contact = Vector3.Lerp(position, next, Math.Max(0f, hit.T - 1e-3f));
                 position = contact;
                 firstTouch ??= contact;
                 bounces++;
+
+                if (k.GlassPassFactor > 0f && collider.IsBreakable(hit.Triangle))
+                {
+                    // Through the glass: same heading, less speed, and the
+                    // pane stops existing for this flight.
+                    broken ??= [];
+                    broken.Add(contact);
+                    var panes = broken;
+                    ignore = t => collider.IsBreakable(t) && panes.Any(b => Vector3.DistanceSquared(b, collider.Centroid(t)) < BrokenPaneReach * BrokenPaneReach);
+                    velocity *= k.GlassPassFactor;
+                    trace?.Add($"t={time:F2} glass at ({contact.X:F0},{contact.Y:F0},{contact.Z:F0}) broken, speed x{k.GlassPassFactor:F2}");
+                    bounceTrace?.Add(new BounceRecord(tick, contact, hit.Normal, hit.Triangle, velocity / k.GlassPassFactor, velocity));
+                    var through = position + velocity * ((1f - hit.T) * TimeStep);
+                    position = collider.FirstHitHullIndexed(position, through, HullHalfExtents, ignore: ignore) is { } behind
+                        ? Vector3.Lerp(position, through, Math.Max(0f, behind.T - 1e-3f))
+                        : through;
+                    time += TimeStep;
+                    tick++;
+                    tickTrace?.Add((position, velocity));
+                    continue;
+                }
 
                 var w = velocity;
                 var vAfter = Bounce(w, hit.Normal, k);
@@ -475,7 +511,7 @@ public static class GrenadeTrajectory
                     var next2 = position + vAfter * (remainder * TimeStep);
                     for (var sub = 1; ; sub++)
                     {
-                        if (collider.FirstHitHullIndexed(position, next2, HullHalfExtents) is not { } hit2)
+                        if (collider.FirstHitHullIndexed(position, next2, HullHalfExtents, ignore: ignore) is not { } hit2)
                         {
                             position = next2;
                             break;

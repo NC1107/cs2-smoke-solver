@@ -1822,3 +1822,11 @@ The rig's dedicated server was on CS2 build 2000872 (16 July) while the client, 
 Every validation report labelled its `build` from the mesh, not the server, so the reports since July claimed 2000877 and 2000899 for throws that happened on 2000872.
 The dust2 "map change between 2000839 and 2000872" is therefore real (the server did update on 16 July), and everything after that is a 2000872 map compared against newer meshes.
 Reports now record `serverBuild`, `validate` warns on a mismatch, the server is being updated, and the full validation pass restarts on the matching build.
+
+### Loop iteration 7 (2026-09-04): breakable glass - KEPT
+
+First same-build data (server and mesh both 2000899): cs_office target 3 had six misses, five of them the real grenade meeting a row of prop_dynamic office windows the mesh no longer had (prop_dynamic was dropped for the nuke vent).
+Measured from the captures: every grenade through an intact pane kept its heading and left at exactly 0.40 of its speed; one through a pane an earlier throw had broken lost nothing.
+Shipped: prop_dynamic merged as EntityBreakable when the model carries a `break_list` and no `break_command_list` (windows yes, nuke vent slats no); `ThrowConstants.GlassPassFactor = 0.40`; the exact sim passes through glass at that factor and ignores the broken pane for the rest of the flight.
+Corpus: office 12 to 8 on same-build throws, nuke 3 to 3, dust2/mirage/ancient/overpass/inferno/anubis unchanged (their glass props were never hit). Tests: GlassPassThroughTests.
+Not modelled: the voxel sweep still sees glass as solid, so a lineup whose only route is through a window is not proposed; and within one validation batch the first throw breaks a pane for the rest, which real rounds reset.

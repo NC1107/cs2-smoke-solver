@@ -203,6 +203,47 @@ public class CornerContactTests
     }
 }
 
+/// <summary>
+/// Intact breakable glass (window props, func_breakable) lets a grenade
+/// through at 0.40 of its speed on the same heading, and is gone for the
+/// rest of that flight. Measured on cs_office, 2026-09-04: five throws
+/// through intact office windows, all exactly 0.40, direction unchanged.
+/// </summary>
+public class GlassPassThroughTests
+{
+    static TriangleCollider WindowAt(float x) => new(SyntheticMeshes.FromQuads(
+        [
+            (SyntheticMeshes.Ground(-512, 1024, 0).Item1, SyntheticMeshes.Ground(-512, 1024, 0).Item2, SyntheticMeshes.Ground(-512, 1024, 0).Item3, SyntheticMeshes.Ground(-512, 1024, 0).Item4, (byte)0),
+            (new[] { x, -128f, 0f }, new[] { x, 128f, 0f }, new[] { x, 128f, 128f }, new[] { x, -128f, 128f }, (byte)1),   // a pane facing the thrower
+            (new[] { x + 2f, -128f, 0f }, new[] { x + 2f, 128f, 0f }, new[] { x + 2f, 128f, 128f }, new[] { x + 2f, -128f, 128f }, (byte)1), // and its far face
+        ],
+        ["default", "EntityBreakable"],
+        [[], []]), new Vector3(-512, -512, -16), new Vector3(1024, 512, 256));
+
+    static readonly Vector3 Start = new(0f, 0f, 60f);
+    static readonly Vector3 Flat = new(600f, 0f, 0f);
+
+    [Fact]
+    public void AGrenadeBreaksThroughGlassAtFortyPercentSpeedOnTheSameHeading()
+    {
+        var ticks = new List<(Vector3 Position, Vector3 Velocity)>();
+        var r = GrenadeTrajectory.SimulateExactRaw(WindowAt(100f), Start, Flat, ThrowConstants.Default, tickTrace: ticks);
+
+        var after = ticks.First(t => t.Position.X > 104f);
+        Assert.True(r.RestPoint.X > 110f, $"stopped short of the pane at x={r.RestPoint.X:F1}");
+        Assert.Equal(240f, after.Velocity.X, 2f);
+        Assert.Equal(0f, after.Velocity.Y, 0.01f);
+    }
+
+    [Fact]
+    public void WithGlassSolidTheSameThrowBouncesBack()
+    {
+        var r = GrenadeTrajectory.SimulateExactRaw(WindowAt(100f), Start, Flat, ThrowConstants.Default with { GlassPassFactor = 0f });
+
+        Assert.True(r.RestPoint.X < 100f, $"went through solid glass: x={r.RestPoint.X:F1}");
+    }
+}
+
 public class EdgeTipTests
 {
     static TriangleCollider Ledge() => new(SyntheticMeshes.FromQuads(

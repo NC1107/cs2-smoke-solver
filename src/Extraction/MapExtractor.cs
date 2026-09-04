@@ -937,7 +937,35 @@ public static class MapExtractor
     static string SurfaceName(uint hash) =>
         KnownSurfaces.FirstOrDefault(n => ValveResourceFormat.Utils.StringToken.Get(n) == hash) ?? "?";
 
-    static readonly string[] SolidEntityClasses = ["func_brush", "func_clip_vphysics", "func_door", "func_door_rotating", "func_breakable", "prop_door_rotating"];
+    static readonly string[] SolidEntityClasses = ["func_brush", "func_clip_vphysics", "func_door", "func_door_rotating", "func_breakable", "prop_door_rotating", "prop_dynamic"];
+
+    /// <summary>
+    /// A prop_dynamic is merged only when its model is breakable glass: the
+    /// office and nuke window props, which real grenades break through at
+    /// 0.40 speed (cs_office, 2026-09-04). Solid-looking prop_dynamics that
+    /// are not breakable (de_nuke's vent slats) stand open or animated in
+    /// the game and cost 48 throws on nuke and 83 on mirage when merged.
+    /// </summary>
+    static bool BreakableModel(Model model)
+    {
+        try
+        {
+            if (model.KeyValues is not System.Collections.IEnumerable pairs)
+            {
+                return false;
+            }
+            // break_list: the model shatters into pieces when damaged (window
+            // props). break_command_list: the "break" is a scripted state
+            // change instead (de_nuke's vent slats, which stand open), and
+            // those are not glass.
+            var keys = pairs.Cast<object>().Select(o => FormatKv(o).Split('=')[0]).ToList();
+            return keys.Contains("break_list") && !keys.Contains("break_command_list");
+        }
+        catch (Exception e) when (e is InvalidOperationException or NullReferenceException)
+        {
+            return false;
+        }
+    }
 
     // Retake is a separate game mode: its brushes (the tape borders walling off
     // each bombsite, e.g. de_mirage's [PR#]retake.asite/bsite func_brushes) are
@@ -1022,6 +1050,15 @@ public static class MapExtractor
                 using var resource = new Resource();
                 resource.Read(new MemoryStream(raw));
                 var modelData = (Model)resource.DataBlock!;
+                if (className == "prop_dynamic")
+                {
+                    var breakable = BreakableModel(modelData);
+                    Diagnostics?.Invoke($"prop_dynamic {model} breakable={breakable} keys=[{(modelData.KeyValues is System.Collections.IEnumerable kvs ? string.Join(",", kvs.Cast<object>().Select(o => FormatKv(o).Split('=')[0])) : "")}]");
+                    if (!breakable)
+                    {
+                        continue;
+                    }
+                }
                 var phys = modelData.GetEmbeddedPhys();
                 if (phys == null &&
                     modelData.GetReferencedPhysNames().FirstOrDefault() is { } refPhysName &&
@@ -1061,7 +1098,7 @@ public static class MapExtractor
                     "func_breakable" => "EntityBreakable",
                     // A prop with health is breakable in game (de_nuke's vent
                     // slats, wooden shutters); one without is furniture.
-                    "prop_dynamic" when entity.GetIntegerProperty("health", 0) > 0 => "EntityBreakable",
+                    "prop_dynamic" => "EntityBreakable",
                     _ => "EntitySolid",
                 };
                 var attrIndex = names.IndexOf(attrName);

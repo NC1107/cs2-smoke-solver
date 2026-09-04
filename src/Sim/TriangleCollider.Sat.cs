@@ -26,7 +26,7 @@ public sealed partial class TriangleCollider
     /// of the separating-axis sweep. An edge-axis contact is a box corner
     /// catching a rim: real, but not a surface a grenade can rest on.
     /// </summary>
-    public (float T, Vector3 Normal, int Triangle, bool Face)? FirstHitHullIndexed(Vector3 from, Vector3 to, Vector3 halfExtents, float minNormalZ = -2f)
+    public (float T, Vector3 Normal, int Triangle, bool Face)? FirstHitHullIndexed(Vector3 from, Vector3 to, Vector3 halfExtents, float minNormalZ = -2f, Func<int, bool>? ignore = null)
     {
         var direction = to - from;
         var bestT = float.MaxValue;
@@ -47,7 +47,8 @@ public sealed partial class TriangleCollider
                     var cell = (z * _ny + y) * _nx + x;
                     for (var i = _cellStart[cell]; i < _cellStart[cell + 1]; i++)
                     {
-                        if (SweptBoxTriangle(from, direction, halfExtents, _cellTris[i]) is { } hit
+                        if ((ignore == null || !ignore(_cellTris[i] / 3))
+                            && SweptBoxTriangle(from, direction, halfExtents, _cellTris[i]) is { } hit
                             && hit.T < bestT
                             && hit.Normal.Z >= minNormalZ)
                         {

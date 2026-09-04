@@ -124,7 +124,13 @@ The exclusion rule came from the corpus replay of 2026-09-04: a `passbullets` ra
 Groups that exclude `player` are the mirror case (grenade-only surfaces) and are left out of the player collider that places pins and stand spots.
 
 The collision mesh itself comes from `world_physics.vmdl_c` (the PHYS block) plus an allowlist of solid brush entities (`func_brush`, `func_clip_vphysics`, `func_door`, `func_door_rotating`, `func_breakable`, `prop_door_rotating`).
-`prop_dynamic` is deliberately excluded: adding it (2026-08-30, for de_nuke's vent slats) cost 48 real throws on de_nuke and 83 on de_mirage in the corpus replay, because the game does not collide grenades with those hulls (the vent slats stand open).
+`prop_dynamic` is merged only when its model is breakable glass: the model's data carries a `break_list` (it shatters when damaged) and no `break_command_list` (a scripted state change, as on de_nuke's vent slats, which stand open in play).
+Merging every `prop_dynamic` (2026-08-30) cost 48 real throws on de_nuke and 83 on de_mirage, because the game does not collide grenades with the non-glass ones.
+
+**Breakable glass** (`EntityBreakable`: window props and `func_breakable`) is not a wall.
+A grenade that meets an intact pane breaks it and carries on in the same direction at `GlassPassFactor = 0.40` of its speed; the pane is air for the rest of that flight.
+MEASURED on cs_office (2026-09-04): five throws through intact office windows all left at exactly 0.40 with the heading unchanged, and a sixth through a pane an earlier throw had already broken lost nothing.
+The voxel sweep still treats glass as solid, so lineups whose only path is through a window are not proposed; the exact verifier and the corpus replay model the pass-through.
 
 A grenade that comes to rest balanced on an edge stays there.
 An edge-tipping model was tried (2026-09-03) after three replays at the beam over de_dust2 mid doors; across the corpus it fixed 13 throws and broke 50 (pole tops, crate rims, that same beam), so it is off by default (`ThrowConstants.EdgeTipping`).
