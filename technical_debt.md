@@ -1719,3 +1719,33 @@ After: 7/9, 33 / 355 / 12, and the crate wedge Nick stood in ranks first with th
 The two still missing are along walls where the pins sit 23-29u from his spot - the same wall, a different point along it.
 
 Open: the numbers in `HumanError` (2/8/24u, 0.5-5 degrees, 6/16u) are judgement, not measurement. The rig can measure them: throw the same lineup from feet placed by hand N times and take the spread.
+
+## Phantom bounces and the corpus replay (2026-09-04)
+
+Nick asked for the phantom-bounce sites to be fixed.
+The July list of sites turned out to be stale (x_box, revalidated 30 Aug, had 1 miss in 60), so the work became building the instrument that says where the tail is now.
+
+Two new CLI commands:
+
+- `diverge --geo --report [--index]` replays each miss of a validation report tick by tick against the rig's capture, pairs every sim bounce with the nearest real one, names the triangle (attribute, size, corner) the sim bounced off, fits the normal our own bounce model would need to reproduce the real rebound, and prints the split tick.
+- `replay --geo [--reports] [--worst N] [--moved N] [--nonsolid layers] [--nonsolid-groups i] [--no-edge-tip] [--sphere] [--face-normals]` re-simulates every graded throw in the reports for a map from its recorded launch state and scores the rest against the real one: 10,870 throws in under a minute, no game needed.
+  This is the benchmark every physics or extraction change should be run through before it ships.
+
+What the corpus said, and what shipped:
+
+- **Edge tipping was net harmful.** Fixed 13 throws, broke 50 (pole tops, crate rims, the mid-doors beam). `ThrowConstants.EdgeTipping` now defaults to false; the test that asserted tipping now asserts balance.
+- **`prop_dynamic` hulls (added 30 Aug) were the whole of the recent regression.** 48 throws on de_nuke fell through the open vent slats; 83 on de_mirage. Removed from `SolidEntityClasses`. Neither map had been revalidated after the re-extraction, which is how it went unnoticed for five days.
+- **Surfaces that exclude `csgo_thrown_grenade` are air to grenades.** The heaven railing on de_nuke (`passbullets`, 22 throws straight through) carried the flag in `m_InteractExcludeStrings`; an identical-looking `passbullets` grate floor did not, and stopped every throw. The `.s2geo` format is now V3 with a per-group exclude table (V2 still loads, as "excludes nothing"), `GrenadeSolidFilter` honours it, and `PlayerSolidFilter` honours `exclude=[player]` the same way.
+  Every map carries such groups; all 15 meshes were re-extracted.
+- **Falsified, with numbers:** a sphere hull instead of the box (worse on every map, dust2 26.6% over 8u); preferring face normals when an edge axis wins a near tie (dust2 325 to 350 misses); treating all `passbullets` as air (nuke 72 to 118).
+
+Corpus, over 8u, before and after (validated maps): dust2 325 to 289, nuke 72 to 4, inferno 11 to 9, mirage 127 to 34, overpass 19 to 16, ancient 43 to 28, anubis 13 to 6, office 12 to 0.
+Overall 622 to 386 of 10,870 (5.7% to 3.6%).
+
+What the replays show is left in the tail:
+
+- de_dust2 CT-mid slope (`[-328,2424]`, ~50 July throws): flights track to 1u through six bounces, then the sim's last low-speed bounce order differs from the game at a wall-floor corner.
+- Bumpy terrain on de_inferno: sim and real bounce at the same tick within 1u, but the rebound implies a different triangle normal than ours, in both directions. The physics mesh is what the game has; why the game's contact normal differs at near-coplanar triangle edges is unresolved.
+- de_dust2 B site and top_window rests: settle differences after tracked flights.
+
+Deploy note: `.s2geo` and `.standspots.json` are gitignored data; both must be rsynced to prod (the stand spots were regenerated because the player collider changed).

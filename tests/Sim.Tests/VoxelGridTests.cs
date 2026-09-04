@@ -108,6 +108,66 @@ public class VoxelGridTests
     }
 
     [Fact]
+    public void AGroupThatExcludesThrownGrenadesIsAirToGrenadesAndSolidToPlayers()
+    {
+        // de_nuke's heaven railing: a passbullets group whose collision
+        // attribute lists csgo_thrown_grenade under m_InteractExcludeStrings.
+        // Real grenades pass through it; players lean on it. The reverse
+        // group (excludes player) is a grenade-only surface.
+        var mesh = new CollisionMesh
+        {
+            MapName = "synthetic",
+            GameBuildId = "test",
+            Vertices = [],
+            Indices = [],
+            TriangleAttributes = [],
+            AttributeNames = ["default", "ConditionallySolid", "ConditionallySolid", "Default"],
+            AttributeInteractAs = [[], ["passbullets"], ["passbullets"], []],
+            AttributeInteractExclude = [[], ["csgo_thrown_grenade"], [], ["player"]],
+        };
+        var grenade = mesh.GrenadeSolidFilter();
+        var player = mesh.PlayerSolidFilter();
+
+        Assert.True(grenade(0));
+        Assert.False(grenade(1));
+        Assert.True(grenade(2));
+        Assert.True(grenade(3));
+        Assert.True(player(1));
+        Assert.True(player(2));
+        Assert.False(player(3));
+    }
+
+    [Fact]
+    public void ExcludesSurviveASaveAndLoadRoundTrip()
+    {
+        var mesh = new CollisionMesh
+        {
+            MapName = "synthetic",
+            GameBuildId = "test",
+            Vertices = [0, 0, 0, 1, 0, 0, 0, 1, 0],
+            Indices = [0, 1, 2],
+            TriangleAttributes = [1],
+            AttributeNames = ["default", "rail"],
+            AttributeInteractAs = [[], ["passbullets"]],
+            AttributeInteractExclude = [[], ["csgo_thrown_grenade"]],
+        };
+        var path = Path.Combine(Path.GetTempPath(), $"excludes-{Guid.NewGuid():N}.s2geo");
+        try
+        {
+            mesh.Save(path);
+            var loaded = CollisionMesh.Load(path);
+
+            Assert.Equal(["csgo_thrown_grenade"], loaded.AttributeInteractExclude[1]);
+            Assert.Empty(loaded.AttributeInteractExclude[0]);
+            Assert.False(loaded.GrenadeSolidFilter()(1));
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    [Fact]
     public void GrenadeSolidFilterDropsPlayerClipGeometryFromTheVoxelGrid()
     {
         var floor = SyntheticMeshes.Ground(0, 256, 0);

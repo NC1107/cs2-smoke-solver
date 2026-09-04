@@ -9,7 +9,8 @@ namespace SmokeSolver.Sim;
 /// </summary>
 public sealed class CollisionMesh
 {
-    const string Magic = "S2SSGEO2";
+    const string Magic = "S2SSGEO3";
+    const string MagicV2 = "S2SSGEO2";
     const string MagicV1 = "S2SSGEO1";
 
     public required string MapName { get; init; }
@@ -23,21 +24,37 @@ public sealed class CollisionMesh
     // Group NAMES are ambiguous ("ConditionallySolid" appears for player clips
     // AND grenade clips on the same map); the layers carry the semantics.
     public required string[][] AttributeInteractAs { get; init; }
+    // Per attribute group: the interaction layers it is explicitly transparent
+    // to (m_InteractExcludeStrings). A railing on de_nuke carries
+    // "csgo_thrown_grenade" here and real grenades fly straight through it;
+    // a grenade-only clip excludes "player". Empty for groups merged in from
+    // entity and prop models. Optional so V2 files and synthetic meshes read
+    // as "excludes nothing".
+    public string[][] AttributeInteractExclude { get; init; } = [];
 
     public int TriangleCount => Indices.Length / 3;
+
+    const string ThrownGrenadeLayer = "csgo_thrown_grenade";
+    const string PlayerLayer = "player";
+
+    bool Excludes(int attribute, string layer) =>
+        attribute < AttributeInteractExclude.Length &&
+        AttributeInteractExclude[attribute].Any(l => l.Equals(layer, StringComparison.OrdinalIgnoreCase));
 
     /// <summary>
     /// Attribute filter for grenade flight, validated against real per-tick
     /// trajectories on de_dust2 (301 real bounce events): player/NPC clips and
     /// sky volumes do not block grenades (281 and 11 observed fly-throughs);
-    /// everything else, including csgo_grenadeclip and passbullets, does.
+    /// everything else, including csgo_grenadeclip and passbullets, does -
+    /// unless the group explicitly excludes thrown grenades (de_nuke's heaven
+    /// railing: 22 real throws passed through it in the corpus replay).
     /// </summary>
     public Func<byte, bool> GrenadeSolidFilter()
     {
         var solid = new bool[AttributeNames.Length];
         for (var i = 0; i < solid.Length; i++)
         {
-            solid[i] = !AttributeInteractAs[i].Any(layer =>
+            solid[i] = !Excludes(i, ThrownGrenadeLayer) && !AttributeInteractAs[i].Any(layer =>
                 layer.Equals("playerclip", StringComparison.OrdinalIgnoreCase) ||
                 layer.Equals("npcclip", StringComparison.OrdinalIgnoreCase) ||
                 layer.Equals("sky", StringComparison.OrdinalIgnoreCase));
@@ -63,6 +80,7 @@ public sealed class CollisionMesh
             var npcOnly = layers.Any(l => l.Equals("npcclip", StringComparison.OrdinalIgnoreCase)) &&
                 !layers.Any(l => l.Equals("playerclip", StringComparison.OrdinalIgnoreCase));
             solid[i] = !npcOnly &&
+                !Excludes(i, PlayerLayer) &&
                 !layers.Any(l => l.Equals("csgo_grenadeclip", StringComparison.OrdinalIgnoreCase)) &&
                 !AttributeNames[i].Equals("EntityPhysicsClip", StringComparison.Ordinal);
         }
@@ -126,6 +144,15 @@ public sealed class CollisionMesh
                 writer.Write(layer);
             }
         }
+        for (var i = 0; i < AttributeNames.Length; i++)
+        {
+            var excludes = i < AttributeInteractExclude.Length ? AttributeInteractExclude[i] : [];
+            writer.Write(excludes.Length);
+            foreach (var layer in excludes)
+            {
+                writer.Write(layer);
+            }
+        }
         writer.Write(Vertices.Length);
         foreach (var v in Vertices)
         {
@@ -144,7 +171,7 @@ public sealed class CollisionMesh
     {
         using var reader = new BinaryReader(File.OpenRead(path), Encoding.UTF8);
         var magic = Encoding.ASCII.GetString(reader.ReadBytes(Magic.Length));
-        if (magic != Magic && magic != MagicV1)
+        if (magic != Magic && magic != MagicV2 && magic != MagicV1)
         {
             throw new InvalidDataException($"{path} is not a SmokeSolver geometry file (magic '{magic}')");
         }
@@ -156,24 +183,20 @@ public sealed class CollisionMesh
             attributeNames[i] = reader.ReadString();
         }
         var interactAs = new string[attributeNames.Length][];
+        var interactExclude = new string[attributeNames.Length][];
+        for (var i = 0; i < interactAs.Length; i++)
+        {
+            // V1 files lack interaction layers and V2 files lack excludes;
+            // re-extract for correct grenade clipping. Until then a missing
+            // table reads as "plain solid" / "excludes nothing".
+            interactAs[i] = magic == MagicV1 ? [] : ReadStrings(reader);
+            interactExclude[i] = [];
+        }
         if (magic == Magic)
         {
-            for (var i = 0; i < interactAs.Length; i++)
+            for (var i = 0; i < interactExclude.Length; i++)
             {
-                interactAs[i] = new string[reader.ReadInt32()];
-                for (var j = 0; j < interactAs[i].Length; j++)
-                {
-                    interactAs[i][j] = reader.ReadString();
-                }
-            }
-        }
-        else
-        {
-            // V1 files lack interaction layers; re-extract to get correct
-            // grenade clipping. Treat every group as plain solid until then.
-            for (var i = 0; i < interactAs.Length; i++)
-            {
-                interactAs[i] = [];
+                interactExclude[i] = ReadStrings(reader);
             }
         }
         var vertices = new float[reader.ReadInt32()];
@@ -193,10 +216,21 @@ public sealed class CollisionMesh
             GameBuildId = buildId,
             AttributeNames = attributeNames,
             AttributeInteractAs = interactAs,
+            AttributeInteractExclude = interactExclude,
             Vertices = vertices,
             Indices = indices,
             TriangleAttributes = triangleAttributes,
         };
+    }
+
+    static string[] ReadStrings(BinaryReader reader)
+    {
+        var strings = new string[reader.ReadInt32()];
+        for (var j = 0; j < strings.Length; j++)
+        {
+            strings[j] = reader.ReadString();
+        }
+        return strings;
     }
 
     public void SaveObj(string path)

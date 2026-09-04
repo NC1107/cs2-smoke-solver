@@ -31,6 +31,8 @@ var commands = new Dictionary<string, Func<Dictionary<string, string>, int>>
     ["crop"] = CropCommand.Run,
     ["selfcheck"] = SelfCheckCommand.Run,
     ["targets"] = TargetsCommand.Run,
+    ["diverge"] = DivergeCommand.Run,
+    ["replay"] = ReplayCommand.Run,
 };
 
 if (args.Length == 0 || !commands.TryGetValue(args[0], out var command))

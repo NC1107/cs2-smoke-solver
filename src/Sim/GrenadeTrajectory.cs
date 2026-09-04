@@ -26,6 +26,9 @@ public readonly record struct ThrowSpec(Vector3 EyePosition, float YawDeg, float
 
 public readonly record struct TrajectoryResult(Vector3 RestPoint, int Bounces, float FlightTime, bool Lost, Vector3? FirstTouch = null);
 
+/// <summary>One exact-sim bounce, kept for diagnostics: which tick, where, off what.</summary>
+public readonly record struct BounceRecord(int Tick, Vector3 Contact, Vector3 Normal, int Triangle, Vector3 VelocityBefore, Vector3 VelocityAfter);
+
 /// <summary>
 /// Physics constants for grenade flight, extracted so calibration can fit them.
 /// Defaults are the current best fit (see DESIGN.md, calibration).
@@ -61,6 +64,11 @@ public sealed record ThrowConstants(
     // jump releases a touch higher up its own arc, so it carries 277.5.
     float JumpVelocity = 273.6f,
     float CrouchJumpVelocity = 277.5f,
+    // Whether a grenade that stops balanced on an edge tips off it. Off: the
+    // corpus replay (5,133 real dust2 throws, 2026-09-04) showed the engine
+    // leaves grenades balanced on pole tops, crate rims and beams far more
+    // often than it tips them - tipping fixed 13 throws and broke 50.
+    bool EdgeTipping = false,
     // Horizontal velocity a running jump throw adds along the facing. MEASURED
     // at 306 from two full-speed run jumps (left and right click both landed on
     // 306.1, confirming it is player velocity, independent of the throw). The
@@ -142,6 +150,20 @@ public static class GrenadeTrajectory
     // stage 1 from the exact path by ~120u on fast steep throws.
     static float FloorImpactDamp(float speed, float u, bool isFloor, ThrowConstants k) =>
         speed > k.DampGateSpeed && u > 0.5f && isFloor ? 1.5f - u : 1f;
+
+    /// <summary>
+    /// The exact simulator's bounce: velocity after hitting a surface with
+    /// this normal at this incoming velocity. Public so diagnostics can ask
+    /// which normal would have produced a recorded real rebound.
+    /// </summary>
+    public static Vector3 Bounce(Vector3 w, Vector3 normal, ThrowConstants k)
+    {
+        var speed = w.Length();
+        var reflected = SnapStopEpsilon(w - 2f * Vector3.Dot(w, normal) * normal);
+        var u = speed > 1e-6f ? MathF.Abs(Vector3.Dot(w, normal)) / speed : 0f;
+        var damp = FloorImpactDamp(speed, u, isFloor: normal.Z > FloorNormalZ, k);
+        return reflected * (k.Elasticity * damp);
+    }
 
     // Post-contact positional backoff keeping the hull from re-embedding in
     // the surface it just hit.
@@ -351,12 +373,13 @@ public static class GrenadeTrajectory
     // captures were undetonated projectiles culled by the engine during
     // dense validation batches, a harness artifact ValidateCommand now
     // detects and excludes instead.
-    public static TrajectoryResult SimulateExactRaw(TriangleCollider collider, Vector3 position, Vector3 velocity, ThrowConstants? constants = null, List<string>? trace = null, List<(Vector3 Position, Vector3 Velocity)>? tickTrace = null)
+    public static TrajectoryResult SimulateExactRaw(TriangleCollider collider, Vector3 position, Vector3 velocity, ThrowConstants? constants = null, List<string>? trace = null, List<(Vector3 Position, Vector3 Velocity)>? tickTrace = null, List<BounceRecord>? bounceTrace = null)
     {
         var k = constants ?? ThrowConstants.Default;
         var gravityStep = BaseGravity * k.GravityScale * TimeStep;
         var bounces = 0;
         var time = 0f;
+        var tick = 0;
         Vector3? firstTouch = null;
 
         while (time < MaxFlightSeconds)
@@ -367,7 +390,7 @@ public static class GrenadeTrajectory
             var move = new Vector3(velocity.X, velocity.Y, (vzOld + velocity.Z) * 0.5f) * TimeStep;
             var next = position + move;
 
-            if (collider.FirstHitHull(position, next, HullHalfExtents) is { } hit)
+            if (collider.FirstHitHullIndexed(position, next, HullHalfExtents) is { } hit)
             {
                 var contact = Vector3.Lerp(position, next, Math.Max(0f, hit.T - 1e-3f));
                 position = contact;
@@ -375,12 +398,9 @@ public static class GrenadeTrajectory
                 bounces++;
 
                 var w = velocity;
-                var speed = w.Length();
-                var reflected = SnapStopEpsilon(w - 2f * Vector3.Dot(w, hit.Normal) * hit.Normal);
-                var u = speed > 1e-6f ? MathF.Abs(Vector3.Dot(w, hit.Normal)) / speed : 0f;
-                var damp = FloorImpactDamp(speed, u, isFloor: hit.Normal.Z > FloorNormalZ, k);
-                var vAfter = reflected * (k.Elasticity * damp);
+                var vAfter = Bounce(w, hit.Normal, k);
                 trace?.Add($"t={time:F2} contact ({contact.X:F0},{contact.Y:F0},{contact.Z:F0}) normal ({hit.Normal.X:F2},{hit.Normal.Y:F2},{hit.Normal.Z:F2}) v after ({vAfter.X:F0},{vAfter.Y:F0},{vAfter.Z:F0})");
+                bounceTrace?.Add(new BounceRecord(tick, contact, hit.Normal, hit.Triangle, w, vAfter));
 
                 if (vAfter.Length() < k.StopSpeed)
                 {
@@ -394,7 +414,7 @@ public static class GrenadeTrajectory
                     // with nothing under it, and the fall continues.
                     if (hit.Normal.Z > FloorNormalZ || collider.FirstHitHull(position, position + new Vector3(0f, 0f, -2f), HullHalfExtents, minNormalZ: FloorNormalZ) is not null)
                     {
-                        if (EdgeTip(collider, position, w) is not { } tip)
+                        if (!k.EdgeTipping || EdgeTip(collider, position, w) is not { } tip)
                         {
                             return new TrajectoryResult(position, bounces, time + TimeStep, Lost: false, firstTouch);
                         }
@@ -403,6 +423,7 @@ public static class GrenadeTrajectory
                         velocity.Z -= gravityStep * (1f - hit.T);
                         position += velocity * ((1f - hit.T) * TimeStep);
                         time += TimeStep;
+                        tick++;
                         tickTrace?.Add((position, velocity));
                         continue;
                     }
@@ -443,6 +464,7 @@ public static class GrenadeTrajectory
                 position = next;
             }
             time += TimeStep;
+            tick++;
             tickTrace?.Add((position, velocity));
         }
         return new TrajectoryResult(position, bounces, time, Lost: true, firstTouch);

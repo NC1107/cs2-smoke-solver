@@ -157,13 +157,13 @@ public class SimulateExactTests
 }
 
 /// <summary>
-/// A grenade balanced on the edge of a ledge tips off it; one with the ledge
-/// under its centre stays.
+/// A grenade that stops balanced on the edge of a ledge stays there unless
+/// tipping is switched on.
 /// </summary>
-// From the beam over de_dust2's mid doors: the box hull touching the ledge
-// with a corner was enough for the simulator to call it at rest, and three
-// validated throws that the sim parked on the edge were on the ground 200u
-// away in the game.
+// Three replays at the beam over de_dust2's mid doors suggested the engine
+// tips a corner-balanced grenade off; the full corpus said otherwise (pole
+// tops, crate rims and that same beam hold balanced grenades 50 times for
+// every 13 they tip), so tipping is opt-in and off by default.
 public class EdgeTipTests
 {
     static TriangleCollider Ledge() => new(SyntheticMeshes.FromQuads(
@@ -174,10 +174,20 @@ public class EdgeTipTests
     ]), new Vector3(-256, -256, -16), new Vector3(512, 256, 256));
 
     [Fact]
-    public void AGrenadeDroppedOnTheEdgeTipsOffAndLandsBelow()
+    public void AGrenadeDroppedOnTheEdgeStaysBalancedByDefault()
     {
         // Centre 1u past the edge: a corner of the box still touches the top.
         var r = GrenadeTrajectory.SimulateExactRaw(Ledge(), new Vector3(101f, 0f, 70f), new Vector3(0f, 0f, 0f));
+
+        Assert.False(r.Lost);
+        Assert.Equal(66f, r.RestPoint.Z, 1f);
+    }
+
+    [Fact]
+    public void WithTippingOnAGrenadeDroppedOnTheEdgeLandsBelow()
+    {
+        var tipping = ThrowConstants.Default with { EdgeTipping = true };
+        var r = GrenadeTrajectory.SimulateExactRaw(Ledge(), new Vector3(101f, 0f, 70f), new Vector3(0f, 0f, 0f), tipping);
 
         Assert.False(r.Lost);
         Assert.True(r.RestPoint.Z < 10f, $"rested at z={r.RestPoint.Z:F1}, still on the ledge");

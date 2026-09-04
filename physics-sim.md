@@ -117,11 +117,17 @@ No drag, no tangential friction on bounce, and no rolling phase — all three ar
 
 ## Collision filter (`GrenadeSolidFilter`)
 
-A triangle blocks a grenade unless its physics interaction layers (`m_InteractAsStrings`) include `playerclip`, `npcclip`, or `sky`.
-Everything else is solid to grenades — including `csgo_grenadeclip` and `passbullets`.
+A triangle blocks a grenade unless its physics interaction layers (`m_InteractAsStrings`) include `playerclip`, `npcclip`, or `sky`, or its exclusion layers (`m_InteractExcludeStrings`) name `csgo_thrown_grenade`.
+Everything else is solid to grenades - including `csgo_grenadeclip` and `passbullets`.
 Validated on de_dust2 (301 real bounce events; 281 player-clip and 11 sky fly-throughs observed, zero grenade-clip fly-throughs).
+The exclusion rule came from the corpus replay of 2026-09-04: a `passbullets` railing at de_nuke heaven that excludes thrown grenades let 22 real throws through while an otherwise identical `passbullets` grate floor stopped every one; every map carries such groups.
+Groups that exclude `player` are the mirror case (grenade-only surfaces) and are left out of the player collider that places pins and stand spots.
 
-The collision mesh itself comes from `world_physics.vmdl_c` (the PHYS block) plus an allowlist of solid brush entities (`func_brush`, `func_clip_vphysics`, `func_door`, `func_door_rotating`, `func_breakable`).
+The collision mesh itself comes from `world_physics.vmdl_c` (the PHYS block) plus an allowlist of solid brush entities (`func_brush`, `func_clip_vphysics`, `func_door`, `func_door_rotating`, `func_breakable`, `prop_door_rotating`).
+`prop_dynamic` is deliberately excluded: adding it (2026-08-30, for de_nuke's vent slats) cost 48 real throws on de_nuke and 83 on de_mirage in the corpus replay, because the game does not collide grenades with those hulls (the vent slats stand open).
+
+A grenade that comes to rest balanced on an edge stays there.
+An edge-tipping model was tried (2026-09-03) after three replays at the beam over de_dust2 mid doors; across the corpus it fixed 13 throws and broke 50 (pole tops, crate rims, that same beam), so it is off by default (`ThrowConstants.EdgeTipping`).
 It does **not** currently include `prop_static` physics hulls (see Limits).
 
 ## Accuracy and limits

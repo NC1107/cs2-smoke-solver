@@ -8,10 +8,14 @@ namespace SmokeSolver.Sim;
 /// collision cannot deflect off slanted geometry (an angled ledge bounces sideways
 /// in game but axis-aligned in the voxel model).
 /// </summary>
+public readonly record struct TriangleFace(Vector3 A, Vector3 B, Vector3 C, string Attribute, int AttributeIndex);
+
 public sealed partial class TriangleCollider
 {
     readonly float[] _vertices;
     readonly int[] _indices;
+    readonly byte[] _attributes;
+    readonly string[] _attributeNames;
     // CSR layout: triangles of cell i live in _cellTris[_cellStart[i].._cellStart[i+1]].
     // Flat arrays keep the innermost query loop on contiguous memory; per-cell
     // List<int> objects scattered indices across the heap.
@@ -27,6 +31,8 @@ public sealed partial class TriangleCollider
     {
         _vertices = mesh.Vertices;
         _indices = mesh.Indices;
+        _attributes = mesh.TriangleAttributes;
+        _attributeNames = mesh.AttributeNames;
         _cellSize = cellSize;
         _origin = regionMin;
         _nx = Math.Max(1, (int)MathF.Ceiling((regionMax.X - regionMin.X) / cellSize));
@@ -90,5 +96,19 @@ public sealed partial class TriangleCollider
         (int)MathF.Floor((p.Z - _origin.Z) / _cellSize));
 
     Vector3 Vertex(int index) => new(_vertices[index * 3], _vertices[index * 3 + 1], _vertices[index * 3 + 2]);
+
+    /// <summary>
+    /// The triangle a hull sweep reported, for diagnostics that need to name
+    /// the surface a grenade bounced off rather than just its normal.
+    /// </summary>
+    public TriangleFace Face(int triangle)
+    {
+        var t = triangle * 3;
+        var attribute = _attributes[triangle];
+        return new TriangleFace(
+            Vertex(_indices[t]), Vertex(_indices[t + 1]), Vertex(_indices[t + 2]),
+            attribute < _attributeNames.Length ? _attributeNames[attribute] : $"attr{attribute}",
+            attribute);
+    }
 
 }

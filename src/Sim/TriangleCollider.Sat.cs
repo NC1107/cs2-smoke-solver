@@ -13,11 +13,19 @@ public sealed partial class TriangleCollider
     /// axes, the triangle normal, and the 9 edge cross axes; each axis yields a
     /// linear-in-t projection overlap interval and the TOI is the latest entry.
     /// </summary>
-    public (float T, Vector3 Normal)? FirstHitHull(Vector3 from, Vector3 to, Vector3 halfExtents, float minNormalZ = -2f)
+    public (float T, Vector3 Normal)? FirstHitHull(Vector3 from, Vector3 to, Vector3 halfExtents, float minNormalZ = -2f) =>
+        FirstHitHullIndexed(from, to, halfExtents, minNormalZ) is { } hit ? (hit.T, hit.Normal) : null;
+
+    /// <summary>
+    /// FirstHitHull plus the index of the triangle that was hit, so a bounce
+    /// can be traced back to the surface (and its attribute) it came from.
+    /// </summary>
+    public (float T, Vector3 Normal, int Triangle)? FirstHitHullIndexed(Vector3 from, Vector3 to, Vector3 halfExtents, float minNormalZ = -2f)
     {
         var direction = to - from;
         var bestT = float.MaxValue;
         var bestNormal = Vector3.Zero;
+        var bestTriangle = -1;
 
         var lo = Vector3.Min(from, to) - halfExtents;
         var hi = Vector3.Max(from, to) + halfExtents;
@@ -37,12 +45,13 @@ public sealed partial class TriangleCollider
                             && hit.Normal.Z >= minNormalZ)
                         {
                             (bestT, bestNormal) = hit;
+                            bestTriangle = _cellTris[i] / 3;
                         }
                     }
                 }
             }
         }
-        return bestT <= 1f ? (bestT, bestNormal) : null;
+        return bestT <= 1f ? (bestT, bestNormal, bestTriangle) : null;
     }
 
     /// <summary>

@@ -80,6 +80,7 @@ public static class CropCommand
             // grenade/player filters classify exactly as they do on the source.
             AttributeNames = mesh.AttributeNames,
             AttributeInteractAs = mesh.AttributeInteractAs,
+            AttributeInteractExclude = mesh.AttributeInteractExclude,
         };
         var outPath = options.GetValueOrDefault("out", Path.ChangeExtension(Require(options, "geo"), null) + ".crop.s2geo");
         cropped.Save(outPath);

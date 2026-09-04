@@ -17,6 +17,22 @@ public static class MapExtractor
     /// Pulls the world physics collision mesh out of a CS2 map VPK.
     /// Smoke and grenades collide against this data, not the render mesh.
     /// </summary>
+    /// <summary>
+    /// Entity classes whose models are merged into the collision mesh. The
+    /// default is SolidEntityClasses; extraction experiments pass their own so
+    /// the corpus replay can measure what each class does to real throws.
+    /// </summary>
+    public static IReadOnlyCollection<string> SolidEntityClassOverride
+    {
+        get => _solidEntityClassOverride ?? SolidEntityClasses;
+        set => _solidEntityClassOverride = value;
+    }
+
+    static IReadOnlyCollection<string>? _solidEntityClassOverride;
+
+    /// <summary>Receives one line per collision attribute and per merged entity when set.</summary>
+    public static Action<string>? Diagnostics { get; set; }
+
     public static CollisionMesh ExtractWorldPhysics(string mapVpkPath, string mapName, string gameBuildId)
     {
         using var package = new Package();
@@ -37,22 +53,19 @@ public static class MapExtractor
         var attributeNames = phys.CollisionAttributes
             .Select(kv => kv.GetStringProperty("m_CollisionGroupString") ?? "Default")
             .ToArray();
-        var attributeInteractAs = phys.CollisionAttributes
-            .Select(kv =>
-            {
-                try
-                {
-                    return kv.GetArray<string>("m_InteractAsStrings") ?? [];
-                }
-                catch (KeyNotFoundException)
-                {
-                    return [];
-                }
-            })
-            .ToArray();
+        var attributeInteractAs = phys.CollisionAttributes.Select(kv => Strings(kv, "m_InteractAsStrings")).ToArray();
+        var attributeInteractExclude = phys.CollisionAttributes.Select(kv => Strings(kv, "m_InteractExcludeStrings")).ToArray();
         if (attributeNames.Length > byte.MaxValue)
         {
             throw new InvalidDataException($"{attributeNames.Length} collision attributes exceed the byte-sized attribute index");
+        }
+        if (Diagnostics != null)
+        {
+            var ai = 0;
+            foreach (var kv in phys.CollisionAttributes)
+            {
+                Diagnostics($"attribute #{ai++}: group={kv.GetStringProperty("m_CollisionGroupString")} as=[{string.Join(',', Strings(kv, "m_InteractAsStrings"))}] with=[{string.Join(',', Strings(kv, "m_InteractWithStrings"))}] exclude=[{string.Join(',', Strings(kv, "m_InteractExcludeStrings"))}]");
+            }
         }
 
         var vertices = new List<float>();
@@ -82,7 +95,22 @@ public static class MapExtractor
             TriangleAttributes = [.. triangleAttributes],
             AttributeNames = [.. names],
             AttributeInteractAs = [.. interactAs],
+            // Groups merged in from entity and prop models sit past the world
+            // table and exclude nothing.
+            AttributeInteractExclude = [.. attributeInteractExclude, .. Enumerable.Repeat(Array.Empty<string>(), names.Count - attributeInteractExclude.Length)],
         };
+    }
+
+    static string[] Strings(ValveKeyValue.KVObject kv, string key)
+    {
+        try
+        {
+            return kv.GetArray<string>(key) ?? [];
+        }
+        catch (KeyNotFoundException)
+        {
+            return [];
+        }
     }
 
     static void AppendPhys(
@@ -127,14 +155,14 @@ public static class MapExtractor
     // this is an allowlist, not a blocklist. func_clip_vphysics blocks physics
     // objects (grenades) while letting players and bullets through - on
     // de_dust2 it seals the mid-doors gap, which is lineup-critical.
-    // prop_dynamic is here for structural props the game treats as solid at
-    // round start - de_nuke's vent slats being the canonical case: a bot stood
-    // INSIDE the unbroken vent and threw through it because the solver had no
-    // collision there (validated 2026-08-30, tick-1 divergence at [439,-1401]).
-    // Breakable ones follow the same intact-at-round-start baseline as
-    // func_breakable glass. prop_physics* stay out: loose junk (mugs, hard
-    // hats) that moves the moment anything touches it is not geometry.
-    static readonly string[] SolidEntityClasses = ["func_brush", "func_clip_vphysics", "func_door", "func_door_rotating", "func_breakable", "prop_dynamic", "prop_door_rotating"];
+    // prop_dynamic is deliberately absent. It was added on 2026-08-30 for
+    // de_nuke's vent slats (one throw from inside the vent), and the corpus
+    // replay of 2026-09-04 showed the cost: 48 real throws that fall through
+    // the open slats into the vent, and 83 on de_mirage, all landed on
+    // prop_dynamic hulls the game does not collide grenades with. Breakables
+    // follow the same intact-at-round-start baseline as func_breakable glass.
+    // prop_physics* stay out: loose junk (mugs, hard
+    static readonly string[] SolidEntityClasses = ["func_brush", "func_clip_vphysics", "func_door", "func_door_rotating", "func_breakable", "prop_door_rotating"];
 
     // Retake is a separate game mode: its brushes (the tape borders walling off
     // each bombsite, e.g. de_mirage's [PR#]retake.asite/bsite func_brushes) are
@@ -199,7 +227,7 @@ public static class MapExtractor
             {
                 var className = entity.GetStringProperty("classname") ?? string.Empty;
                 var model = entity.GetStringProperty("model") ?? string.Empty;
-                if (!SolidEntityClasses.Contains(className) || model.Length == 0)
+                if (!SolidEntityClassOverride.Contains(className) || model.Length == 0)
                 {
                     continue;
                 }
@@ -239,6 +267,7 @@ public static class MapExtractor
                 // Props can carry a per-instance scale; brush entities never do.
                 var scales = entity.GetVector3Property("scales", Vector3.One);
                 var rotation = SourceAngleMatrix(angles);
+                Diagnostics?.Invoke($"entity {className} '{entity.GetStringProperty("targetname")}' model {model} at ({origin.X:F0},{origin.Y:F0},{origin.Z:F0}) solid={entity.GetStringProperty("solid")} spawnflags={entity.GetStringProperty("spawnflags")} health={entity.GetStringProperty("health")} parts={phys.Parts.Length} hulls={phys.Parts.Sum(pp => pp.Shape.Hulls.Length)} meshes={phys.Parts.Sum(pp => pp.Shape.Meshes.Length)}");
 
                 // Entity geometry gets its own attribute entries instead of
                 // merging into the world's "default" group: func_clip_vphysics

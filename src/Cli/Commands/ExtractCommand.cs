@@ -22,6 +22,15 @@ public static class ExtractCommand
         var buildId = ReadBuildId(gameDir);
         Console.WriteLine($"extracting {map} (build {buildId}) from {vpkPath}");
 
+        if (options.TryGetValue("solid-classes", out var classes))
+        {
+            MapExtractor.SolidEntityClassOverride = classes.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+            Console.WriteLine($"  solid entity classes: {string.Join(", ", MapExtractor.SolidEntityClassOverride)}");
+        }
+        if (options.ContainsKey("dump"))
+        {
+            MapExtractor.Diagnostics = line => Console.WriteLine("  " + line);
+        }
         var mesh = MapExtractor.ExtractWorldPhysics(vpkPath, map, buildId);
         var geoPath = Path.Combine(outDir, $"{map}.s2geo");
         mesh.Save(geoPath);
