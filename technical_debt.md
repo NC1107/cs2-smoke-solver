@@ -1886,3 +1886,10 @@ Fix: a slow contact with no floor under the hull is an ordinary bounce; the rest
 Corpus (same build, 15 maps): 59 -> 56 over 8u; within 3u up on italy, office, anubis, dust2 (95.5 -> 96.0) and vertigo, no map down.
 Test: `SlowWallContactTests`.
 Still open on the same target: [11] and [16] rest balanced on the top edge of a wall the real grenade rolls off (the rim case that edge tipping, faces-only and centre-support all failed on).
+
+### Loop iteration 11 (2026-09-04): a narrower hull in x/y only - FALSIFIED
+
+Third and last hull-shape attempt (after the sphere and the uniformly smaller box).
+Hypothesis: the rim balances need a hull whose corner reaches less far past an edge, so narrow x/y and keep the 2u height so floor contacts are unchanged.
+`HullHalfWidth` 1.75 / 1.5 / 1.0 on the same-build corpus, 15 maps: 111 / 201 / 425 over 8u against 56; every map worse already at 1.75 (dust2 96.0% -> 92.7%, ancient 93.8% -> 89.2%).
+The box is 2u in every axis and the hull shape is not where the rim misses come from; do not try hull-shape changes again.
