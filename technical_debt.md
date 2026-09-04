@@ -1830,3 +1830,10 @@ Measured from the captures: every grenade through an intact pane kept its headin
 Shipped: prop_dynamic merged as EntityBreakable when the model carries a `break_list` and no `break_command_list` (windows yes, nuke vent slats no); `ThrowConstants.GlassPassFactor = 0.40`; the exact sim passes through glass at that factor and ignores the broken pane for the rest of the flight.
 Corpus: office 12 to 8 on same-build throws, nuke 3 to 3, dust2/mirage/ancient/overpass/inferno/anubis unchanged (their glass props were never hit). Tests: GlassPassThroughTests.
 Not modelled: the voxel sweep still sees glass as solid, so a lineup whose only route is through a window is not proposed; and within one validation batch the first throw breaks a pane for the rest, which real rounds reset.
+
+### Loop iteration 8 (2026-09-04): community maps' models live in their own addon VPK - KEPT
+
+cs_shelter on matching builds was the weakest map (16 misses in 388, 86% within 3u), and the top cluster was four throws that met a row of garage windows the mesh did not have.
+The extractor searched only the map VPK and csgo/pak01_dir.vpk; community maps (cs_shelter, de_boulder, de_fachwerk) keep every prop in game/csgo_community_addons/<map>/<map>_dir.vpk, so all of their window props, static props and entity models were "model not found" and skipped without a word.
+The extractor now searches that VPK too, prints "NOT FOUND" for any model it still cannot resolve, and `rig/s2geo-dump.py` reads a mesh from the shell.
+Corpus: cs_shelter 16 to 9 on same-build throws (2.3% over 8u, 87.9% within 3u); official maps unaffected. de_boulder and de_fachwerk re-extracted with the same fix.

@@ -144,17 +144,34 @@ public static class MapExtractor
         // own small VPK - only the compiled level/entity/nav data is. The actual
         // .vmdl_c/.vphys_c payloads live in the shared game content archive
         // alongside it (pak01_dir.vpk), same directory as the maps/ folder.
-        var sharedVpkPath = Path.Combine(Path.GetDirectoryName(Path.GetDirectoryName(mapVpkPath))!, "pak01_dir.vpk");
-        using var sharedPackage = File.Exists(sharedVpkPath) ? new Package() : null;
-        sharedPackage?.Read(sharedVpkPath);
+        // Community maps (cs_shelter, de_boulder, de_fachwerk) keep their own
+        // models in game/csgo_community_addons/<map>/<map>_dir.vpk rather than
+        // pak01: without it every window and prop on those maps was "model not
+        // found" and silently skipped (cs_shelter's garage windows, 2026-09-04).
+        var csgoDir = Path.GetDirectoryName(Path.GetDirectoryName(mapVpkPath))!;
+        var sharedPackages = new List<Package>();
+        foreach (var candidate in new[]
+        {
+            Path.Combine(csgoDir, "pak01_dir.vpk"),
+            Path.Combine(Path.GetDirectoryName(csgoDir)!, "csgo_community_addons", mapName, $"{mapName}_dir.vpk"),
+        })
+        {
+            if (File.Exists(candidate))
+            {
+                var shared = new Package();
+                shared.Read(candidate);
+                sharedPackages.Add(shared);
+            }
+        }
+        using var disposeShared = new PackageList(sharedPackages);
 
         AppendPhys(phys, vertices, indices, triangleAttributes, i => (byte)i, v => v);
         if (Diagnostics != null)
         {
             Diagnostics($"world hull m_nFlags histogram: {string.Join(" ", HullFlagHistogram.OrderByDescending(kv => kv.Value).Select(kv => $"{kv.Key}x{kv.Value}"))}");
         }
-        AppendSolidEntityModels(package, sharedPackage, vertices, indices, triangleAttributes, names, interactAs);
-        AppendStaticProps(package, sharedPackage, vertices, indices, triangleAttributes, names, interactAs);
+        AppendSolidEntityModels(package, sharedPackages, vertices, indices, triangleAttributes, names, interactAs);
+        AppendStaticProps(package, sharedPackages, vertices, indices, triangleAttributes, names, interactAs);
 
         return new CollisionMesh
         {
@@ -937,6 +954,43 @@ public static class MapExtractor
     static string SurfaceName(uint hash) =>
         KnownSurfaces.FirstOrDefault(n => ValveResourceFormat.Utils.StringToken.Get(n) == hash) ?? "?";
 
+    /// <summary>
+    /// Lazy per-package, per-extension lookup of entries by lower-case path:
+    /// the map's own VPK first, then every shared package in order.
+    /// </summary>
+    sealed class EntryIndex(Package map, IReadOnlyList<Package> shared)
+    {
+        readonly Dictionary<(Package, string), Dictionary<string, PackageEntry>> _byPath = [];
+
+        public (Package Package, PackageEntry Entry)? Find(string path, string extension)
+        {
+            foreach (var candidate in shared.Prepend(map))
+            {
+                if (!_byPath.TryGetValue((candidate, extension), out var entries))
+                {
+                    entries = FindEntries(candidate, extension).ToDictionary(e => e.GetFullPath().ToLowerInvariant(), e => e);
+                    _byPath[(candidate, extension)] = entries;
+                }
+                if (entries.TryGetValue(path, out var entry))
+                {
+                    return (candidate, entry);
+                }
+            }
+            return null;
+        }
+    }
+
+    sealed class PackageList(List<Package> packages) : IDisposable
+    {
+        public void Dispose()
+        {
+            foreach (var package in packages)
+            {
+                package.Dispose();
+            }
+        }
+    }
+
     static readonly string[] SolidEntityClasses = ["func_brush", "func_clip_vphysics", "func_door", "func_door_rotating", "func_breakable", "prop_door_rotating", "prop_dynamic"];
 
     /// <summary>
@@ -991,36 +1045,19 @@ public static class MapExtractor
 
     static void AppendSolidEntityModels(
         Package package,
-        Package? sharedPackage,
+        IReadOnlyList<Package> sharedPackages,
         List<float> vertices,
         List<int> indices,
         List<byte> triangleAttributes,
         List<string> names,
         List<string[]> interactAs)
     {
-        // Lazy: built once, replacing an O(entities x entries) rescan per entity.
         // Brush entity models are compiled into the map's own VPK; prop models
-        // (prop_dynamic) live in the shared content archive, and usually
+        // (prop_dynamic) live in the shared content archives, and usually
         // reference their collision as a separate .vphys_c rather than
         // embedding it - the same two-step lookup AppendStaticProps does.
-        Dictionary<string, SteamDatabase.ValvePak.PackageEntry>? modelsByPath = null;
-        Dictionary<string, SteamDatabase.ValvePak.PackageEntry>? sharedModelsByPath = null;
-        Dictionary<string, SteamDatabase.ValvePak.PackageEntry>? physByPath = null;
-        Dictionary<string, SteamDatabase.ValvePak.PackageEntry>? sharedPhysByPath = null;
-        (Package Package, SteamDatabase.ValvePak.PackageEntry Entry)? Find(string path, string extension, ref Dictionary<string, SteamDatabase.ValvePak.PackageEntry>? local, ref Dictionary<string, SteamDatabase.ValvePak.PackageEntry>? shared)
-        {
-            local ??= FindEntries(package, extension).ToDictionary(e => e.GetFullPath().ToLowerInvariant(), e => e);
-            if (local.TryGetValue(path, out var localEntry))
-            {
-                return (package, localEntry);
-            }
-            if (sharedPackage == null)
-            {
-                return null;
-            }
-            shared ??= FindEntries(sharedPackage, extension).ToDictionary(e => e.GetFullPath().ToLowerInvariant(), e => e);
-            return shared.TryGetValue(path, out var sharedEntry) ? (sharedPackage, sharedEntry) : null;
-        }
+        var index = new EntryIndex(package, sharedPackages);
+        (Package Package, SteamDatabase.ValvePak.PackageEntry Entry)? Find(string path, string extension) => index.Find(path, extension);
         foreach (var lumpEntry in FindEntries(package, "vents_c"))
         {
             package.ReadEntry(lumpEntry, out var lumpRaw);
@@ -1042,8 +1079,9 @@ public static class MapExtractor
                 {
                     continue;
                 }
-                if (Find((model + "_c").ToLowerInvariant(), "vmdl_c", ref modelsByPath, ref sharedModelsByPath) is not { } modelHit)
+                if (Find((model + "_c").ToLowerInvariant(), "vmdl_c") is not { } modelHit)
                 {
+                    Diagnostics?.Invoke($"entity {className} model {model} NOT FOUND in the map or shared VPK; skipped");
                     continue;
                 }
                 modelHit.Package.ReadEntry(modelHit.Entry, out var raw);
@@ -1062,7 +1100,7 @@ public static class MapExtractor
                 var phys = modelData.GetEmbeddedPhys();
                 if (phys == null &&
                     modelData.GetReferencedPhysNames().FirstOrDefault() is { } refPhysName &&
-                    Find((refPhysName + "_c").ToLowerInvariant(), "vphys_c", ref physByPath, ref sharedPhysByPath) is { } physHit)
+                    Find((refPhysName + "_c").ToLowerInvariant(), "vphys_c") is { } physHit)
                 {
                     physHit.Package.ReadEntry(physHit.Entry, out var physRaw);
                     using var physResource = new Resource();
@@ -1134,13 +1172,14 @@ public static class MapExtractor
     // origin/angles-only transform.
     static void AppendStaticProps(
         Package package,
-        Package? sharedPackage,
+        IReadOnlyList<Package> sharedPackages,
         List<float> vertices,
         List<int> indices,
         List<byte> triangleAttributes,
         List<string> names,
         List<string[]> interactAs)
     {
+        var index = new EntryIndex(package, sharedPackages);
         var worldEntry = FindEntries(package, "vwrld_c")
             .FirstOrDefault(e => e.GetFullPath().EndsWith("world.vwrld_c", StringComparison.OrdinalIgnoreCase));
         if (worldEntry == null)
@@ -1158,39 +1197,8 @@ public static class MapExtractor
         // Model and physics payloads are looked up in the map's own VPK first,
         // falling back to the shared content archive - most static prop models
         // live only in the latter (see the pak01_dir.vpk comment above).
-        Dictionary<string, PackageEntry>? modelsByPath = null;
-        Dictionary<string, PackageEntry>? sharedModelsByPath = null;
-        (Package Package, PackageEntry Entry)? FindModel(string path)
-        {
-            modelsByPath ??= FindEntries(package, "vmdl_c").ToDictionary(e => e.GetFullPath().ToLowerInvariant(), e => e);
-            if (modelsByPath.TryGetValue(path, out var localEntry))
-            {
-                return (package, localEntry);
-            }
-            if (sharedPackage == null)
-            {
-                return null;
-            }
-            sharedModelsByPath ??= FindEntries(sharedPackage, "vmdl_c").ToDictionary(e => e.GetFullPath().ToLowerInvariant(), e => e);
-            return sharedModelsByPath.TryGetValue(path, out var sharedEntry) ? (sharedPackage, sharedEntry) : null;
-        }
-
-        Dictionary<string, PackageEntry>? physByPath = null;
-        Dictionary<string, PackageEntry>? sharedPhysByPath = null;
-        (Package Package, PackageEntry Entry)? FindPhys(string path)
-        {
-            physByPath ??= FindEntries(package, "vphys_c").ToDictionary(e => e.GetFullPath().ToLowerInvariant(), e => e);
-            if (physByPath.TryGetValue(path, out var localEntry))
-            {
-                return (package, localEntry);
-            }
-            if (sharedPackage == null)
-            {
-                return null;
-            }
-            sharedPhysByPath ??= FindEntries(sharedPackage, "vphys_c").ToDictionary(e => e.GetFullPath().ToLowerInvariant(), e => e);
-            return sharedPhysByPath.TryGetValue(path, out var sharedEntry) ? (sharedPackage, sharedEntry) : null;
-        }
+        (Package Package, PackageEntry Entry)? FindModel(string path) => index.Find(path, "vmdl_c");
+        (Package Package, PackageEntry Entry)? FindPhys(string path) => index.Find(path, "vphys_c");
 
         // Same model gets placed many times (crates, trim, foliage); reading
         // and re-parsing its compiled resource per instance would be wasted
