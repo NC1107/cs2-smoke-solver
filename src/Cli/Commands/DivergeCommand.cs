@@ -47,10 +47,16 @@ public static class DivergeCommand
         var total = 0;
         var phantoms = new Dictionary<int, (int Misses, float ErrSum, Vector3 Where)>();
         var phantomBuilds = new Dictionary<int, Dictionary<string, int>>();
+        var classes = new Dictionary<string, (int Count, float ErrSum)>();
+        var onlyServerBuild = options.GetValueOrDefault("server-build", "");
         foreach (var file in reportFiles)
         {
             using var report = JsonDocument.Parse(File.ReadAllText(file));
             var build = report.RootElement.TryGetProperty("build", out var b) ? b.ToString() : "?";
+            if (onlyServerBuild.Length > 0 && (!report.RootElement.TryGetProperty("serverBuild", out var sb) || sb.ToString() != onlyServerBuild))
+            {
+                continue;
+            }
             var rows = report.RootElement.GetProperty("results").EnumerateArray()
                 .Where(r => r.TryGetProperty("Detonated", out var det) && det.GetBoolean() && r.TryGetProperty("Pos", out _))
                 .Where(r => only is { } i ? r.GetProperty("Index").GetInt32() == i : r.GetProperty("ErrPredicted").GetSingle() > minErr)
@@ -68,19 +74,29 @@ public static class DivergeCommand
                     }
                     continue;
                 }
+                var phantomHits = Replay(collider, constants, row, pos, vel, capture, quiet: summary);
+                // The report's error is from grading time; a throw the current
+                // physics and mesh already get right is no longer a miss.
+                if (summary && only is null && LastError <= minErr)
+                {
+                    continue;
+                }
                 replayed++;
-                foreach (var (triangle, where) in Replay(collider, constants, row, pos, vel, capture, quiet: summary))
+                var cls = classes.GetValueOrDefault(LastClass);
+                classes[LastClass] = (cls.Count + 1, cls.ErrSum + LastError);
+                foreach (var (triangle, where) in phantomHits)
                 {
                     var entry = phantoms.GetValueOrDefault(triangle);
-                    phantoms[triangle] = (entry.Misses + 1, entry.ErrSum + row.GetProperty("ErrPredicted").GetSingle(), where);
+                    phantoms[triangle] = (entry.Misses + 1, entry.ErrSum + LastError, where);
                     var builds = phantomBuilds.GetValueOrDefault(triangle) ?? (phantomBuilds[triangle] = []);
                     builds[build] = builds.GetValueOrDefault(build) + 1;
                 }
             }
         }
-        Console.WriteLine($"replayed {replayed}/{total} misses over {minErr:F0}u from {reportFiles.Count} report(s)");
+        Console.WriteLine($"replayed {replayed} still-missing of {total} reported misses over {minErr:F0}u from {reportFiles.Count} report(s)");
         if (summary)
         {
+            Console.WriteLine("mechanisms: " + string.Join("  ", classes.OrderByDescending(kv => kv.Value.Count).Select(kv => $"{kv.Key} {kv.Value.Count} (mean {kv.Value.ErrSum / kv.Value.Count:F0}u)")));
             Console.WriteLine("phantom contacts: triangles the sim bounced off before the split while the real grenade did not, by misses involved");
             foreach (var (triangle, entry) in phantoms.OrderByDescending(kv => kv.Value.Misses).Take(int.Parse(options.GetValueOrDefault("top", "25"), CultureInfo.InvariantCulture)))
             {
@@ -93,6 +109,12 @@ public static class DivergeCommand
         return 0;
     }
 
+    /// <summary>Which of the four ways a miss happens this one was: see Classify.</summary>
+    public static string LastClass { get; private set; } = "";
+
+    /// <summary>The replayed rest error of the last throw, under the current physics and mesh.</summary>
+    public static float LastError { get; private set; }
+
     static List<(int Triangle, Vector3 Where)> Replay(TriangleCollider collider, ThrowConstants constants, JsonElement row, Vector3 pos, Vector3 vel, float[][] samples, bool quiet = false)
     {
         var phantomTriangles = new List<(int, Vector3)>();
@@ -102,6 +124,7 @@ public static class DivergeCommand
         var result = GrenadeTrajectory.SimulateExactRaw(collider, pos, vel, constants, tickTrace: simTicks, bounceTrace: simBounces);
         var realBounces = RealBounces(samples, vel);
         var realRest = Vec(row.GetProperty("RealRest"));
+        LastError = Vector3.Distance(result.RestPoint, realRest);
 
         var click = row.GetProperty("Strength").GetSingle() switch { >= 0.99f => "left", <= 0.01f => "right", _ => "mid" };
         output.WriteLine();
@@ -117,6 +140,8 @@ public static class DivergeCommand
                 break;
             }
         }
+
+        LastClass = Classify(collider, constants, simBounces, realBounces, divergence);
 
         // Pair every sim bounce with the nearest real one (by tick): the pair
         // whose ticks or contacts disagree is where the geometry differs.
@@ -184,6 +209,41 @@ public static class DivergeCommand
             output.WriteLine($"  one tick before the last pre-split bounce (t{at}): sim/real {Vector3.Distance(simTicks[at].Position, Sample(samples[at])):F1}u apart");
         }
             return phantomTriangles;
+    }
+
+    /// <summary>
+    /// The mechanism behind a miss, from the bounces around the split:
+    /// settle (paths never split; the rest differs), phantom (the sim bounced
+    /// off something the game did not), missed (the game bounced off
+    /// something we lack), normal (both bounced together but the real rebound
+    /// implies a surface tilted more than 8 degrees from ours), rebound (same
+    /// surface, different outcome) or drift (split with no bounce nearby).
+    /// </summary>
+    static string Classify(TriangleCollider collider, ThrowConstants constants, List<BounceRecord> sim, List<(int Tick, Vector3 Position, Vector3 Normal, Vector3 Before, Vector3 After)> real, int divergence)
+    {
+        if (divergence < 0)
+        {
+            return "settle";
+        }
+        var simNear = sim.Where(b => b.Tick <= divergence + 2 && b.Tick >= divergence - 12).OrderByDescending(b => b.Tick).FirstOrDefault();
+        var realNear = real.Where(r => r.Tick <= divergence + 2 && r.Tick >= divergence - 12).OrderByDescending(r => r.Tick).FirstOrDefault();
+        var hasSim = simNear.Tick > 0 || (sim.Count > 0 && sim[0].Tick == 0 && divergence <= 14);
+        var hasReal = realNear.Tick > 0;
+        if (hasSim && hasReal && Math.Abs(simNear.Tick - realNear.Tick) <= 6)
+        {
+            var (fit, _) = FitNormal(realNear.Before, realNear.After, constants);
+            var angle = MathF.Acos(Math.Clamp(Vector3.Dot(fit, simNear.Normal), -1f, 1f)) * 180f / MathF.PI;
+            return angle > 8f ? "normal" : "rebound";
+        }
+        if (hasSim && !hasReal)
+        {
+            return "phantom";
+        }
+        if (hasReal && !hasSim)
+        {
+            return "missed";
+        }
+        return "drift";
     }
 
     static string SpeedWord(BounceRecord b) => $"{b.VelocityBefore.Length():F0}->{b.VelocityAfter.Length():F0}";
