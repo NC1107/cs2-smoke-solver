@@ -1893,3 +1893,9 @@ Third and last hull-shape attempt (after the sphere and the uniformly smaller bo
 Hypothesis: the rim balances need a hull whose corner reaches less far past an edge, so narrow x/y and keep the 2u height so floor contacts are unchanged.
 `HullHalfWidth` 1.75 / 1.5 / 1.0 on the same-build corpus, 15 maps: 111 / 201 / 425 over 8u against 56; every map worse already at 1.75 (dust2 96.0% -> 92.7%, ancient 93.8% -> 89.2%).
 The box is 2u in every axis and the hull shape is not where the rim misses come from; do not try hull-shape changes again.
+
+### Loop iteration 12 (2026-09-04): rest only on gentle slopes - FALSIFIED
+
+Hypothesis from train [48] (sim parks on a 34 degree slope the real grenade slides down) and anubis [54]: a slow contact should only count as rest when the surface normal is steeper than FloorNormalZ (0.7).
+`RestNormalZ` 0.8 / 0.9 / 0.95 on the same-build corpus, 15 maps: 56 / 56 / 65 over 8u against 56; within 3u unchanged at 0.8, dust2 96.0 -> 95.7 at 0.9, dust2 94.8 and overpass 88.0 at 0.95.
+The slope cases do not respond (the grenade micro-hops and rests anyway) and steep thresholds break genuine rests on ramps. Reverted; do not retry a rest-normal threshold.
