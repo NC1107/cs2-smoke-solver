@@ -36,6 +36,7 @@ public static class DivergeCommand
         // appear in. The surfaces the game does not collide with, by count.
         var summary = options.ContainsKey("summary");
         TraceEnabled = options.ContainsKey("trace");
+        OffsetsEnabled = options.ContainsKey("offsets");
         var reportFiles = options.TryGetValue("report", out var one)
             ? [one]
             : Directory.EnumerateFiles(options.GetValueOrDefault("reports", Path.Combine(Path.GetDirectoryName(Path.GetFullPath(Require(options, "geo"))) ?? ".", "validation")), $"{mesh.MapName}-*.json").OrderBy(f => f).ToList();
@@ -111,6 +112,10 @@ public static class DivergeCommand
                 Console.WriteLine($"  {entry.Misses,3} misses  tri {triangle,8} [{face.Attribute}#{face.AttributeIndex}] n({n.X:F2},{n.Y:F2},{n.Z:F2}) {size,4:F0}u  at ({entry.Where.X:F0},{entry.Where.Y:F0},{entry.Where.Z:F0})  builds {string.Join(" ", phantomBuilds[triangle].Select(kv => $"{kv.Key}x{kv.Value}"))}");
             }
         }
+        foreach (var line in Offsets)
+        {
+            Console.WriteLine(line);
+        }
         return 0;
     }
 
@@ -120,6 +125,10 @@ public static class DivergeCommand
     /// <summary>The replayed rest error of the last throw, under the current physics and mesh.</summary>
     public static float LastError { get; private set; }
     static bool TraceEnabled;
+    // --offsets: one line per paired bounce with the position offset the
+    // bounce tick itself introduced between sim and real (measurement mode).
+    static bool OffsetsEnabled;
+    static readonly List<string> Offsets = [];
 
     static List<(int Triangle, Vector3 Where)> Replay(TriangleCollider collider, ThrowConstants constants, JsonElement row, Vector3 pos, Vector3 vel, float[][] samples, bool quiet = false)
     {
@@ -139,6 +148,10 @@ public static class DivergeCommand
             }
         }
         var realBounces = RealBounces(samples, vel);
+        if (OffsetsEnabled)
+        {
+            CollectOffsets(simTicks, simBounces, samples, realBounces);
+        }
         var realRest = Vec(row.GetProperty("RealRest"));
         LastError = Vector3.Distance(result.RestPoint, realRest);
 
@@ -300,6 +313,49 @@ public static class DivergeCommand
     /// Real bounces are velocity discontinuities in the capture; the impulse
     /// direction (velocity change minus the gravity step) is the contact normal.
     /// </summary>
+    // For every sim bounce whose real twin is within a tick and whose paths
+    // were within 1.5u the tick before: the extra offset (real - sim) present
+    // two ticks after the bounce, in the frame of the pre-bounce horizontal
+    // velocity. T is the fraction of the bounce tick before the contact.
+    static void CollectOffsets(List<(Vector3 Position, Vector3 Velocity)> simTicks, List<BounceRecord> simBounces, float[][] samples, List<(int Tick, Vector3 Position, Vector3 Normal, Vector3 Before, Vector3 After)> realBounces)
+    {
+        foreach (var b in simBounces)
+        {
+            var t = b.Tick;
+            if (t < 1 || t + 2 >= simTicks.Count || t + 2 >= samples.Length)
+            {
+                continue;
+            }
+            var real = realBounces.FirstOrDefault(r => Math.Abs(r.Tick - t) <= 1);
+            if (real.Normal == Vector3.Zero)
+            {
+                continue;
+            }
+            var before = Sample(samples[t - 1]) - simTicks[t - 1].Position;
+            if (before.Length() > 1.5f)
+            {
+                continue;
+            }
+            var after = Sample(samples[t + 2]) - simTicks[t + 2].Position;
+            var introduced = after - before;
+            var vh = new Vector3(b.VelocityBefore.X, b.VelocityBefore.Y, 0f);
+            var speedH = vh.Length();
+            if (speedH < 1f)
+            {
+                continue;
+            }
+            var dir = vh / speedH;
+            var side = Vector3.Cross(Vector3.UnitZ, dir);
+            var start = simTicks[t - 1].Position;
+            var moved = new Vector3(b.Contact.X - start.X, b.Contact.Y - start.Y, 0f).Length();
+            var frac = Math.Clamp(moved / (speedH / 64f), 0f, 1f);
+            var realDv = real.After - real.Before;
+            var simDv = b.VelocityAfter - b.VelocityBefore;
+            Offsets.Add(FormattableString.Invariant(
+                $"OFF T={frac:F3} vh={speedH:F1} vz={b.VelocityBefore.Z:F1} nz={b.Normal.Z:F2} realTick={real.Tick - t} along={Vector3.Dot(introduced, dir):F3} side={Vector3.Dot(introduced, side):F3} dz={introduced.Z:F3} dvErr={(realDv - simDv).Length():F1} vzAfter={b.VelocityAfter.Z:F1} rvzAfter={real.After.Z:F2} svhAfter={new Vector3(b.VelocityAfter.X, b.VelocityAfter.Y, 0f).Length():F2} rvhAfter={new Vector3(real.After.X, real.After.Y, 0f).Length():F2} rvzBefore={real.Before.Z:F2} rvhBefore={new Vector3(real.Before.X, real.Before.Y, 0f).Length():F2}"));
+        }
+    }
+
     static List<(int Tick, Vector3 Position, Vector3 Normal, Vector3 Before, Vector3 After)> RealBounces(float[][] samples, Vector3 launch)
     {
         var list = new List<(int, Vector3, Vector3, Vector3, Vector3)>();

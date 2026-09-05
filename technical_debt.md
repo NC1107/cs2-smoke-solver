@@ -1919,3 +1919,11 @@ Observation (cs_shelter 144929 [40]/[44], flat-floor crouch throws, 35 throws at
 15. Integrate position with the velocity from before the tick's gravity update instead of the trapezoid (`GravityLead` 0): within 3u collapses to 24-36% on the first three maps; free flight is integrated correctly and the effect is confined to the bounce tick.
 16. Resolve the contact at the end of the tick (full tick at the pre-bounce velocity, push out along the normal, reflected velocity from the next tick): 354 over 8u, within 3u 61-83% per map. The sub-tick contact model is right.
 Next: measure instead of guessing - for every paired sim/real bounce, the position offset the bounce tick itself introduces, as a function of the sub-tick fraction and the velocities, then fit the model to that.
+
+### Loop iteration 17 (2026-09-04): bounce-tick offsets measured, remainder gravity - FALSIFIED
+
+`diverge --offsets` (new): for every paired sim/real bounce, the position offset the bounce tick introduces (real - sim two ticks after, minus the offset one tick before), in the frame of the pre-bounce horizontal velocity, with the sub-tick fraction T and both post-bounce velocities.
+7,263 paired bounces on six maps, 5,079 matched floor bounces: the bounce tick introduces no offset (along median 0.00u, mean 0.1u, no dependence on T or speed; side 0.00u).
+Post-bounce velocities: horizontal identical (median difference 0.00 u/s); vertical fits real = sim reflection - 3.33 (1 - T) u/s where the sim subtracts 5 (1 - T) for the remainder's gravity.
+Implemented as `RemainderGravity` 0.667 / 0.0: 63 / 312 over 8u against 56, within 3u down on 11 maps at 0.667. The fit does not transfer, so the (1 - T) dependence is an artifact of how the capture samples velocity within a tick, not an engine rule. Reverted.
+Where the flat-floor hop drift comes from is still open; the bounce tick itself is exonerated.
