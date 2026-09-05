@@ -4,7 +4,7 @@
 // selecting a lineup route through the callbacks main.js registers.
 
 import { state, filtered, clickShort, clickClass, esc, skyAngle, proMatched, scoreBreakdown, referenceBand, referenceFallback,
-  movementWords, clickWords, aimWords, difficultyWords, TARGET_SNAP_RADIUS, humanError } from "./state.js?v=111";
+  movementWords, clickWords, aimWords, difficultyWords, TARGET_SNAP_RADIUS, humanError } from "./state.js?v=112";
 
 const statusEl = state.statusEl;
 const PAGE_SIZE = 50;
@@ -160,6 +160,14 @@ function stanceTag(l) {
   return `<span class="ref nearwall" title="Near a wall but NOT touching it - your shoulder sits about ${gap.toFixed(0)} units short. Walking into the wall puts you in the wrong place; this spot has to come from the pasted position, not from the wall">${gap.toFixed(0)}u off</span>`;
 }
 
+function glassAltText(l) {
+  if (!Array.isArray(l.restIfBroken) || !Array.isArray(l.rest)) {
+    return "somewhere else entirely";
+  }
+  const d = Math.hypot(l.restIfBroken[0] - l.rest[0], l.restIfBroken[1] - l.rest[1], l.restIfBroken[2] - l.rest[2]);
+  return `about ${d.toFixed(0)} units away`;
+}
+
 // At most one line of tags, and only facts a player would change their pick
   // over: pros use this spot, or you can be seen throwing it. "exposed" was
   // our word for the second one and had to be learned.
@@ -171,6 +179,10 @@ function stanceTag(l) {
     stanceTag(l),
     proMatched(l) ? `<span class="ref pro" title="Pro: pros throw this exact smoke from this spot in real matches - same spot, and it lands where this one lands">Pro</span>` : "",
     l.exposed ? `<span class="ref exposed" title="Seen while throwing: a clear line of sight from this spot to where the smoke lands, so anyone holding that area sees you throw it">Exposed</span>` : "",
+    // The landing shown assumes the window it flies through is still intact
+    // (round start). Once someone has shot it out the same throw flies on at
+    // full speed and lands somewhere else - the API says where.
+    l.stateDependent ? `<span class="ref glass" title="Glass: this smoke breaks a window on the way and lands here only while that window is intact. Once it is already broken the smoke keeps its speed and lands ${glassAltText(l)}">Glass</span>` : "",
     // The other half of ranking by reproducibility: when a throw survives to
     // the list with a weak reference (or none), say so on the row instead of
     // letting it borrow the visual weight of a lineup you can actually copy.

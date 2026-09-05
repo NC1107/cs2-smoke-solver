@@ -34,6 +34,7 @@ var commands = new Dictionary<string, Func<Dictionary<string, string>, int>>
     ["diverge"] = DivergeCommand.Run,
     ["replay"] = ReplayCommand.Run,
     ["reindex"] = _ => { ValidateCommand.RebuildValidationIndex(); return 0; },
+    ["probe"] = ProbeCommand.Run,
 };
 
 if (args.Length == 0 || !commands.TryGetValue(args[0], out var command))
@@ -63,6 +64,7 @@ if (args.Length == 0 || !commands.TryGetValue(args[0], out var command))
           meshdiff   --geo <file.s2geo> --vpk <map.vpk> [--out out.json] [--step 16] [--threshold 8] (physics-vs-render geometry diff, red/orange overlay data)
           exportgltf --vpk <map.vpk> [--out out.glb] (textured render mesh export)
           reindex    (rebuild data/validation/index.json from the reports on disk)
+          probe      --geo <file.s2geo> [--distance 160] [--speed 600] (fire one synthetic grenade through every breakable on the rig, record pass/bounce)
         """);
     return 1;
 }

@@ -565,6 +565,7 @@ export function scoreBreakdown(l, target) {
     : tier === "reticle" ? "aim reference off-centre" : "",
     tier === "sky" ? -70 : tier === "flat" ? -35 : tier === "reticle" ? -10 : 0);
   add("you are visible while throwing", l.exposed ? -50 : 0);
+  add("only works while the window it breaks is intact", l.stateDependent ? -60 : 0);
   add(`${l.Bounces} bounce${l.Bounces === 1 ? "" : "s"}`, -Math.min((l.Bounces ?? 0) * BOUNCE_PER, BOUNCE_CAP));
   add(`${(l.flightTime ?? 0).toFixed(1)}s in the air`, -Math.min((l.flightTime ?? 0) * FLIGHT_PER_SECOND, FLIGHT_CAP));
   if (state.proWeighting && proMatched(l)) {

@@ -195,3 +195,12 @@ The residual is a consistent ~0.5-1.5% *overshoot* (we land slightly farther tha
 So the ~1% is a genuine small magnitude difference, most plausibly the measurement convention (Valve's distance origin vs the smoke's ~12-16u-forward spawn point, or first-landing vs settle point) and the precision of a hand-measured reference table. It is an order of magnitude below the collision-mesh-fidelity error and is not worth re-fitting the (telemetry-measured) constants against.
 
 Valve's fourth row, a plain *running* (ground, no jump) throw of 3045u @ -40.7°, is not reproduced here: the sim has no ground-running throw type (only `RunJumpThrow` adds movement velocity), so there is no calibrated constant for it.
+
+## Breakables, doors and vents (probed on the rig 2026-09-05)
+
+`probe --geo <map>` fires one synthetic grenade through every EntityBreakable and EntityDoor cluster of a map, then a second one at the same (now broken) pane, and reads the capture.
+Every pane that breaks in the game passes the grenade at exactly 0.40 of its speed on the first throw and at full speed once broken: cs_office and cs_shelter windows (30 corpus contacts, all 0.40 or 1.00), de_inferno apartments windows, back-alley boards and the upstairs cluster, de_ancient pots (first-throw rest within 1u), de_anubis props (within 3u).
+Panes that bounce the grenade in the game bounce in the sim too, because a world surface coincides with them: every de_nuke "breakable" (hut windows, locker and observation windows, the vents), de_inferno's banana and deck windows, de_train's and de_vertigo's windows.
+Doors are solid and bounce (nuke, inferno, vertigo, 0.1u).
+The exception is de_train's electrical box at (-180, 6, -176): the sim passes it at 0.40, the game bounces, both throws.
+Glass state is round state: a lineup that breaks a pane carries `GlassBreaks` and `RestIfBroken`; the API marks it `stateDependent` when the two landings differ by more than 8u and ranks it below every state-independent throw; validation grades each throw against the pane state its capture shows (`GlassState` intact / gone) and `replay` re-grades old reports against whichever state fits.

@@ -179,6 +179,13 @@ public static class TargetSolver
         var collider = brokenGroups is { Count: > 0 }
             ? BuildGrenadeColliderExcluding(mesh, min, max, brokenGroups)
             : BuildGrenadeCollider(mesh, min, max);
+        // Same world with the glass gone, for lineups that break a pane: only
+        // when the map has panes and the query has not already removed them.
+        var hasGlass = mesh.AttributeNames.Any(n => n.Equals("EntityBreakable", StringComparison.Ordinal));
+        var glassAlreadyGone = brokenGroups?.Contains("EntityBreakable") ?? false;
+        var colliderGlassGone = hasGlass && !glassAlreadyGone
+            ? BuildGrenadeColliderExcluding(mesh, min, max, [.. brokenGroups ?? [], "EntityBreakable"])
+            : null;
 
         // A target with its own height still gets settled: a 3D click lands
         // on whatever the pointer was over, and against a crate that is its
@@ -414,7 +421,7 @@ public static class TargetSolver
         // The cell zone above is the sweep's recall filter; the promise the
         // user actually made ("within `tolerance` of this point") is enforced
         // here, against each candidate's exact rest point.
-        var verified = LineupSolver.VerifyExact(grid, collider, zoneCrossings, candidates, minStability: minStability, constants: constants, onCandidate: onCandidate, aimTarget: target, tolerance: tolerance, ct: ct);
+        var verified = LineupSolver.VerifyExact(grid, collider, zoneCrossings, candidates, minStability: minStability, constants: constants, onCandidate: onCandidate, aimTarget: target, tolerance: tolerance, colliderGlassGone: colliderGlassGone, ct: ct);
         // An exact-spot solve that the voxel sweep answered with nothing gets
         // the real simulator over the whole lattice before it is allowed to
         // say no: the grid is an approximation, and "from right here" is the
@@ -430,7 +437,7 @@ public static class TargetSolver
                     strengths, constants, ct: ct));
             }
             onPhase?.Invoke("verify", rescued.Count);
-            verified = LineupSolver.VerifyExact(grid, collider, zoneCrossings, rescued, minStability: minStability, constants: constants, onCandidate: onCandidate, aimTarget: target, tolerance: tolerance, ct: ct);
+            verified = LineupSolver.VerifyExact(grid, collider, zoneCrossings, rescued, minStability: minStability, constants: constants, onCandidate: onCandidate, aimTarget: target, tolerance: tolerance, colliderGlassGone: colliderGlassGone, ct: ct);
         }
 
         // Some stand spots only fit the player crouched - under a vent, a stair
@@ -502,7 +509,8 @@ public static class TargetSolver
             [.. lineups],
             collider,
             playerCollider,
-            emptyReason);
+            emptyReason,
+            colliderGlassGone);
     }
 
     // How far a settled target sits out from a wall: about a smoke grenade's

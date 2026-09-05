@@ -73,8 +73,15 @@ public static class ReplayCommand
             Console.WriteLine("edge tipping off");
         }
         var collider = new TriangleCollider(mesh, meshMin, meshMax, solid);
+        // The same world with every breakable pane gone. A validation run
+        // breaks panes as it goes, so a report's later throws through a pane
+        // saw no glass; without the pane's state a throw that breaks glass is
+        // graded against whichever rest is closer and counted as corrected.
+        // Reports that recorded GlassState are graded against that state.
+        var glassMask = mesh.GroupMask(["EntityBreakable"]);
+        var glassGone = glassMask.Any(g => g) ? new TriangleCollider(mesh, meshMin, meshMax, a => solid(a) && !glassMask[a]) : null;
 
-        var rows = new List<(string Report, int Index, Vector3 Pos, Vector3 Vel, Vector3 Real, float Reported)>();
+        var rows = new List<(string Report, int Index, Vector3 Pos, Vector3 Vel, Vector3 Real, float Reported, string? GlassState)>();
         var rowBuild = new List<string>();
         var onlyBuild = options.GetValueOrDefault("build", "");
         foreach (var file in Directory.EnumerateFiles(reportsDir, $"{mesh.MapName}-*.json").OrderBy(f => f))
@@ -96,7 +103,8 @@ public static class ReplayCommand
                 {
                     continue;
                 }
-                rows.Add((Path.GetFileNameWithoutExtension(file), r.GetProperty("Index").GetInt32(), Vec(pos), Vec(vel), Vec(real), r.GetProperty("ErrPredicted").GetSingle()));
+                rows.Add((Path.GetFileNameWithoutExtension(file), r.GetProperty("Index").GetInt32(), Vec(pos), Vec(vel), Vec(real), r.GetProperty("ErrPredicted").GetSingle(),
+                    r.TryGetProperty("GlassState", out var gs) && gs.ValueKind == JsonValueKind.String ? gs.GetString() : null));
                 rowBuild.Add(build);
             }
         }
@@ -109,14 +117,28 @@ public static class ReplayCommand
         var errors = new float[rows.Count];
         var rests = new Vector3[rows.Count];
         var lastBounce = new BounceRecord?[rows.Count];
+        var glassCorrected = new bool[rows.Count];
+        var glassThrows = 0;
         var rollout = options.ContainsKey("rollout");
         Parallel.For(0, rows.Count, i =>
         {
-            var bounceTrace = rollout ? new List<BounceRecord>() : null;
+            var bounceTrace = new List<BounceRecord>();
             var result = GrenadeTrajectory.SimulateExactRaw(collider, rows[i].Pos, rows[i].Vel, constants, bounceTrace: bounceTrace);
             rests[i] = result.RestPoint;
             errors[i] = Vector3.Distance(result.RestPoint, rows[i].Real);
-            if (bounceTrace is { Count: > 0 })
+            if (result.GlassBreaks > 0 && glassGone is not null && rows[i].GlassState != "intact")
+            {
+                Interlocked.Increment(ref glassThrows);
+                var gone = GrenadeTrajectory.SimulateExactRaw(glassGone, rows[i].Pos, rows[i].Vel, constants);
+                var errGone = Vector3.Distance(gone.RestPoint, rows[i].Real);
+                if (rows[i].GlassState == "gone" || errGone < errors[i])
+                {
+                    rests[i] = gone.RestPoint;
+                    errors[i] = errGone;
+                    glassCorrected[i] = true;
+                }
+            }
+            if (bounceTrace.Count > 0)
             {
                 lastBounce[i] = bounceTrace[^1];
             }
@@ -172,6 +194,10 @@ public static class ReplayCommand
             var idx = Enumerable.Range(0, rows.Count).Where(i => rowBuild[i] == bld).ToList();
             return $"{bld}: {idx.Count} throws, within 3u {idx.Count(i => errors[i] <= 3f) * 100.0 / idx.Count:F1}%, over 8u {idx.Count(i => errors[i] > 8f)} ({idx.Count(i => errors[i] > 8f) * 100.0 / idx.Count:F1}%)";
         })));
+        if (glassThrows > 0)
+        {
+            Console.WriteLine($"  throws that break glass: {glassThrows}; graded against the pane already gone: {glassCorrected.Count(c => c)}");
+        }
         var changed = rows.Where((r, i) => Math.Abs(errors[i] - r.Reported) > 1f).Count();
         Console.WriteLine($"  throws whose error moved by more than 1u since they were graded: {changed}");
 

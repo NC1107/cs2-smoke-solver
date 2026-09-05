@@ -24,7 +24,8 @@ public enum ThrowType
 // simulations inside Parallel.ForEach - heap records were pure gen0 churn.
 public readonly record struct ThrowSpec(Vector3 EyePosition, float YawDeg, float PitchDeg, ThrowType Type, float Strength = 1f, float RunYawOffsetDeg = 0f);
 
-public readonly record struct TrajectoryResult(Vector3 RestPoint, int Bounces, float FlightTime, bool Lost, Vector3? FirstTouch = null);
+/// <summary>GlassBreaks: breakable panes the flight went through (each at 0.40 speed), so a lineup can say it depends on that glass being intact.</summary>
+public readonly record struct TrajectoryResult(Vector3 RestPoint, int Bounces, float FlightTime, bool Lost, Vector3? FirstTouch = null, int GlassBreaks = 0);
 
 /// <summary>One exact-sim bounce, kept for diagnostics: which tick, where, off what.</summary>
 public readonly record struct BounceRecord(int Tick, Vector3 Contact, Vector3 Normal, int Triangle, Vector3 VelocityBefore, Vector3 VelocityAfter);
@@ -430,6 +431,7 @@ public static class GrenadeTrajectory
         // the mesh does not say which belong together).
         List<Vector3>? broken = null;
         Func<int, bool>? ignore = null;
+        var glassBreaks = 0;
 
         while (time < MaxFlightSeconds)
         {
@@ -470,6 +472,7 @@ public static class GrenadeTrajectory
                     // pane stops existing for this flight.
                     broken ??= [];
                     broken.Add(contact);
+                    glassBreaks++;
                     var panes = broken;
                     ignore = t => collider.IsBreakable(t) && panes.Any(b => Vector3.DistanceSquared(b, collider.Centroid(t)) < BrokenPaneReach * BrokenPaneReach);
                     velocity *= k.GlassPassFactor;
@@ -512,7 +515,7 @@ public static class GrenadeTrajectory
                 {
                     if (!k.EdgeTipping || EdgeTip(collider, position, w) is not { } tip)
                     {
-                        return new TrajectoryResult(position, bounces, time + TimeStep, Lost: false, firstTouch);
+                        return new TrajectoryResult(position, bounces, time + TimeStep, Lost: false, firstTouch, glassBreaks);
                     }
                     trace?.Add($"t={time:F2} balanced on an edge at ({position.X:F0},{position.Y:F0},{position.Z:F0}), tipping ({tip.X:F2},{tip.Y:F2})");
                     velocity = tip * (k.StopSpeed * 0.3f);
@@ -557,7 +560,7 @@ public static class GrenadeTrajectory
             tick++;
             tickTrace?.Add((position, velocity));
         }
-        return new TrajectoryResult(position, bounces, time, Lost: true, firstTouch);
+        return new TrajectoryResult(position, bounces, time, Lost: true, firstTouch, glassBreaks);
     }
 
     static Vector3 ClampVelocity(Vector3 v) => new(

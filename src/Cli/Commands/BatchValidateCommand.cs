@@ -290,7 +290,7 @@ public static class BatchValidateCommand
     /// map is live, so consumption doubles as the liveness check), then gives
     /// the new map time to load and re-apply practice settings.
     /// </summary>
-    static bool SendCommand(string cmd, string calibDir)
+    internal static bool SendCommand(string cmd, string calibDir)
     {
         var requestPath = Path.Combine(calibDir, "request.json");
         var waited = 0;
@@ -309,7 +309,7 @@ public static class BatchValidateCommand
         return !File.Exists(requestPath);
     }
 
-    static bool ChangeLevel(string map, string calibDir)
+    internal static bool ChangeLevel(string map, string calibDir)
     {
         var requestPath = Path.Combine(calibDir, "request.json");
         RequestFile.WriteAtomic(requestPath, JsonSerializer.Serialize(new { cmd = $"changelevel {map}" }));

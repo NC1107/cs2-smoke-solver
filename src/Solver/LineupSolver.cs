@@ -29,7 +29,17 @@ public sealed record Lineup(
     // (a sightline raycast eye->landing), used to penalize the ranking: an
     // exposed throw spot is where the danger is, so a concealed lineup is
     // preferred even at some cost to reliability.
-    bool DirectLos = false);
+    bool DirectLos = false,
+    // Breakable panes the grenade breaks through on the way (each costs 60% of
+    // its speed). The landing then depends on that glass being intact: at
+    // round start it is, later in the round it may already be gone, and the
+    // same throw lands somewhere else (RestIfBroken). Probed on the rig
+    // 2026-09-05: intact panes pass at exactly 0.40 on every map that has
+    // them, broken ones at full speed; both states are real.
+    int GlassBreaks = 0,
+    // Where the same throw comes to rest with every breakable pane gone; null
+    // when it does not touch glass, or when it never settles without it.
+    Vector3? RestIfBroken = null);
 
 /// <summary>
 /// Stage 2 of the inverse solver: sweep standable origins and view angles, keep
@@ -533,6 +543,10 @@ public static partial class LineupSolver
         // asked for. The coarse zone stays as the sweep's recall filter; this
         // is the precision gate. Null keeps zone-membership acceptance.
         float? tolerance = null,
+        // The same world with every breakable pane gone, when the map has any:
+        // lineups that break glass are re-simulated against it so the caller
+        // can see where they land once that glass is already shot out.
+        TriangleCollider? colliderGlassGone = null,
         CancellationToken ct = default)
     {
         // One perturbation step; also the re-aim lattice pitch, so the rescue
@@ -688,10 +702,17 @@ public static partial class LineupSolver
             // validation showed exactly those throws landing hundreds of
             // units off while scoring 100% stability.
             var scatter = 0f;
+            var finalYaw = lineup.YawDeg + aimYaw * StepDeg;
+            var finalPitch = lineup.PitchDeg + aimPitch * StepDeg;
+            Vector3? restIfBroken = null;
+            if (settled && best.GlassBreaks > 0 && colliderGlassGone is not null)
+            {
+                var gone = GrenadeTrajectory.SimulateExact(colliderGlassGone, new ThrowSpec(
+                    eye, finalYaw, finalPitch, lineup.Type, lineup.Strength, lineup.RunYawOffsetDeg), constants);
+                restIfBroken = Settled(gone) ? gone.RestPoint : null;
+            }
             if (settled)
             {
-                var finalYaw = lineup.YawDeg + aimYaw * StepDeg;
-                var finalPitch = lineup.PitchDeg + aimPitch * StepDeg;
                 foreach (var (dx, dy) in ((float, float)[])[(0.25f, 0f), (-0.25f, 0f), (0f, 0.25f), (0f, -0.25f)])
                 {
                     var probe = GrenadeTrajectory.SimulateExact(collider, new ThrowSpec(
@@ -710,6 +731,8 @@ public static partial class LineupSolver
                 FlightTime = settled ? best.FlightTime : lineup.FlightTime,
                 Stability = stability,
                 RestScatter = scatter,
+                GlassBreaks = settled ? best.GlassBreaks : 0,
+                RestIfBroken = restIfBroken,
             });
             // Fires from parallel workers; subscribers must be thread-safe.
             onCandidate?.Invoke(lineup.Feet, true);

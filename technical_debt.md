@@ -1959,3 +1959,17 @@ Made it pass through like a first contact: 33 -> 33 over 8u, every map identical
 
 dust2 [35] hits a 17u door-frame sliver and then the floor inside one half-step and is reflected twice (the game bounces once), so `BouncesPerTick` 1 was tried under the two-step tick: 34 over 8u against 33 (boulder 0 -> 1), dust2 unchanged. The second contact per step stays.
 Remaining 33 misses by kind: about 8 are glass state (panes broken by an earlier throw in the same run: shelter 152646 [19-21], 152857 [32], 144929 [59]; office 144326 [49], [57], 143837 [44]), dust2 [39]/[50]/[35]/[42] x2 are geometry-fragile corners and ledges that flipped when the trajectories moved by fractions of a unit, the rest are single throws.
+
+## Glass loop (2026-09-05)
+
+### Iteration 1: ground truth for every breakable - `probe`
+
+Corpus scan (`diverge --breakables`): 30 breakable contacts, all cs_office/cs_shelter, 23 intact panes at exactly 0.40, 7 panes already gone (1.00) after an earlier throw in the same run. Nothing on any other map had ever touched a breakable.
+`probe` fires one synthetic grenade through every breakable/door cluster on the rig (see physics-sim.md for the results). Nuke needs no glass logic (everything bounces, sim agrees); inferno/ancient/anubis/office/shelter panes break and pass at 0.40; train's electrical box is misclassified (sim passes, game bounces).
+Probe launch points in the void (deck windows on inferno, vertigo railings) produce 6,000-9,000u "errors" that are the void, not physics.
+
+### Iteration 2: glass state in the solver and the grader - KEPT
+
+Lineups carry `GlassBreaks` / `RestIfBroken` (VerifyExact re-simulates glass-breaking throws against a glass-gone collider); the API exposes `glass`, `restIfBroken`, `stateDependent` (landings differ by more than 8u) and ranks state-dependent lineups below concealed ones; the viewer badges them amber with the alternative landing distance.
+Validation records `GlassState` per throw from the capture (speed ratio at the sim's pane tick) and grades against the matching rest; `replay` does the same from recorded state, or the closer of the two for old reports and says how many it corrected.
+Corpus: 33 -> 26 over 8u (office 7 -> 5, shelter 7 -> 2), 7 throws re-graded against a gone pane, medians unchanged at 0.03u.

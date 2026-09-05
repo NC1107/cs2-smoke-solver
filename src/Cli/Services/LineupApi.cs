@@ -472,7 +472,7 @@ public static class LineupApi
             : "all";
         // Bump when solver or sim behavior changes: cached answers from older code
         // must never be replayed as current results.
-        const int QueryVersion = 36;
+        const int QueryVersion = 37;
         // meshVersion is the content-hashed mesh identity (not just the game
         // build), so re-extracting a map - e.g. dropping the Retake tape - forces
         // a re-solve instead of replaying results computed against the old mesh.
@@ -665,6 +665,14 @@ public static class LineupApi
                 // viewer badges it so the player knows the spot is exposed and
                 // why it ranks below concealed throws.
                 exposed = l.DirectLos,
+                // Breakable panes the smoke breaks through, and where it lands
+                // instead once that glass is already gone. stateDependent:
+                // those two landings differ, so the throw only works as shown
+                // while the pane is intact - the viewer badges it and the
+                // ranking sinks it below every state-independent throw.
+                glass = l.GlassBreaks,
+                restIfBroken = l.RestIfBroken is { } rb ? new[] { rb.X, rb.Y, rb.Z } : null,
+                stateDependent = StateDependent(l),
                 // Expected miss in units when a person throws it: what the
                 // ranking led with, so the viewer can filter by the same number.
                 humanError = humanError[l],
@@ -698,12 +706,23 @@ public static class LineupApi
         int Reproducibility(Lineup l) => (int)(humanError(l) / 8f);
         var bySky = lineups
             .OrderBy(Reproducibility)
+            .ThenBy(l => StateDependent(l) ? 1 : 0)
             .ThenBy(l => l.DirectLos ? 1 : 0);
         return (originClick is { } click
                 ? bySky.ThenBy(l => (int)(Vector2.Distance(new Vector2(l.Feet.X, l.Feet.Y), click) / 32f)).ThenByDescending(pin).ThenBy(l => (int)l.Type)
                 : bySky.ThenByDescending(pin).ThenBy(l => (int)l.Type))
             .ToList();
     }
+
+    /// <summary>
+    /// A lineup whose landing depends on glass being intact: it breaks a pane
+    /// and lands more than 8u away (or never settles) once that pane is gone.
+    /// Ranked below every state-independent throw - a smoke that lands in two
+    /// different places depending on what happened earlier in the round is
+    /// worse than one you can be seen throwing.
+    /// </summary>
+    public static bool StateDependent(Lineup l) =>
+        l.GlassBreaks > 0 && (l.RestIfBroken is not { } rb || Vector3.Distance(rb, l.RestPoint) > 8f);
 
     /// <summary>The API's order for a whole solve, computed from its colliders.</summary>
     public static List<Lineup> Ranked(TargetSolve solve, Vector2? originClick = null)

@@ -78,7 +78,10 @@ public sealed class CaptureTailer(string path)
 
 // PerturbU marks the one-tick-movement probes: the same aim re-thrown from
 // feet shifted by that many units (0 = the lineup's exact spot).
-public sealed record ValidatePlan(int Index, Lineup Lineup, Vector3 Pos, Vector3 Vel, Vector3 PredictedRest, int PredictedBounces, float PerturbU = 0f);
+// GlassTicks: sim ticks at which the flight breaks through a pane; RestIfBroken:
+// where it lands with that glass already gone. The grader reads the pane's real
+// state off the capture at those ticks and scores against the matching rest.
+public sealed record ValidatePlan(int Index, Lineup Lineup, Vector3 Pos, Vector3 Vel, Vector3 PredictedRest, int PredictedBounces, float PerturbU = 0f, int[]? GlassTicks = null, Vector3? RestIfBroken = null);
 
 public sealed record ValidateRow(
     int Index,
@@ -109,7 +112,11 @@ public sealed record ValidateRow(
     float ErrPredicted,
     float ErrTarget,
     int DivergenceTick,
-    string DivergenceClass);
+    string DivergenceClass,
+    // "intact" or "gone" when the flight crosses a breakable pane: the state the
+    // capture showed at the pane, which PredictedRest and ErrPredicted were
+    // graded against. Null for throws that never touch glass.
+    string? GlassState = null);
 
 public sealed record TargetSolve(
     Vector3 Target,
@@ -125,4 +132,8 @@ public sealed record TargetSolve(
     // missing, an attribute filter that dropped the world, and a target off the
     // nav mesh, at different times - and every one of those looked identical
     // from outside: a 200 with an empty array. Null whenever there are lineups.
-    string? EmptyReason = null);
+    string? EmptyReason = null,
+    // The grenade world with every breakable pane gone (null when the map has
+    // none, or when the query already asked for broken glass): what glass-
+    // dependent lineups are re-checked against.
+    TriangleCollider? ColliderGlassGone = null);

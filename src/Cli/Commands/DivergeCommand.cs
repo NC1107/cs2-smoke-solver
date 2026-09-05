@@ -37,6 +37,7 @@ public static class DivergeCommand
         var summary = options.ContainsKey("summary");
         TraceEnabled = options.ContainsKey("trace");
         OffsetsEnabled = options.ContainsKey("offsets");
+        BreakablesEnabled = options.ContainsKey("breakables");
         if (options.TryGetValue("ticks", out var ticksRaw))
         {
             var parts = ticksRaw.Split('-');
@@ -133,6 +134,10 @@ public static class DivergeCommand
     // --offsets: one line per paired bounce with the position offset the
     // bounce tick itself introduced between sim and real (measurement mode).
     static bool OffsetsEnabled;
+    // --breakables: one line per sim contact with a breakable triangle, with
+    // what the real grenade's speed did around that tick (pass at 0.40 =
+    // intact pane, unchanged = pane already gone, reflected = solid).
+    static bool BreakablesEnabled;
     static (int From, int To)? TickRange;
     static readonly List<string> Offsets = [];
 
@@ -168,6 +173,10 @@ public static class DivergeCommand
         if (OffsetsEnabled)
         {
             CollectOffsets(simTicks, simBounces, samples, realBounces);
+        }
+        if (BreakablesEnabled)
+        {
+            CollectBreakables(collider, row, simTicks, simBounces, samples);
         }
         var realRest = Vec(row.GetProperty("RealRest"));
         LastError = Vector3.Distance(result.RestPoint, realRest);
@@ -370,6 +379,34 @@ public static class DivergeCommand
             var simDv = b.VelocityAfter - b.VelocityBefore;
             Offsets.Add(FormattableString.Invariant(
                 $"OFF T={frac:F3} vh={speedH:F1} vz={b.VelocityBefore.Z:F1} nz={b.Normal.Z:F2} realTick={real.Tick - t} along={Vector3.Dot(introduced, dir):F3} side={Vector3.Dot(introduced, side):F3} dz={introduced.Z:F3} dvErr={(realDv - simDv).Length():F1} vzAfter={b.VelocityAfter.Z:F1} rvzAfter={real.After.Z:F2} svhAfter={new Vector3(b.VelocityAfter.X, b.VelocityAfter.Y, 0f).Length():F2} rvhAfter={new Vector3(real.After.X, real.After.Y, 0f).Length():F2} rvzBefore={real.Before.Z:F2} rvhBefore={new Vector3(real.Before.X, real.Before.Y, 0f).Length():F2}"));
+        }
+    }
+
+    static void CollectBreakables(TriangleCollider collider, JsonElement row, List<(Vector3 Position, Vector3 Velocity)> simTicks, List<BounceRecord> simBounces, float[][] samples)
+    {
+        foreach (var b in simBounces)
+        {
+            if (!collider.IsBreakable(b.Triangle))
+            {
+                continue;
+            }
+            var t = b.Tick;
+            if (t < 2 || t + 3 >= samples.Length)
+            {
+                continue;
+            }
+            // Real speed two ticks before against two ticks after the sim's contact tick, horizontal only (gravity-free).
+            float RealH(int i) => MathF.Sqrt(samples[i][4] * samples[i][4] + samples[i][5] * samples[i][5]);
+            var before = RealH(t - 2);
+            var after = RealH(t + 2);
+            var ratio = before > 5f ? after / before : float.NaN;
+            var realPos = Sample(samples[t]);
+            var gap = Vector3.Distance(simTicks[t].Position, realPos);
+            var simH = new Vector3(b.VelocityBefore.X, b.VelocityBefore.Y, 0f).Length();
+            var simAfterH = new Vector3(b.VelocityAfter.X, b.VelocityAfter.Y, 0f).Length();
+            var kind = float.IsNaN(ratio) ? "slow" : ratio < 0.55f && ratio > 0.25f ? "INTACT" : ratio > 0.85f ? "GONE" : ratio <= 0.25f ? "STOPPED" : "other";
+            Offsets.Add(FormattableString.Invariant(
+                $"BRK idx={row.GetProperty("Index").GetInt32()} tick={t} at=({b.Contact.X:F0},{b.Contact.Y:F0},{b.Contact.Z:F0}) n=({b.Normal.X:F2},{b.Normal.Y:F2},{b.Normal.Z:F2}) simH={simH:F0}->{simAfterH:F0} realRatio={ratio:F2} gapAtTick={gap:F1} kind={kind} tri={b.Triangle}"));
         }
     }
 

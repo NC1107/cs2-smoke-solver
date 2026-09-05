@@ -123,6 +123,19 @@ public static class ValidateCommand
         }
 
         var collider = solve.Collider;
+        // A plan remembers where its flight breaks glass and where it would
+        // land with that glass gone, so grading can follow the pane's real
+        // state (a pane an earlier throw broke lets this one straight through).
+        ValidatePlan Plan(int index, Lineup l, Vector3 pos, Vector3 vel, float perturbU)
+        {
+            var bounces = new List<BounceRecord>();
+            var predicted = GrenadeTrajectory.SimulateExactRaw(collider, pos, vel, constants, bounceTrace: bounces);
+            var glassTicks = bounces.Where(b => collider.IsBreakable(b.Triangle)).Select(b => b.Tick).ToArray();
+            Vector3? restIfBroken = glassTicks.Length > 0 && solve.ColliderGlassGone is { } gone
+                ? GrenadeTrajectory.SimulateExactRaw(gone, pos, vel, constants).RestPoint
+                : null;
+            return new ValidatePlan(index, l, pos, vel, predicted.RestPoint, predicted.Bounces, perturbU, glassTicks.Length > 0 ? glassTicks : null, restIfBroken);
+        }
         var plans = lineups.Select((l, i) =>
         {
             var eye = l.Feet + new Vector3(0, 0, GrenadeTrajectory.EyeHeight(l.Type));
@@ -131,8 +144,7 @@ public static class ValidateCommand
             // grading the real one against that prediction reports a phantom
             // launch error on every directional run-jump.
             var (pos, vel) = GrenadeTrajectory.DeriveInitial(new ThrowSpec(eye, l.YawDeg, l.PitchDeg, l.Type, l.Strength, l.RunYawOffsetDeg), constants);
-            var predicted = GrenadeTrajectory.SimulateExactRaw(collider, pos, vel, constants);
-            return new ValidatePlan(i, l, pos, vel, predicted.RestPoint, predicted.Bounces);
+            return Plan(i, l, pos, vel, 0f);
         }).ToList();
 
         var perturb = Math.Clamp(float.Parse(options.GetValueOrDefault("perturb", "0"), CultureInfo.InvariantCulture), 0f, 8f);
@@ -160,8 +172,7 @@ public static class ValidateCommand
                     var lineup = basePlan.Lineup with { Feet = feet };
                     var eye = feet + new Vector3(0, 0, GrenadeTrajectory.EyeHeight(lineup.Type));
                     var (pos, vel) = GrenadeTrajectory.DeriveInitial(new ThrowSpec(eye, lineup.YawDeg, lineup.PitchDeg, lineup.Type, lineup.Strength, lineup.RunYawOffsetDeg), constants);
-                    var predicted = GrenadeTrajectory.SimulateExactRaw(collider, pos, vel, constants);
-                    extra.Add(new ValidatePlan(plans.Count + extra.Count, lineup, pos, vel, predicted.RestPoint, predicted.Bounces, perturb));
+                    extra.Add(Plan(plans.Count + extra.Count, lineup, pos, vel, perturb));
                 }
             }
             plans.AddRange(extra);
@@ -336,7 +347,31 @@ public static class ValidateCommand
                 }
                 continue;
             }
-            var err = Vector3.Distance(real, p.PredictedRest);
+            // Glass state: the sim assumed every pane intact. If the capture
+            // shows no speed loss where the sim broke a pane, an earlier throw
+            // had already broken it, and the right prediction for THIS throw
+            // is the one with that glass gone. Both are recorded.
+            var predictedRest = p.PredictedRest;
+            string? glassState = null;
+            if (p.GlassTicks is { Length: > 0 })
+            {
+                glassState = "intact";
+                var glassSamples = c.GetProperty("samples").EnumerateArray()
+                    .Select(e => e.EnumerateArray().Select(x => x.GetSingle()).ToArray()).Where(a => a.Length >= 7).ToArray();
+                float SpeedH(int i) => MathF.Sqrt(glassSamples[i][4] * glassSamples[i][4] + glassSamples[i][5] * glassSamples[i][5]);
+                foreach (var t in p.GlassTicks)
+                {
+                    if (t - 2 >= 0 && t + 3 < glassSamples.Length && SpeedH(t - 2) > 5f && SpeedH(t + 3) / SpeedH(t - 2) > 0.85f)
+                    {
+                        glassState = "gone";
+                    }
+                }
+                if (glassState == "gone" && p.RestIfBroken is { } rb)
+                {
+                    predictedRest = rb;
+                }
+            }
+            var err = Vector3.Distance(real, predictedRest);
             // Headline metrics stay base-throws-only so run summaries remain
             // comparable whether or not a batch used perturbation probes; the
             // probes get their own block below.
@@ -440,13 +475,14 @@ public static class ValidateCommand
                 realBounces,
                 new[] { p.Pos.X, p.Pos.Y, p.Pos.Z },
                 new[] { p.Vel.X, p.Vel.Y, p.Vel.Z },
-                new[] { p.PredictedRest.X, p.PredictedRest.Y, p.PredictedRest.Z },
+                new[] { predictedRest.X, predictedRest.Y, predictedRest.Z },
                 new[] { real.X, real.Y, real.Z },
                 detonated,
                 err,
                 Vector2.Distance(new Vector2(real.X, real.Y), new Vector2(solve.Target.X, solve.Target.Y)),
                 divergenceTick,
-                divergenceClass));
+                divergenceClass,
+                glassState));
         }
 
         if (errors.Count == 0)

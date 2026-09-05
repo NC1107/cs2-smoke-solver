@@ -334,6 +334,7 @@ public class GlassPassThroughTests
         Assert.True(r.RestPoint.X > 110f, $"stopped short of the pane at x={r.RestPoint.X:F1}");
         Assert.Equal(240f, after.Velocity.X, 2f);
         Assert.Equal(0f, after.Velocity.Y, 0.01f);
+        Assert.Equal(1, r.GlassBreaks);
     }
 
     [Fact]
@@ -342,6 +343,7 @@ public class GlassPassThroughTests
         var r = GrenadeTrajectory.SimulateExactRaw(WindowAt(100f), Start, Flat, ThrowConstants.Default with { GlassPassFactor = 0f });
 
         Assert.True(r.RestPoint.X < 100f, $"went through solid glass: x={r.RestPoint.X:F1}");
+        Assert.Equal(0, r.GlassBreaks);
     }
 }
 

@@ -1072,6 +1072,9 @@
   /* Warning red: the throw spot is exposed to the area it smokes. Distinct from
      the aim-ref badges (blue/orange/gold) so it reads as a caution, not a tier. */
   .ref.exposed { color: var(--danger); border: 1px solid var(--danger); font-weight: 700; }
+  /* Amber caution: the landing depends on a window still being intact. Between
+     the red exposed warning and the blue/gold aim tiers in weight. */
+  .ref.glass { color: var(--target); border: 1px solid var(--target); font-weight: 700; }
   /* Aim-reference quality, the thing that decides whether a lineup is copyable
      in a round. Filled accent for the best case so it reads as a recommendation
      rather than one more neutral tag; muted and dashed for the weak ones so
