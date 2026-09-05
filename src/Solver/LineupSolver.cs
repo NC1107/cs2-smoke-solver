@@ -48,6 +48,9 @@ public sealed record Lineup(
 /// </summary>
 public static partial class LineupSolver
 {
+    // One movement-key tick of foot shift along each axis, the scatter probe.
+    static readonly (float Dx, float Dy)[] ScatterOffsets = [(0.25f, 0f), (-0.25f, 0f), (0f, 0.25f), (0f, -0.25f)];
+
     const float YawSpreadDeg = 30f;
     // The pitch sweep's two floors. -65 was the historical cap ("impractical
     // sky-lob") - but real play uses near-vertical drops when standing close to
@@ -713,7 +716,7 @@ public static partial class LineupSolver
             }
             if (settled)
             {
-                foreach (var (dx, dy) in ((float, float)[])[(0.25f, 0f), (-0.25f, 0f), (0f, 0.25f), (0f, -0.25f)])
+                foreach (var (dx, dy) in ScatterOffsets)
                 {
                     var probe = GrenadeTrajectory.SimulateExact(collider, new ThrowSpec(
                         eye + new Vector3(dx, dy, 0f), finalYaw, finalPitch, lineup.Type, lineup.Strength, lineup.RunYawOffsetDeg), constants);

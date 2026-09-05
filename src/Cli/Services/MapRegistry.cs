@@ -31,6 +31,14 @@ public sealed record MapEntry(
     // one.
     public volatile byte[]? MeshPayloadBrotli;
 
+    // Version of the per-map inputs that change a solve's answer: the mesh
+    // build and payload hash, plus the derived data files (stand spots, nav
+    // areas, entities). The solve cache is keyed on this, so regenerating
+    // stand spots after a deploy invalidates every cached answer for the map
+    // instead of serving lineups from origins that no longer exist.
+    public string DataETag { get; init; } = "";
+    public string CacheVersion => BuildETag.Trim('"') + "/" + DataETag;
+
     // Built on the first trajectory request for this map and kept: it indexes
     // the mesh arrays rather than copying them, so the cost is the cell index
     // alone, and rebuilding it per click would put a grid build over millions
@@ -135,7 +143,10 @@ public static class MapRegistry
             // brotli cache below invalidate exactly when the mesh does.
             var meshVersion = $"{mesh.GameBuildId}-{Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(payload))[..12].ToLowerInvariant()}";
             var standSpots = LoadStandSpots(dataDir, mesh.MapName);
-            var entry = new MapEntry(mesh, attributeFilter, navAreas, constants, payload, payloadGzip, $"\"{meshVersion}\"", standSpots);
+            var entry = new MapEntry(mesh, attributeFilter, navAreas, constants, payload, payloadGzip, $"\"{meshVersion}\"", standSpots)
+            {
+                DataETag = DerivedDataETag(dataDir, mesh.MapName),
+            };
             var brotliPath = BrotliCachePath(dataDir, mesh.MapName, meshVersion);
             if (File.Exists(brotliPath))
             {
@@ -148,6 +159,21 @@ public static class MapRegistry
         return maps;
     }
 
+
+    // Short content hash over the derived per-map files a solve reads.
+    static string DerivedDataETag(string dataDir, string mapName)
+    {
+        using var sha = System.Security.Cryptography.IncrementalHash.CreateHash(System.Security.Cryptography.HashAlgorithmName.SHA256);
+        foreach (var suffix in new[] { ".standspots.json", ".navareas.json", ".entities.json" })
+        {
+            var path = Path.Combine(dataDir, mapName + suffix);
+            if (File.Exists(path))
+            {
+                sha.AppendData(File.ReadAllBytes(path));
+            }
+        }
+        return Convert.ToHexString(sha.GetHashAndReset())[..12].ToLowerInvariant();
+    }
     static IReadOnlyList<StandSpotOrigin>? LoadStandSpots(string dataDir, string mapName)
     {
         var path = Path.Combine(dataDir, $"{mapName}.standspots.json");

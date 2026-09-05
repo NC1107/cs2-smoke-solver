@@ -2,19 +2,19 @@
 // import the feature modules; they call back into the orchestrators defined
 // here (setTarget, select, runQuery) via the init*/set*Callbacks hooks.
 
-import { state, filtered, esc, lowMemoryDevice, loadFavorites, setFavorite, isFavorite, DEFAULT_EYE_HEIGHT, EYE_HEIGHT_BY_TYPE, TARGET_SNAP_RADIUS, favoriteHooks, loadSavedLocal, persistSavedLocal, isExecuteSaved, setExecuteSaved} from "./state.js?v=114";
-import { loadMapList, loadMapData, runQuery as postLineupQuery, fetchTrajectory, fetchLineupOne, fetchSlack, fetchSpawns, fetchProSmokes, fetchMeshDiff, meshDiffExists, fetchLevels, fetchSmokeCoverage, runExecute, findExecuteSpots, fetchTargets, fetchMe, signOut, fetchSavedLineups, putSavedLineups, fetchVotes, castVote} from "./api.js?v=114";
-import { loadRadar, readColors, recolorRadar, draw, scheduleDraw, resize, resetView, initMap2d, screenOf } from "./map2d.js?v=114";
-import { ensure3d, resetEnsure3d, teardown3d, current3d, sync3d, syncProgress3d, syncMeshDiff3d, set3dCallbacks, applyTheme3d, verticalFovFromDesired } from "./view3d.js?v=114";
-import { initAdmin, renderAdmin, syncAdminMode } from "./admin.js?v=114";
-import { resetEnsureTexturedScene } from "./textured-scene.js?v=114";
-import { capturePreview } from "./preview.js?v=114";
+import { state, filtered, esc, lowMemoryDevice, loadFavorites, setFavorite, isFavorite, DEFAULT_EYE_HEIGHT, EYE_HEIGHT_BY_TYPE, TARGET_SNAP_RADIUS, favoriteHooks, loadSavedLocal, persistSavedLocal, isExecuteSaved, setExecuteSaved} from "./state.js?v=115";
+import { loadMapList, loadMapData, runQuery as postLineupQuery, fetchTrajectory, fetchLineupOne, fetchSlack, fetchSpawns, fetchProSmokes, fetchMeshDiff, meshDiffExists, fetchLevels, fetchSmokeCoverage, runExecute, findExecuteSpots, fetchTargets, fetchMe, signOut, fetchSavedLineups, putSavedLineups, fetchVotes, castVote} from "./api.js?v=115";
+import { loadRadar, readColors, recolorRadar, draw, scheduleDraw, resize, resetView, initMap2d, screenOf } from "./map2d.js?v=115";
+import { ensure3d, resetEnsure3d, teardown3d, current3d, sync3d, syncProgress3d, syncMeshDiff3d, set3dCallbacks, applyTheme3d, verticalFovFromDesired } from "./view3d.js?v=115";
+import { initAdmin, renderAdmin, syncAdminMode } from "./admin.js?v=115";
+import { resetEnsureTexturedScene } from "./textured-scene.js?v=115";
+import { capturePreview } from "./preview.js?v=115";
 // Every local import across viewer/js carries the SAME ?v= token, bumped
 // together on any change. The HTML is served no-cache, so a fresh load pulls
 // main.js?v=N, which pulls every module at ?v=N - the whole graph refreshes as
 // one consistent set past Cloudflare's 4h JS cache, with no duplicate module
 // instances (which a partial versioning would cause). Bump the token everywhere.
-import { renderLineups, initPanel, revealSelected, resultStatusText } from "./panel.js?v=114";
+import { renderLineups, initPanel, revealSelected, resultStatusText } from "./panel.js?v=115";
 
 (async () => {
   // Map switching means a failed load is no longer necessarily terminal (the
@@ -88,6 +88,14 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
   // further down has run, and a `const` read before its line is a
   // ReferenceError - which silently failed every ?t= link's first render.
   const FEET_ABOVE_FLOOR = 0.03125;
+  // localStorage throws where site data is blocked (some private modes, storage
+  // policies, sandboxed frames); the boot path must not die on a preference.
+  function storageGet(key) {
+    try { return localStorage.getItem(key); } catch { return null; }
+  }
+  function storageSet(key, value) {
+    try { localStorage.setItem(key, value); } catch { /* preference not kept */ }
+  }
   const coord = v => Number.parseFloat(v.toFixed(2)).toString();
   // What /api/maps said about each map; filled in at boot, read by
   // syncControls, so it lives up here rather than in the temporal dead zone
@@ -127,11 +135,11 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
   // let both draw at once - two crosshairs over each other, neither of them
   // the one being aimed with. The choice is a preference, so it persists.
   const RETICLE_MODES = ["off", "cross", "smoke"];
-  const savedMode = localStorage.getItem("smokesolver.reticleMode");
+  const savedMode = storageGet("smokesolver.reticleMode");
   state.reticleMode = RETICLE_MODES.includes(savedMode)
     ? savedMode
     // Migrates the old two-toggle preference: a hidden crosshair stays hidden.
-    : (localStorage.getItem("smokesolver.crosshair3d") === "0" ? "off" : "cross");
+    : (storageGet("smokesolver.crosshair3d") === "0" ? "off" : "cross");
   applyReticleMode();
   for (const b of reticleBtns) {
     b.addEventListener("click", () => {
@@ -454,14 +462,17 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
     syncControls();
     statusEl.textContent = `solving ${state.executeTargets.length} smokes from ${origin[0].toFixed(0)}, ${origin[1].toFixed(0)}\u2026`;
     try {
-      const { error, data } = await runExecute(state.currentMap, origin, state.executeTargets);
+      const { error, data } = await runExecute(state.currentMap, origin, state.executeTargets, brokenParam());
       if (state.mapGeneration !== gen) { return; }
       if (error) { statusEl.textContent = error; return; }
       state.lastOrigin = origin;
       adoptExecute(data);
     } finally {
-      state.busy = false;
-      syncControls();
+      // A map switch during the solve owns the busy flag now.
+      if (state.mapGeneration === gen) {
+        state.busy = false;
+        syncControls();
+      }
     }
   }
 
@@ -564,7 +575,7 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
       } else {
         // Cold, this is a full map-wide solve per smoke; warm it is instant.
         statusEl.textContent = `looking for a spot that throws all ${targets.length}\u2026 (first time on a map this takes a while)`;
-        const { error, data } = await findExecuteSpots(state.currentMap, targets);
+        const { error, data } = await findExecuteSpots(state.currentMap, targets, brokenParam());
         if (state.mapGeneration !== gen) { return; }
         if (error) { statusEl.textContent = error; return; }
         state.executeSpots = data;
@@ -578,8 +589,10 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
         sync3d();
       }
     } finally {
-      state.busy = false;
-      syncControls();
+      if (state.mapGeneration === gen) {
+        state.busy = false;
+        syncControls();
+      }
     }
   });
 
@@ -1006,7 +1019,7 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
     state.meshdiff = null;
     state.meshdiffAvailable = false;
     state.meshdiffOn = false;
-    localStorage.setItem("smokesolver.lastMap", name);
+    storageSet("smokesolver.lastMap", name);
     resetSearch();
     syncUrl();
     syncControls();
@@ -1107,7 +1120,7 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
   const LAST_MAP_KEY = "smokesolver.lastMap";
   const known = name => mapList.some(m => m.map === name);
   const urlMap = new URLSearchParams(location.search).get("map");
-  const savedMap = localStorage.getItem(LAST_MAP_KEY);
+  const savedMap = storageGet(LAST_MAP_KEY);
   const initialMap = known(urlMap) ? urlMap : known(savedMap) ? savedMap : null;
   // ?map=flatgrass is the deliberate escape hatch to the test bed; give the
   // switcher an entry for it so it does not sit there showing the wrong map.
@@ -1680,8 +1693,10 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
         ? "cancelled"
         : `could not load the shared lineup (${err.message}) - "Search the whole map" to solve the target`;
     } finally {
-      state.busy = false;
-      syncControls();
+      if (state.mapGeneration === gen) {
+        state.busy = false;
+        syncControls();
+      }
     }
   }
 
@@ -2306,8 +2321,10 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
     } catch (err) {
       statusEl.textContent = `could not load the saved execute (${err.message})`;
     } finally {
-      state.busy = false;
-      syncControls();
+      if (state.mapGeneration === gen) {
+        state.busy = false;
+        syncControls();
+      }
     }
   }
 

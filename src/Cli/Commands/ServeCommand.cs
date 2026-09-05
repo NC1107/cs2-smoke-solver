@@ -1236,7 +1236,12 @@ public static class ServeCommand
                         await WriteApiError(context, StatusCodes.Status400BadRequest, "each target must be [x,y] or [x,y,z]");
                         return;
                     }
-                    var q = $"{{\"target\":{JsonSerializer.Serialize(t)}}}";
+                    // The world state rides along: a spot search for an execute
+                    // planned around broken glass must solve every target in
+                    // that world, as /api/execute already does.
+                    var q = root2.TryGetProperty("broken", out var spotsBroken)
+                        ? $"{{\"target\":{JsonSerializer.Serialize(t)},\"broken\":{JsonSerializer.Serialize(spotsBroken)}}}"
+                        : $"{{\"target\":{JsonSerializer.Serialize(t)}}}";
                     using var probe = JsonDocument.Parse(q);
                     if (ValidateLineupQuery(probe.RootElement, entry.Mesh) is { } bad)
                     {

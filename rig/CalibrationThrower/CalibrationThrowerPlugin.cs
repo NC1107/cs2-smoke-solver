@@ -375,10 +375,18 @@ public class CalibrationThrowerPlugin : BasePlugin
     // The console treats newlines as command separators exactly like ';', so
     // every separator must be split on or a disallowed command could ride in
     // behind an allowed prefix.
+    // Entity I/O is the one prefix that could reach arbitrary console commands
+    // (a point_servercommand's Command input), so it is not a prefix match: one
+    // named entity, one of three state inputs, no parameter.
+    static readonly System.Text.RegularExpressions.Regex EntFireShape =
+        new(@"^ent_fire\s+""?[\w\[\]#.\-]+""?\s+(Break|Open|Close)\s*$", System.Text.RegularExpressions.RegexOptions.IgnoreCase | System.Text.RegularExpressions.RegexOptions.CultureInvariant);
+
     static bool IsAllowedCommand(string cmd) =>
         cmd.Split([';', '\n', '\r'], StringSplitOptions.TrimEntries)
             .All(part => part.Length == 0 ||
-                         AllowedCommandPrefixes.Any(prefix => part.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)));
+                         (part.StartsWith("ent_fire", StringComparison.OrdinalIgnoreCase)
+                             ? EntFireShape.IsMatch(part)
+                             : AllowedCommandPrefixes.Any(prefix => part.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))));
 
     // A game update can silently re-point the byte signature at a different
     // grenade's Create() (it bound to the flashbang once): fire one throw

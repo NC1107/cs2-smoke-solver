@@ -1991,3 +1991,26 @@ Nick's case: shoot out the roof glass, then throw onto the hut roof. The roof gl
 Solver: hut roof (460,-1120,-256), tolerance 64: 310 lineups with the glass intact (lobs through the open roof sections), 400 with it broken, 161 only with it broken (west outside through the window). The viewer's World setting "glass broken" is the switch.
 Rig: intact - 40 of 40 within 3u, median 0.0u. Broken - `ent_fire "[PR#]<id>_window" Break` on the eight panes (plugin allowlist now has `ent_fire `, needs sv_cheats 1), then `validate --broken glass --origin 224,-952 --reach 220`: 30 of 30 within 3u, median 0.1u, max 0.9u.
 `validate --broken glass[,doors]` solves in the glass-gone world; the rig must be in the same state.
+
+## Audit 2026-09-05 (eight specialist passes: security, backend, physics, frontend, rig, extraction, delivery, performance)
+
+38 findings, all verified against the code before acting. Fixed the same day:
+- Solve cache key now covers the derived per-map data (stand spots, nav areas, entities) through `MapEntry.DataETag`; regenerated stand spots no longer serve cached lineups from origins that no longer exist (was the one critical).
+- `validate --origin` ranks in the API's spot-probe order (it ignored the origin), and report/index paths follow `--data`.
+- The post-verify line-of-sight and pin sweeps honour the request's cancellation token.
+- `/api/execute` holds a solve slot per target instead of for the whole loop; `/api/execute/spots` forwards the world state to every target; the viewer sends World state with executes and spot searches.
+- `/api/vote` body capped at 4 KB; `/api/levels` rate-limited like its physics siblings.
+- Viewer: busy flag only released by the operation that still owns the map generation; localStorage on the boot path guarded.
+- Rig capture matching tolerance 0.5u -> 0.05u (0.25u perturbation probes could claim each other's captures); replay's glass re-grading only accepts a clear state flip (intact miss over 8u, gone hit within 3u) instead of the closer rest; the plugin's `ent_fire` allowlist is now the exact shape `ent_fire <entity> Break|Open|Close`.
+- Allocation fixes: the broken-pane ignore predicate loops instead of LINQ, replay only records bounces when `--rollout` asks, the scatter offsets are hoisted.
+- Extraction diagnostics format KV3 through the library's real API (scalar values were printed empty; that is the "values are empty" note under glass iteration 3, which was wrong) and read entity origins as vectors.
+- Tests: the glass-gone verification path (GlassVerifyExactTests) and the lineup JSON glass fields.
+
+Deferred, with the reason:
+- Voxel stage 1 has no glass and no wall-rest rule (physics HIGH x2): the exact verifier's re-aim window rescues most glass routes today (office behind-window solve: 153 glass lineups map-wide) but recall through glass is accidental. Proper fix is a glass bit per voxel cell with the 0.40 pass in the coarse sim; measure candidate counts and solve time before/after. Medium-large.
+- Rebuilding the voxel grid and 2-3 colliders per solve (performance HIGH): the grid is region-bound so per-solve is inherent; colliders could come from MapEntry. Measure the build cost on de_dust2 first (expected well under a second of a 2-6 s spot solve).
+- Half-steps double the exact sim's broadphase queries: deliberate accuracy fix; measure spot-solve latency before touching.
+- Container runs as root: blocked on a host-side chown of the prod data mount (tracked since 08-30).
+- `/api/execute/spots` bills one rate-limit token for up to four solves: bounded by the four-target cap and the per-target gate; revisit if the queue ever starves.
+- Glass met behind a just-broken pane in the same half-step reflects one sub-step late (no corpus effect); solid contact behind glass in the same half-step likewise.
+- RebuildValidationIndex re-parses every report per target (about 0.5 s today); DivergeCommand's static per-throw state; no dedicated lost-capture counter.

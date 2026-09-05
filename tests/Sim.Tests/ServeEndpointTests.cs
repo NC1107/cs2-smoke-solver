@@ -266,6 +266,14 @@ public class ServeEndpointTests(ServeFixture server) : IClassFixture<ServeFixtur
         Assert.Contains("verify", phases);
         var result = JsonDocument.Parse(lines[^1]).RootElement.GetProperty("result");
         Assert.True(result.GetProperty("origins").GetInt32() > 0, "no origins were swept");
+        // The glass-state contract the viewer reads: present on every lineup,
+        // and on a map with no glass a throw breaks nothing and depends on nothing.
+        foreach (var l in result.GetProperty("lineups").EnumerateArray())
+        {
+            Assert.Equal(0, l.GetProperty("glass").GetInt32());
+            Assert.Equal(JsonValueKind.Null, l.GetProperty("restIfBroken").ValueKind);
+            Assert.False(l.GetProperty("stateDependent").GetBoolean());
+        }
         Assert.True(result.GetProperty("lineups").GetArrayLength() > 0, "a flat arena should have lineups");
         foreach (var l in result.GetProperty("lineups").EnumerateArray())
         {

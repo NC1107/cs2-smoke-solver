@@ -297,76 +297,38 @@ public static class MapExtractor
     // prop_dynamic hulls the game does not collide grenades with. Breakables
     // follow the same intact-at-round-start baseline as func_breakable glass.
     // prop_physics* stay out: loose junk (mugs, hard
+    // Diagnostics formatting of a KV3 tree. ValveKeyValue.KVObject is the one
+    // node type for scalars, arrays and collections; the shape flags say
+    // which, and a leaf's ToString is its value (verified against the pinned
+    // library, which is not what reflection over Name/Value found - that
+    // printed every scalar as empty and once misled a design decision).
+    static string Fmt(Vector3 v) => FormattableString.Invariant($"{v.X:F0},{v.Y:F0},{v.Z:F0}");
+
     static string FormatKv(object? value)
     {
-        if (value == null)
+        switch (value)
         {
-            return "null";
-        }
-        if (value is string s)
-        {
-            return s;
-        }
-        var t = value.GetType();
-        if (t.Name == "KVObject")
-        {
-            var props = t.GetProperties(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.FlattenHierarchy);
-            var nameProp = props.FirstOrDefault(p => p.Name.Equals("Name", StringComparison.OrdinalIgnoreCase));
-            var valueProp = props.FirstOrDefault(p => p.Name.Equals("Value", StringComparison.OrdinalIgnoreCase));
-            if (nameProp != null && valueProp != null)
-            {
-                return $"{nameProp.GetValue(value)}={FormatKv(valueProp.GetValue(value))}";
-            }
-            // VRF's KVObject is a dictionary: Keys plus an indexer.
-            var keysProp = props.FirstOrDefault(p => p.Name == "Keys");
-            var indexer = props.FirstOrDefault(p => p.Name == "Item" && p.GetIndexParameters().Length == 1 && p.GetIndexParameters()[0].ParameterType == typeof(string));
-            if (keysProp?.GetValue(value) is System.Collections.IEnumerable keys && indexer != null)
-            {
-                return "[" + string.Join(",", keys.Cast<object>().Select(k => $"{k}={FormatKv(indexer.GetValue(value, [k]))}")) + "]";
-            }
-            return $"<KVObject props: {string.Join("/", props.Select(p => p.Name))}>";
-        }
-        if (t.Name == "KVValue" && t.GetProperty("Value") is { } kvInner)
-        {
-            return FormatKv(kvInner.GetValue(value));
-        }
-        if (t.IsGenericType && t.GetGenericTypeDefinition() == typeof(KeyValuePair<,>))
-        {
-            return $"{t.GetProperty("Key")!.GetValue(value)}={FormatKv(t.GetProperty("Value")!.GetValue(value))}";
-        }
-        if (t.Name.StartsWith("KV", StringComparison.Ordinal) && t.Name != "KVObject")
-        {
-            // A KV value enumerates its children; a scalar enumerates nothing
-            // and converts to its text.
-            var items = value is System.Collections.IEnumerable kvEnum ? kvEnum.Cast<object>().ToList() : [];
-            if (items.Count > 0)
-            {
-                return "[" + string.Join(",", items.Select(FormatKv)) + "]";
-            }
-            try
-            {
-                return value is IConvertible conv ? conv.ToString(System.Globalization.CultureInfo.InvariantCulture) : value.ToString() ?? "";
-            }
-            catch (InvalidCastException)
-            {
+            case null:
+                return "null";
+            case string s:
+                return s;
+            case ValveKeyValue.KVObject kv:
+                if (kv.IsArray)
+                {
+                    return "[" + string.Join(",", kv.Values.Select(FormatKv)) + "]";
+                }
+                if (kv.IsCollection)
+                {
+                    return "{" + string.Join(",", kv.Children.Select(c => $"{c.Key}={FormatKv(c.Value)}")) + "}";
+                }
+                return kv.ToString() ?? "";
+            case KeyValuePair<string, ValveKeyValue.KVObject> pair:
+                return $"{pair.Key}={FormatKv(pair.Value)}";
+            case System.Collections.IEnumerable e:
+                return "[" + string.Join(",", e.Cast<object>().Select(FormatKv)) + "]";
+            default:
                 return value.ToString() ?? "";
-            }
         }
-        if (t.Namespace == "ValveKeyValue" && t.Name != "KVObject")
-        {
-            // A KV leaf (number, string, vector): its ToString is the value.
-            return value.ToString() ?? "";
-        }
-        if (t.Name.StartsWith("KV", StringComparison.Ordinal) && t.GetProperty("Value") is { } inner)
-        {
-            return FormatKv(inner.GetValue(value));
-        }
-        if (value is System.Collections.IEnumerable e)
-        {
-            var items = e.Cast<object>().Select(FormatKv).ToList();
-            return items.Count > 0 ? "[" + string.Join(",", items) + "]" : $"<{t.FullName}>";
-        }
-        return value.ToString() ?? "";
     }
 
     static readonly string[] KnownSurfaces =
@@ -1045,7 +1007,7 @@ public static class MapExtractor
     {
         try
         {
-            if (model.KeyValues is not System.Collections.IEnumerable pairs)
+            if (model.KeyValues is not ValveKeyValue.KVObject { IsCollection: true } kv)
             {
                 return false;
             }
@@ -1053,10 +1015,10 @@ public static class MapExtractor
             // props). break_command_list: the "break" is a scripted state
             // change instead (de_nuke's vent slats, which stand open), and
             // those are not glass.
-            var keys = pairs.Cast<object>().Select(o => FormatKv(o).Split('=')[0]).ToList();
+            var keys = kv.Children.Select(c => c.Key).ToHashSet(StringComparer.Ordinal);
             return keys.Contains("break_list") && !keys.Contains("break_command_list");
         }
-        catch (Exception e) when (e is InvalidOperationException or NullReferenceException)
+        catch (Exception e) when (e is InvalidOperationException or NullReferenceException or InvalidCastException)
         {
             return false;
         }
@@ -1113,7 +1075,7 @@ public static class MapExtractor
                 {
                     // Every glass-looking entity, extracted or not: the ones a
                     // player can break but this mesh does not know about.
-                    Diagnostics($"glass-like entity {className} {model} at ({entity.GetStringProperty("origin") ?? "?"}) name={entity.GetStringProperty("targetname") ?? ""} extracted={SolidEntityClassOverride.Contains(className)}");
+                    Diagnostics($"glass-like entity {className} {model} at ({Fmt(entity.GetVector3Property("origin", Vector3.Zero))}) name={entity.GetStringProperty("targetname") ?? ""} extracted={SolidEntityClassOverride.Contains(className)}");
                 }
                 if (!SolidEntityClassOverride.Contains(className) || model.Length == 0)
                 {
@@ -1140,7 +1102,7 @@ public static class MapExtractor
                 if (className == "prop_dynamic")
                 {
                     var breakable = BreakableModel(modelData);
-                    Diagnostics?.Invoke($"prop_dynamic {model} at ({entity.GetStringProperty("origin") ?? "?"}) breakable={breakable} keys=[{(modelData.KeyValues is System.Collections.IEnumerable kvs ? string.Join(",", kvs.Cast<object>().Select(o => FormatKv(o).Split('=')[0])) : "")}]");
+                    Diagnostics?.Invoke($"prop_dynamic {model} at ({Fmt(entity.GetVector3Property("origin", Vector3.Zero))}) breakable={breakable} keys=[{(modelData.KeyValues is ValveKeyValue.KVObject { IsCollection: true } kvs ? string.Join(",", kvs.Children.Select(c => c.Key)) : "")}]");
                     if (breakable && modelData.KeyValues is System.Collections.IEnumerable kvAll)
                     {
                         // The full prop_data block: health, damage response

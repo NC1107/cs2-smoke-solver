@@ -1,6 +1,6 @@
 // Fetch wrappers. No DOM access here; callers own status text and overlays.
 
-import { state } from "./state.js?v=114";
+import { state } from "./state.js?v=115";
 
 // Cache-bust a data URL with the map build: re-processed radars/GLBs change
 // content without changing name, and the query string gets a fresh copy past
@@ -234,11 +234,15 @@ export async function fetchSmokeCoverage(map, at, full = false) {
 }
 
 // An execute: every smoke in the list, solved from one throw position.
-export async function runExecute(map, origin, targets) {
+export async function runExecute(map, origin, targets, broken) {
+  const body = { map, origin, targets };
+  // World state (glass broken / doors open) the execute is solved under; the
+  // per-target searches honour it like a single search does.
+  if (broken) { body.broken = broken.split(","); }
   const res = await fetch("/api/execute", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ map, origin, targets }),
+    body: JSON.stringify(body),
   });
   return executeReply(res);
 }
@@ -258,11 +262,13 @@ async function executeReply(res) {
 // The other half: where can one player stand and throw all of them. Each target
 // costs a full map-wide solve the first time, so this can take minutes cold and
 // is nearly instant once they are cached.
-export async function findExecuteSpots(map, targets) {
+export async function findExecuteSpots(map, targets, broken) {
+  const body = { map, targets };
+  if (broken) { body.broken = broken.split(","); }
   const res = await fetch("/api/execute/spots", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ map, targets }),
+    body: JSON.stringify(body),
   });
   return executeReply(res);
 }
