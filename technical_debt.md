@@ -1949,3 +1949,8 @@ Regression check after the two-step tick: 21 of the 38 misses were hits when gra
 Re-measured on 590 steep floor bounces between 600 and 800 u/s from the captures: the full-tick speed separates damped from undamped at 688-690 with no exceptions; the half-step speed misclassifies 2 at 690 and 4-5 at 690.5-691.
 `Bounce` takes the gate speed separately; the reflection still uses the half-step velocity. 38 -> 33 over 8u (dust2 10 -> 8, cache 2 -> 0, ancient 2 -> 1), no map worse; medians 0.03u everywhere.
 Remaining regressions on shelter and office are glass state: panes broken by an earlier throw in the same validation run let later throws through at full speed, the sim treats every pane as intact. All-glass-as-air is worse (shelter 7 -> 16, office 7 -> 11), so the state is mixed within a run. Needs a rig or grading decision.
+
+### Loop iteration 21 (2026-09-04): glass met as the second contact of a step - NO EFFECT, reverted
+
+The sub-step loop's second-contact branch bounces off a breakable pane instead of passing through it (office [49] showed the sim bouncing off EntityBreakable#10 in the same tick as a floor contact).
+Made it pass through like a first contact: 33 -> 33 over 8u, every map identical to three decimals; no throw in the corpus reaches a pane as the second contact of a step with the pane still intact. Reverted under rule 2; if a case ever appears, this is the fix.
