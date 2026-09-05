@@ -1942,3 +1942,10 @@ Follow-up: the roll-out (iteration 13) was fitted against the old, shorter hops;
 Re-sweep of `RolloutTime` under the two-step tick: 0.1 / 0.05 / 0 s all give 38 over 8u; within 3u equal or better at 0 on every map but anubis (100 -> 99.6, one throw); medians 0.38 -> 0.03u on every map at 0.
 The 0.1u per u/s "roll" measured in iteration 13 was the hop-length shortfall of the single-step bounce, not a rolling phase. The roll-out code, its constant and its tests are gone; `replay --rollout` stays as the measurement.
 Same-build corpus now: 38 over 8u of 3,904, medians 0.03-0.04u, within 3u 95.6% (shelter) to 99.6%.
+
+### Loop iteration 20 (2026-09-04): the damp gate is judged on the full-tick velocity - KEPT
+
+Regression check after the two-step tick: 21 of the 38 misses were hits when graded (`replay --worst` shows "(was Xu)"; the classifier lists misses by recorded error and hides them). dust2 [55] hit the floor at 692 u/s full-tick, 689.8 at the half-step, and stopped damping.
+Re-measured on 590 steep floor bounces between 600 and 800 u/s from the captures: the full-tick speed separates damped from undamped at 688-690 with no exceptions; the half-step speed misclassifies 2 at 690 and 4-5 at 690.5-691.
+`Bounce` takes the gate speed separately; the reflection still uses the half-step velocity. 38 -> 33 over 8u (dust2 10 -> 8, cache 2 -> 0, ancient 2 -> 1), no map worse; medians 0.03u everywhere.
+Remaining regressions on shelter and office are glass state: panes broken by an earlier throw in the same validation run let later throws through at full speed, the sim treats every pane as intact. All-glass-as-air is worse (shelter 7 -> 16, office 7 -> 11), so the state is mixed within a run. Needs a rig or grading decision.

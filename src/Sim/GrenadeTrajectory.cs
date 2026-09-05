@@ -174,12 +174,23 @@ public static class GrenadeTrajectory
     /// this normal at this incoming velocity. Public so diagnostics can ask
     /// which normal would have produced a recorded real rebound.
     /// </summary>
-    public static Vector3 Bounce(Vector3 w, Vector3 normal, ThrowConstants k)
+    public static Vector3 Bounce(Vector3 w, Vector3 normal, ThrowConstants k) => Bounce(w, normal, k, w.Length());
+
+    /// <summary>
+    /// Reflects w off the surface. gateSpeed is the speed the floor-damp gate
+    /// is judged on: the game applies the gate to the velocity with the whole
+    /// tick's gravity in it, even for a contact in the first half-step whose
+    /// reflection uses the half-step velocity. MEASURED 2026-09-04 on 590
+    /// steep floor bounces between 600 and 800 u/s: the full-tick speed
+    /// separates damped from undamped bounces at 688-690 with no exceptions,
+    /// the half-step speed cannot without moving the gate.
+    /// </summary>
+    public static Vector3 Bounce(Vector3 w, Vector3 normal, ThrowConstants k, float gateSpeed)
     {
         var speed = w.Length();
         var reflected = SnapStopEpsilon(w - 2f * Vector3.Dot(w, normal) * normal);
         var u = speed > 1e-6f ? MathF.Abs(Vector3.Dot(w, normal)) / speed : 0f;
-        var damp = FloorImpactDamp(speed, u, isFloor: normal.Z > FloorNormalZ, k);
+        var damp = FloorImpactDamp(gateSpeed, u, isFloor: normal.Z > FloorNormalZ, k);
         return reflected * (k.Elasticity * damp);
     }
 
@@ -472,7 +483,10 @@ public static class GrenadeTrajectory
                 }
 
                 var w = velocity;
-                var vAfter = Bounce(w, hit.Normal, k);
+                // The velocity as it would stand at the end of the tick: the
+                // floor-damp gate is judged on that, not on the half-step.
+                var gateSpeed = new Vector3(w.X, w.Y, w.Z - stepG * (PhysicsSubsteps - 1 - step)).Length();
+                var vAfter = Bounce(w, hit.Normal, k, gateSpeed);
                 trace?.Add($"t={time:F2} contact ({contact.X:F0},{contact.Y:F0},{contact.Z:F0}) normal ({hit.Normal.X:F2},{hit.Normal.Y:F2},{hit.Normal.Z:F2}) v after ({vAfter.X:F0},{vAfter.Y:F0},{vAfter.Z:F0})");
                 bounceTrace?.Add(new BounceRecord(tick, contact, hit.Normal, hit.Triangle, w, vAfter));
 
@@ -533,7 +547,7 @@ public static class GrenadeTrajectory
                     // what is left of the step on that velocity.
                     bounces++;
                     var w2 = velocity;
-                    velocity = Bounce(w2, hit2.Normal, k);
+                    velocity = Bounce(w2, hit2.Normal, k, new Vector3(w2.X, w2.Y, w2.Z - stepG * (PhysicsSubsteps - 1 - step)).Length());
                     trace?.Add($"t={time:F2} contact ({position.X:F0},{position.Y:F0},{position.Z:F0}) normal ({hit2.Normal.X:F2},{hit2.Normal.Y:F2},{hit2.Normal.Z:F2}) v after ({velocity.X:F0},{velocity.Y:F0},{velocity.Z:F0}) (same tick)");
                     bounceTrace?.Add(new BounceRecord(tick, position, hit2.Normal, hit2.Triangle, w2, velocity));
                     next2 = position + velocity * (remainder * stepDt);

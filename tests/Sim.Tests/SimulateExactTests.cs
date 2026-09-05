@@ -242,6 +242,33 @@ public class SubstepBounceTests
 }
 
 /// <summary>
+/// The floor-damp gate (DampGateSpeed, 690 u/s) is judged on the velocity
+/// with the whole tick's gravity in it, even when the contact falls in the
+/// first half-step and the reflection uses the half-step velocity. MEASURED
+/// 2026-09-04 on 590 steep floor bounces between 600 and 800 u/s: the
+/// full-tick speed separates damped from undamped with no exceptions.
+/// Corpus: 38 -> 33 misses over 8u.
+/// </summary>
+public class DampGateSpeedBasisTests
+{
+    static TriangleCollider Floor() => new(SyntheticMeshes.FromQuads([SyntheticMeshes.Ground(-256, 256, 0)]),
+        new Vector3(-256, -256, -16), new Vector3(256, 256, 256));
+
+    [Fact]
+    public void AFirstHalfStepContactJustUnderTheGateAtHalfStepSpeedStillDamps()
+    {
+        // 687 u/s down: 692 with the tick's gravity (over the gate), 689.5 at
+        // the half-step (under it). 1.5u above contact puts the hit in the
+        // first half of the tick.
+        var ticks = new List<(Vector3 Position, Vector3 Velocity)>();
+        GrenadeTrajectory.SimulateExactRaw(Floor(), new Vector3(0f, 0f, 3.5f), new Vector3(0f, 0f, -687f), ThrowConstants.Default, tickTrace: ticks);
+
+        // Damped: 0.45 x 0.5 x 689.5 - 2.5 = 152.6. Undamped would be 307.8.
+        Assert.InRange(ticks[0].Velocity.Z, 148f, 158f);
+    }
+}
+
+/// <summary>
 /// A slow contact with a wall and nothing under the hull is an ordinary
 /// bounce. The sim used to slide along the wall there, dropping the
 /// component of velocity the wall had just reversed; the rig's captures on
