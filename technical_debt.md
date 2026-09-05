@@ -1954,3 +1954,8 @@ Remaining regressions on shelter and office are glass state: panes broken by an 
 
 The sub-step loop's second-contact branch bounces off a breakable pane instead of passing through it (office [49] showed the sim bouncing off EntityBreakable#10 in the same tick as a floor contact).
 Made it pass through like a first contact: 33 -> 33 over 8u, every map identical to three decimals; no throw in the corpus reaches a pane as the second contact of a step with the pane still intact. Reverted under rule 2; if a case ever appears, this is the fix.
+
+### Loop iteration 22 (2026-09-04): one contact per half-step - FALSIFIED
+
+dust2 [35] hits a 17u door-frame sliver and then the floor inside one half-step and is reflected twice (the game bounces once), so `BouncesPerTick` 1 was tried under the two-step tick: 34 over 8u against 33 (boulder 0 -> 1), dust2 unchanged. The second contact per step stays.
+Remaining 33 misses by kind: about 8 are glass state (panes broken by an earlier throw in the same run: shelter 152646 [19-21], 152857 [32], 144929 [59]; office 144326 [49], [57], 143837 [44]), dust2 [39]/[50]/[35]/[42] x2 are geometry-fragile corners and ledges that flipped when the trajectories moved by fractions of a unit, the rest are single throws.
