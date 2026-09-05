@@ -93,7 +93,11 @@ Per tick:
    - **Reflect** the whole velocity about the surface normal (`w - 2·(w·n)·n`), then **snap** any component with magnitude `< STOP_EPSILON (0.1)` to exactly zero *before* the restitution multiply.
    - **Restitution** multiplies the *whole* reflected vector by `Elasticity = 0.45`. There is no tangential-friction term in the grenade path.
    - **Angle damp (floor only)**: if impact speed `> DampGateSpeed (690 u/s)` *and* the impact angle is steeper than 60° (`|w·n|/|w| > 0.5`) *and* the surface is floor-like (`n.z > 0.7`), additionally scale by `(1.5 - |cos angle|)`. Walls never damp (validated: 0/122 gated wall bounces damped vs 68/76 gated ground bounces).
-   - **Stop rule**: if post-bounce speed `< StopSpeed (19.685 u/s ≈ 0.5 m/s)` on a floor (or with floor directly below), the grenade rests. There is no rolling phase.
+   - **Stop rule**: if post-bounce speed `< StopSpeed (19.685 u/s ≈ 0.5 m/s)` on a floor (or with floor directly below), the rest condition is met.
+   - **Roll-out**: the grenade is not still yet; it slides on along the floor at the post-bounce tangential velocity for `RolloutTime` (0.1 s, six ticks) and rests where that ends.
+     MEASURED on the same-build corpus (2026-09-04, `replay --rollout`): the real rest lay past the instant-stop point along that velocity by 0.1u per u/s of tangential speed, with almost no sideways component.
+     Walls end the roll where they are met; when the hull centre loses floor support the roll has reached a rim and the grenade stays there (the real contact normal tilts back at a rim, and rolling the box corner over dropped grenades 57u).
+     Corpus: within 3u up on 12 of 15 maps (overpass 89.7 -> 93.2%, office 89.5 -> 91.2%, anubis 93.9 -> 96.5%), medians down on 13, throws over 8u unchanged at 56.
    - Otherwise consume the remainder of the tick with the bounced velocity (up to two contacts resolved per tick).
      A slow contact against a wall with no floor beneath is an ordinary bounce, not a rest and not a slide.
      The sim used to slide along the wall there, dropping the velocity component the wall had just reversed; the rig's captures (dust2 top_door, 2026-09-04) show the real grenade leaving at the reflected velocity, and the corpus replay went from 59 to 56 misses over 8u with no map worse when the slide was removed.

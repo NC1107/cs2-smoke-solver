@@ -1899,3 +1899,15 @@ The box is 2u in every axis and the hull shape is not where the rim misses come 
 Hypothesis from train [48] (sim parks on a 34 degree slope the real grenade slides down) and anubis [54]: a slow contact should only count as rest when the surface normal is steeper than FloorNormalZ (0.7).
 `RestNormalZ` 0.8 / 0.9 / 0.95 on the same-build corpus, 15 maps: 56 / 56 / 65 over 8u against 56; within 3u unchanged at 0.8, dust2 96.0 -> 95.7 at 0.9, dust2 94.8 and overpass 88.0 at 0.95.
 The slope cases do not respond (the grenade micro-hops and rests anyway) and steep thresholds break genuine rests on ramps. Reverted; do not retry a rest-normal threshold.
+
+### Loop iteration 13 (2026-09-04): roll-out after the rest condition - KEPT (rule 2 judgement call)
+
+The 3-8u band on office, shelter and overpass is 71 of 79 throws "settle": paths agree, only the rest differs by 3-5u.
+`replay --rollout` measured where the real rest lies relative to the sim's instant stop, in the frame of the last tangential velocity: along +0.2u at 0-4 u/s, +0.6-1.3u at 4-8, +0.6-1.2u at 8-12, +0.7-1.9u at 12-16, +2-3u at 16-20; across 0.1-0.3u.
+That is 0.1u per u/s: the grenade keeps sliding for about a tenth of a second before the engine sleeps it.
+Model: on the rest condition, slide along the floor at the post-bounce tangential velocity for `RolloutTime` = 0.1 s (six ticks); walls end the roll; losing floor under the hull centre means a rim, and the roll ends there.
+Sweep 0.05 / 0.1 / 0.15 s: 0.1 best overall; 0.15 helps office/boulder but costs italy, ancient, mirage and dust2.
+First version let the roll carry the hull corner over rims (dust2 [51] on a sloped ledge fell 57u; mirage [15] fell 7u); the centre-support stop fixed both.
+Result (same build, 15 maps): within 3u up on 12 maps (overpass 89.7 -> 93.2, office 89.5 -> 91.2, boulder 90.4 -> 94.1, anubis 93.9 -> 96.5, train 90.8 -> 93.8), down on vertigo (92.9 -> 92.5) and mirage/dust2 flat; medians down on 13 maps; over 8u 56 -> 56 (boulder -1, train -1, dust2 +2: [8] and [33] flip from 7.x to 8.x, both real grenades rolled 7-8u, further than the model).
+Rule 2 asks for the over-8u total to drop; it is unchanged, and the change moves the within-3u half of the target on most maps, so it is kept under Nick's "do what you recommend" - revert with `RolloutTime = 0` if he disagrees.
+Under 90% now: shelter only (88.7).

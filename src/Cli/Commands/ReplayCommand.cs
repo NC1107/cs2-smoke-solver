@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Numerics;
 using System.Text.Json;
 using SmokeSolver.Sim;
+using static SmokeSolver.Sim.GrenadeTrajectory;
 
 using static SmokeSolver.Cli.CliParsing;
 using static SmokeSolver.Cli.MeshSetup;
@@ -17,6 +18,7 @@ namespace SmokeSolver.Cli;
 ///
 ///   replay --geo data/de_dust2.s2geo [--reports data/validation] [--worst 20] [--moved 8]
 ///          [--nonsolid passbullets] [--nonsolid-groups 2] [--no-edge-tip]
+///          [--rollout]   (where the real rest lies relative to the sim stop, by tangential speed)
 ///
 /// Experiments already run through it and falsified (2026-09-04, do not
 /// retry without new evidence): a sphere hull instead of the box, preferring
@@ -106,12 +108,57 @@ public static class ReplayCommand
 
         var errors = new float[rows.Count];
         var rests = new Vector3[rows.Count];
+        var lastBounce = new BounceRecord?[rows.Count];
+        var rollout = options.ContainsKey("rollout");
         Parallel.For(0, rows.Count, i =>
         {
-            var result = GrenadeTrajectory.SimulateExactRaw(collider, rows[i].Pos, rows[i].Vel, constants);
+            var bounceTrace = rollout ? new List<BounceRecord>() : null;
+            var result = GrenadeTrajectory.SimulateExactRaw(collider, rows[i].Pos, rows[i].Vel, constants, bounceTrace: bounceTrace);
             rests[i] = result.RestPoint;
             errors[i] = Vector3.Distance(result.RestPoint, rows[i].Real);
+            if (bounceTrace is { Count: > 0 })
+            {
+                lastBounce[i] = bounceTrace[^1];
+            }
         });
+        if (rollout)
+        {
+            // EXPERIMENT: where does the real rest lie relative to the sim's
+            // stop point, in the frame of the sim's last tangential velocity?
+            // "along" > 0 means the real grenade went on past where we stopped.
+            var bins = new SortedDictionary<int, List<(float Along, float Across, float Dz)>>();
+            for (var i = 0; i < rows.Count; i++)
+            {
+                if (lastBounce[i] is not { } lb || errors[i] > 16f)
+                {
+                    continue;
+                }
+                var n = lb.Normal;
+                var vt = lb.VelocityAfter - Vector3.Dot(lb.VelocityAfter, n) * n;
+                var speed = vt.Length();
+                if (speed < 0.5f)
+                {
+                    continue;
+                }
+                var dir = vt / speed;
+                var d = rows[i].Real - rests[i];
+                var along = Vector3.Dot(d, dir);
+                var across = (d - along * dir - Vector3.Dot(d, n) * n).Length();
+                var bin = (int)(speed / 4f) * 4;
+                if (!bins.TryGetValue(bin, out var list))
+                {
+                    bins[bin] = list = [];
+                }
+                list.Add((along, across, d.Z));
+            }
+            Console.WriteLine("  rollout (throws within 16u, by tangential speed after the last contact):");
+            Console.WriteLine("  speed u/s   n   along mean/median   across mean   dz mean");
+            foreach (var (bin, list) in bins)
+            {
+                var alongs = list.Select(x => x.Along).OrderBy(x => x).ToArray();
+                Console.WriteLine($"  {bin,3}-{bin + 4,-3}   {list.Count,4}   {alongs.Average(),6:F2} / {alongs[alongs.Length / 2],5:F2}     {list.Average(x => x.Across),6:F2}      {list.Average(x => x.Dz),6:F2}");
+            }
+        }
 
         var sorted = errors.OrderBy(e => e).ToArray();
         float Pct(double p) => sorted[Math.Min(sorted.Length - 1, (int)(p * sorted.Length))];
