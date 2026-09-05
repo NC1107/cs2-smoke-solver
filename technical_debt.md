@@ -1973,3 +1973,8 @@ Probe launch points in the void (deck windows on inferno, vertigo railings) prod
 Lineups carry `GlassBreaks` / `RestIfBroken` (VerifyExact re-simulates glass-breaking throws against a glass-gone collider); the API exposes `glass`, `restIfBroken`, `stateDependent` (landings differ by more than 8u) and ranks state-dependent lineups below concealed ones; the viewer badges them amber with the alternative landing distance.
 Validation records `GlassState` per throw from the capture (speed ratio at the sim's pane tick) and grades against the matching rest; `replay` does the same from recorded state, or the closer of the two for old reports and says how many it corrected.
 Corpus: 33 -> 26 over 8u (office 7 -> 5, shelter 7 -> 2), 7 throws re-graded against a gone pane, medians unchanged at 0.03u.
+
+### Glass loop iteration 3 (2026-09-05): only window and glass props let a grenade through - KEPT
+
+Breakable model prop data cannot be read from the compiled model (the KV3 block carries the keys, the values are empty), so the rule rests on the probe: every pane the game let a grenade through has "window" or "glass" in its model path (office, shelter, anubis, nuke and train windows, inferno shop-front glass and apartment windows, ancient lantern glass, overpass door glass); the one breakable prop it bounced off, de_train's electronics enclosure doors, has neither.
+Extraction now keeps such props as EntitySolid. Re-extracted de_train (EntityBreakable 432 -> 72 triangles, the rest solid) and de_vertigo (its fence rails become solid; the game bounced there too). Corpus unchanged on both (1 and 1 over 8u, medians 0.03u); the dry-run probe shows the sim bouncing at the enclosure like the game.

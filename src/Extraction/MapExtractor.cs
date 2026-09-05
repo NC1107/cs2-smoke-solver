@@ -308,9 +308,49 @@ public static class MapExtractor
             return s;
         }
         var t = value.GetType();
+        if (t.Name == "KVObject")
+        {
+            var props = t.GetProperties(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.FlattenHierarchy);
+            var nameProp = props.FirstOrDefault(p => p.Name.Equals("Name", StringComparison.OrdinalIgnoreCase));
+            var valueProp = props.FirstOrDefault(p => p.Name.Equals("Value", StringComparison.OrdinalIgnoreCase));
+            if (nameProp != null && valueProp != null)
+            {
+                return $"{nameProp.GetValue(value)}={FormatKv(valueProp.GetValue(value))}";
+            }
+            // VRF's KVObject is a dictionary: Keys plus an indexer.
+            var keysProp = props.FirstOrDefault(p => p.Name == "Keys");
+            var indexer = props.FirstOrDefault(p => p.Name == "Item" && p.GetIndexParameters().Length == 1 && p.GetIndexParameters()[0].ParameterType == typeof(string));
+            if (keysProp?.GetValue(value) is System.Collections.IEnumerable keys && indexer != null)
+            {
+                return "[" + string.Join(",", keys.Cast<object>().Select(k => $"{k}={FormatKv(indexer.GetValue(value, [k]))}")) + "]";
+            }
+            return $"<KVObject props: {string.Join("/", props.Select(p => p.Name))}>";
+        }
+        if (t.Name == "KVValue" && t.GetProperty("Value") is { } kvInner)
+        {
+            return FormatKv(kvInner.GetValue(value));
+        }
         if (t.IsGenericType && t.GetGenericTypeDefinition() == typeof(KeyValuePair<,>))
         {
             return $"{t.GetProperty("Key")!.GetValue(value)}={FormatKv(t.GetProperty("Value")!.GetValue(value))}";
+        }
+        if (t.Name.StartsWith("KV", StringComparison.Ordinal) && t.Name != "KVObject")
+        {
+            // A KV value enumerates its children; a scalar enumerates nothing
+            // and converts to its text.
+            var items = value is System.Collections.IEnumerable kvEnum ? kvEnum.Cast<object>().ToList() : [];
+            if (items.Count > 0)
+            {
+                return "[" + string.Join(",", items.Select(FormatKv)) + "]";
+            }
+            try
+            {
+                return value is IConvertible conv ? conv.ToString(System.Globalization.CultureInfo.InvariantCulture) : value.ToString() ?? "";
+            }
+            catch (InvalidCastException)
+            {
+                return value.ToString() ?? "";
+            }
         }
         if (t.Namespace == "ValveKeyValue" && t.Name != "KVObject")
         {
@@ -323,7 +363,8 @@ public static class MapExtractor
         }
         if (value is System.Collections.IEnumerable e)
         {
-            return "[" + string.Join(",", e.Cast<object>().Select(FormatKv)) + "]";
+            var items = e.Cast<object>().Select(FormatKv).ToList();
+            return items.Count > 0 ? "[" + string.Join(",", items) + "]" : $"<{t.FullName}>";
         }
         return value.ToString() ?? "";
     }
@@ -1088,14 +1129,34 @@ public static class MapExtractor
                 using var resource = new Resource();
                 resource.Read(new MemoryStream(raw));
                 var modelData = (Model)resource.DataBlock!;
+                var passableGlass = true;
                 if (className == "prop_dynamic")
                 {
                     var breakable = BreakableModel(modelData);
-                    Diagnostics?.Invoke($"prop_dynamic {model} breakable={breakable} keys=[{(modelData.KeyValues is System.Collections.IEnumerable kvs ? string.Join(",", kvs.Cast<object>().Select(o => FormatKv(o).Split('=')[0])) : "")}]");
+                    Diagnostics?.Invoke($"prop_dynamic {model} at ({entity.GetStringProperty("origin") ?? "?"}) breakable={breakable} keys=[{(modelData.KeyValues is System.Collections.IEnumerable kvs ? string.Join(",", kvs.Cast<object>().Select(o => FormatKv(o).Split('=')[0])) : "")}]");
+                    if (breakable && modelData.KeyValues is System.Collections.IEnumerable kvAll)
+                    {
+                        // The full prop_data block: health, damage response
+                        // and physics flags decide whether a grenade breaks
+                        // the thing or bounces off it.
+                        foreach (var kv in kvAll.Cast<object>().Where(o => FormatKv(o).StartsWith("prop_data=", StringComparison.Ordinal)))
+                        {
+                            Diagnostics?.Invoke($"    {FormatKv(kv)}");
+                        }
+                    }
                     if (!breakable)
                     {
                         continue;
                     }
+                    // Breakable does not mean a grenade goes through it. Probed
+                    // on the rig 2026-09-05 across ten maps: every pane the
+                    // grenade breaks and passes (at 0.40 speed) is a window or
+                    // glass model - office, shelter, anubis, nuke and train
+                    // windows, inferno shop-front glass and apartment windows,
+                    // ancient lantern glass, overpass door glass - while the
+                    // one breakable prop it bounced off, de_train's electronics
+                    // enclosure doors, is neither. Those stay plain solid.
+                    passableGlass = model.Contains("window", StringComparison.OrdinalIgnoreCase) || model.Contains("glass", StringComparison.OrdinalIgnoreCase);
                 }
                 var phys = modelData.GetEmbeddedPhys();
                 if (phys == null &&
@@ -1134,9 +1195,9 @@ public static class MapExtractor
                     "func_clip_vphysics" => "EntityPhysicsClip",
                     "func_door" or "func_door_rotating" or "prop_door_rotating" => "EntityDoor",
                     "func_breakable" => "EntityBreakable",
-                    // A prop with health is breakable in game (de_nuke's vent
-                    // slats, wooden shutters); one without is furniture.
-                    "prop_dynamic" => "EntityBreakable",
+                    // A prop with health is breakable in game; only window and
+                    // glass models let a grenade through when they break.
+                    "prop_dynamic" => passableGlass ? "EntityBreakable" : "EntitySolid",
                     _ => "EntitySolid",
                 };
                 var attrIndex = names.IndexOf(attrName);
