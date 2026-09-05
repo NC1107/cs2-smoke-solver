@@ -695,8 +695,9 @@ public static class LineupApi
     }
 
     /// <summary>
-    /// The order the API hands lineups out in: the landing error a person adds
-    /// (HumanError, in 8u bands) first, concealed before exposed, then nearest
+    /// The order the API hands lineups out in: throws whose landing does not
+    /// depend on glass state first, then the landing error a person adds
+    /// (HumanError, in 8u bands), concealed before exposed, then nearest
     /// the clicked spot for a probe, then pinned before open, then the easier
     /// movement. Shared with the validation rig so what it throws first is
     /// what a player sees first.
@@ -704,9 +705,13 @@ public static class LineupApi
     public static List<Lineup> Rank(IReadOnlyList<Lineup> lineups, Vector2? originClick, Func<Lineup, float> humanError, Func<Lineup, int> pin)
     {
         int Reproducibility(Lineup l) => (int)(humanError(l) / 8f);
+        // State first: a smoke that lands in two different places depending
+        // on whether a window is still intact is not a lineup a person can
+        // rely on, however well it aims. Among throws that share a state the
+        // human-error band leads as before.
         var bySky = lineups
-            .OrderBy(Reproducibility)
-            .ThenBy(l => StateDependent(l) ? 1 : 0)
+            .OrderBy(l => StateDependent(l) ? 1 : 0)
+            .ThenBy(Reproducibility)
             .ThenBy(l => l.DirectLos ? 1 : 0);
         return (originClick is { } click
                 ? bySky.ThenBy(l => (int)(Vector2.Distance(new Vector2(l.Feet.X, l.Feet.Y), click) / 32f)).ThenByDescending(pin).ThenBy(l => (int)l.Type)

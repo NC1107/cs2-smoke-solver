@@ -727,7 +727,10 @@ function renderWorst(report) {
   }
   body.innerHTML = rows.map(r => {
     const click = clickShort(r.Strength);
-    const divergence = r.DivergenceClass ? esc(`${r.DivergenceClass}@${r.DivergenceTick ?? "?"}`) : "-";
+    // Glass state is what the throw was graded against: a pane an earlier
+    // throw in the run had already broken is "gone".
+    const glass = r.GlassState ? ` <span class="chip">glass ${esc(r.GlassState)}</span>` : "";
+    const divergence = (r.DivergenceClass ? esc(`${r.DivergenceClass}@${r.DivergenceTick ?? "?"}`) : "-") + glass;
     return `<tr>` +
       `<td>${r.ErrPredicted.toFixed(0)}u</td>` +
       `<td>${divergence}</td>` +
@@ -1043,7 +1046,8 @@ function landingOverlay(report, rows, crop) {
     const y2 = crop.py(r.RealRest[1]).toFixed(1);
     const title = `${typeLabelFor(r)} (${clickShort(r.Strength)}) - ${fmtErr(r.ErrPredicted)}u off - ` +
       `${r.PredictedBounces}${Number.isFinite(r.RealBounces) ? "/" + r.RealBounces : ""} bounces` +
-      (r.DivergenceClass ? ` - ${r.DivergenceClass}` : "");
+      (r.DivergenceClass ? ` - ${r.DivergenceClass}` : "") +
+      (r.GlassState ? ` - glass ${r.GlassState}` : "");
     body += `<a href="${esc(openLinkFor(report.map, target, r))}" target="_blank" rel="noopener">` +
       `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${color}" stroke-width="1.5" vector-effect="non-scaling-stroke" stroke-opacity="0.9"/>` +
       `<circle cx="${x1}" cy="${y1}" r="${dotR.toFixed(2)}" fill="none" stroke="${color}" stroke-width="1" vector-effect="non-scaling-stroke"/>` +

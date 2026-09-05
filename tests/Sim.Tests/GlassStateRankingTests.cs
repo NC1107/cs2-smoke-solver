@@ -38,4 +38,15 @@ public class GlassStateRankingTests
 
         Assert.Equal([concealed, exposed, glass], ranked);
     }
+
+    [Fact]
+    public void ABetterAimBandDoesNotLiftAStateDependentLineupAboveAStateIndependentOne()
+    {
+        var glass = At(0f, glass: 1, restIfBroken: new Vector3(600f, 0f, 0f));
+        var plain = At(10f);
+
+        var ranked = LineupApi.Rank([glass, plain], null, l => l == glass ? 2f : 20f, _ => 0);
+
+        Assert.Equal([plain, glass], ranked);
+    }
 }

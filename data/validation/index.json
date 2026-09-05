@@ -1,5 +1,5 @@
 {
-  "generated": "2026-09-04T19:19:12.2899112-04:00",
+  "generated": "2026-09-05T11:55:07.6920815-04:00",
   "runs": [
     {
       "file": "cs_italy-20260904-141605.json",
@@ -326,6 +326,39 @@
         "errMean": 40.71635,
         "errP90": 4.5557833,
         "errMax": 879.26556,
+        "perturbed": null
+      }
+    },
+    {
+      "file": "cs_office-20260905-115507.json",
+      "map": "cs_office",
+      "name": "glass_courtyard",
+      "batch": "",
+      "timestamp": "2026-09-05T11:55:07.5810334-04:00",
+      "build": "2000899",
+      "serverBuild": "2000899",
+      "target": [
+        963,
+        -930,
+        -160
+      ],
+      "summary": {
+        "lineups": 30,
+        "submitted": 30,
+        "matched": 30,
+        "graded": 30,
+        "notDetonated": 0,
+        "culled": 0,
+        "stuck": 0,
+        "passRadius": 3,
+        "withinPass": 28,
+        "within1": 26,
+        "within2": 28,
+        "within8": 30,
+        "errMedian": 0.048220422,
+        "errMean": 0.5864616,
+        "errP90": 1.6794994,
+        "errMax": 7.2963653,
         "perturbed": null
       }
     },
@@ -4671,6 +4704,39 @@
         "errMean": 1.629443,
         "errP90": 4.2964563,
         "errMax": 15.148471,
+        "perturbed": null
+      }
+    },
+    {
+      "file": "de_inferno-20260905-114815.json",
+      "map": "de_inferno",
+      "name": "",
+      "batch": "",
+      "timestamp": "2026-09-05T11:48:15.8993418-04:00",
+      "build": "2000899",
+      "serverBuild": "2000899",
+      "target": [
+        1040,
+        -248,
+        256
+      ],
+      "summary": {
+        "lineups": 30,
+        "submitted": 30,
+        "matched": 30,
+        "graded": 30,
+        "notDetonated": 0,
+        "culled": 0,
+        "stuck": 0,
+        "passRadius": 3,
+        "withinPass": 30,
+        "within1": 29,
+        "within2": 30,
+        "within8": 30,
+        "errMedian": 0.051337685,
+        "errMean": 0.10297544,
+        "errP90": 0.19284621,
+        "errMax": 1.3523653,
         "perturbed": null
       }
     },

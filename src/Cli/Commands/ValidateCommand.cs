@@ -67,7 +67,12 @@ public static class ValidateCommand
 
         Console.WriteLine($"solving target ({target.X:F0},{target.Y:F0}{(hasTargetZ ? $",{target.Z:F0}" : "")}) tolerance {tolerance:F0}u ...");
         var started = System.Diagnostics.Stopwatch.StartNew();
-        var solve = SolveForTarget(mesh, attributeFilter, navAreas, target, hasTargetZ, null, 3100f, tolerance, constants);
+        // --origin x,y [--reach u]: only lineups thrown from within reach of
+        // that spot, the API's spot probe. Lets a run force one route - every
+        // throw through a particular window, say.
+        Vector2? originClick = options.TryGetValue("origin", out var originRaw) ? new Vector2(ParseVec2or3(originRaw).Item1.X, ParseVec2or3(originRaw).Item1.Y) : null;
+        var originReach = float.Parse(options.GetValueOrDefault("reach", "3100"), CultureInfo.InvariantCulture);
+        var solve = SolveForTarget(mesh, attributeFilter, navAreas, target, hasTargetZ, originClick, originReach, tolerance, constants);
         // In the API's order, so a limited run throws what a player sees
         // first - the solver's own order put the top of the list last.
         var ordered = LineupApi.Ranked(solve);
