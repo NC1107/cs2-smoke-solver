@@ -1108,6 +1108,13 @@ public static class MapExtractor
             {
                 var className = entity.GetStringProperty("classname") ?? string.Empty;
                 var model = entity.GetStringProperty("model") ?? string.Empty;
+                if (Diagnostics != null && (className.Contains("break", StringComparison.OrdinalIgnoreCase) || className.Contains("glass", StringComparison.OrdinalIgnoreCase)
+                    || model.Contains("glass", StringComparison.OrdinalIgnoreCase) || model.Contains("window", StringComparison.OrdinalIgnoreCase) || model.Contains("skylight", StringComparison.OrdinalIgnoreCase)))
+                {
+                    // Every glass-looking entity, extracted or not: the ones a
+                    // player can break but this mesh does not know about.
+                    Diagnostics($"glass-like entity {className} {model} at ({entity.GetStringProperty("origin") ?? "?"}) name={entity.GetStringProperty("targetname") ?? ""} extracted={SolidEntityClassOverride.Contains(className)}");
+                }
                 if (!SolidEntityClassOverride.Contains(className) || model.Length == 0)
                 {
                     continue;

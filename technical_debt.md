@@ -1984,3 +1984,10 @@ Extraction now keeps such props as EntitySolid. Re-extracted de_train (EntityBre
 The live API put a state-dependent lineup first on an office solve (better aim band); state now leads the ranking and the band orders throws within a state.
 `validate --origin x,y --reach u` forces a route. cs_office target behind the back-courtyard window, throws only from the courtyard: 25 of 30 broke the pane, grader read 17 gone / 8 intact, 28 of 30 within 3u, median 0.0u, max 7.3u. de_inferno behind the apartments window: 30 of 30 within 3u, median 0.1u.
 Doors on nuke, inferno, vertigo, office and shelter and nuke's vents bounce in the game and in the sim (0.1u); no door state logic is needed beyond the existing `broken: doors` toggle.
+
+### Glass loop iteration 5 (2026-09-05): nuke's roof glass, both worlds validated in-game
+
+Nick's case: shoot out the roof glass, then throw onto the hut roof. The roof glass is the eight `nuke_window_84x68` props in the clerestory of the A-building roof (x 406 and 710, y -1155 and -643, z 85-150, near-vertical); the hut roof is at (464,-1146,-256), directly below the west pair. A grenade does not break these panes (probe: bounce, 0.1u), so they are round state a player creates by shooting.
+Solver: hut roof (460,-1120,-256), tolerance 64: 310 lineups with the glass intact (lobs through the open roof sections), 400 with it broken, 161 only with it broken (west outside through the window). The viewer's World setting "glass broken" is the switch.
+Rig: intact - 40 of 40 within 3u, median 0.0u. Broken - `ent_fire "[PR#]<id>_window" Break` on the eight panes (plugin allowlist now has `ent_fire `, needs sv_cheats 1), then `validate --broken glass --origin 224,-952 --reach 220`: 30 of 30 within 3u, median 0.1u, max 0.9u.
+`validate --broken glass[,doors]` solves in the glass-gone world; the rig must be in the same state.

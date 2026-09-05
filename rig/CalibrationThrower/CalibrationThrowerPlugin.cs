@@ -366,6 +366,10 @@ public class CalibrationThrowerPlugin : BasePlugin
         // at host_timescale 3 records the same physics in a third of the
         // wall clock.
         "host_timescale ",
+        // Entity I/O for world state: shooting out breakable windows (ent_fire
+        // <name> Break) so a validation pass can grade the glass-broken world
+        // the solver offers as a setting. Needs sv_cheats 1.
+        "ent_fire ",
     ];
 
     // The console treats newlines as command separators exactly like ';', so

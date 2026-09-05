@@ -1,5 +1,5 @@
 {
-  "generated": "2026-09-05T11:55:07.6920815-04:00",
+  "generated": "2026-09-05T13:03:57.3034844-04:00",
   "runs": [
     {
       "file": "cs_italy-20260904-141605.json",
@@ -5723,6 +5723,72 @@
         "errMean": 0.73245496,
         "errP90": 2.9620411,
         "errMax": 5.428996,
+        "perturbed": null
+      }
+    },
+    {
+      "file": "de_nuke-20260905-125740.json",
+      "map": "de_nuke",
+      "name": "hut_roof",
+      "batch": "",
+      "timestamp": "2026-09-05T12:57:40.3110140-04:00",
+      "build": "2000899",
+      "serverBuild": "2000899",
+      "target": [
+        460,
+        -1120,
+        -256
+      ],
+      "summary": {
+        "lineups": 40,
+        "submitted": 40,
+        "matched": 40,
+        "graded": 40,
+        "notDetonated": 0,
+        "culled": 0,
+        "stuck": 0,
+        "passRadius": 3,
+        "withinPass": 40,
+        "within1": 39,
+        "within2": 40,
+        "within8": 40,
+        "errMedian": 0.03686964,
+        "errMean": 0.080761656,
+        "errP90": 0.10797588,
+        "errMax": 1.2818407,
+        "perturbed": null
+      }
+    },
+    {
+      "file": "de_nuke-20260905-130357.json",
+      "map": "de_nuke",
+      "name": "hut_roof_glass_broken",
+      "batch": "",
+      "timestamp": "2026-09-05T13:03:57.2415736-04:00",
+      "build": "2000899",
+      "serverBuild": "2000899",
+      "target": [
+        460,
+        -1120,
+        -256
+      ],
+      "summary": {
+        "lineups": 30,
+        "submitted": 30,
+        "matched": 30,
+        "graded": 30,
+        "notDetonated": 0,
+        "culled": 0,
+        "stuck": 0,
+        "passRadius": 3,
+        "withinPass": 30,
+        "within1": 30,
+        "within2": 30,
+        "within8": 30,
+        "errMedian": 0.056707453,
+        "errMean": 0.114993356,
+        "errP90": 0.3929822,
+        "errMax": 0.8967476,
         "perturbed": null
       }
     },

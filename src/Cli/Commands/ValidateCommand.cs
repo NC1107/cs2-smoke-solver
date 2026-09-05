@@ -72,7 +72,13 @@ public static class ValidateCommand
         // throw through a particular window, say.
         Vector2? originClick = options.TryGetValue("origin", out var originRaw) ? new Vector2(ParseVec2or3(originRaw).Item1.X, ParseVec2or3(originRaw).Item1.Y) : null;
         var originReach = float.Parse(options.GetValueOrDefault("reach", "3100"), CultureInfo.InvariantCulture);
-        var solve = SolveForTarget(mesh, attributeFilter, navAreas, target, hasTargetZ, originClick, originReach, tolerance, constants);
+        // --broken glass[,doors]: solve in the world where those groups are
+        // gone, the API's "glass broken" setting. The rig must be in the same
+        // state (the panes shot out) for the grading to mean anything.
+        IReadOnlyList<string>? brokenGroups = options.TryGetValue("broken", out var brokenRaw)
+            ? brokenRaw.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Select(g => g == "glass" ? "EntityBreakable" : g == "doors" ? "EntityDoor" : g).ToList()
+            : null;
+        var solve = SolveForTarget(mesh, attributeFilter, navAreas, target, hasTargetZ, originClick, originReach, tolerance, constants, brokenGroups: brokenGroups);
         // In the API's order, so a limited run throws what a player sees
         // first - the solver's own order put the top of the list last.
         var ordered = LineupApi.Ranked(solve);
