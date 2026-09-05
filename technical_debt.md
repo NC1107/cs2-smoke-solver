@@ -1911,3 +1911,11 @@ First version let the roll carry the hull corner over rims (dust2 [51] on a slop
 Result (same build, 15 maps): within 3u up on 12 maps (overpass 89.7 -> 93.2, office 89.5 -> 91.2, boulder 90.4 -> 94.1, anubis 93.9 -> 96.5, train 90.8 -> 93.8), down on vertigo (92.9 -> 92.5) and mirage/dust2 flat; medians down on 13 maps; over 8u 56 -> 56 (boulder -1, train -1, dust2 +2: [8] and [33] flip from 7.x to 8.x, both real grenades rolled 7-8u, further than the model).
 Rule 2 asks for the over-8u total to drop; it is unchanged, and the change moves the within-3u half of the target on most maps, so it is kept under Nick's "do what you recommend" - revert with `RolloutTime = 0` if he disagrees.
 Under 90% now: shelter only (88.7).
+
+### Loop iterations 14-16 (2026-09-04): the bounce tick - three models FALSIFIED
+
+Observation (cs_shelter 144929 [40]/[44], flat-floor crouch throws, 35 throws at 4-5u): sim and real post-bounce velocities are identical at every hop, yet each real hop lasts about one tick longer and lands 1-2u further along; the real impact speed is 3 u/s larger than the launch speed of the same hop.
+14. Spend only a fraction of the bounce tick's remainder at the reflected velocity (`BounceRemainder` 0.0 / 0.5): over 8u 58 / 62 against 56; shelter within 3u 88.7 -> 92.0 / 94.8, vertigo -> 97.5 / 98.8, but dust2 over 8u 10 -> 12 / 16 and overpass 93.2 -> 91.0 / 91.9. Right direction on flat floors, wrong somewhere else; too crude as a rule.
+15. Integrate position with the velocity from before the tick's gravity update instead of the trapezoid (`GravityLead` 0): within 3u collapses to 24-36% on the first three maps; free flight is integrated correctly and the effect is confined to the bounce tick.
+16. Resolve the contact at the end of the tick (full tick at the pre-bounce velocity, push out along the normal, reflected velocity from the next tick): 354 over 8u, within 3u 61-83% per map. The sub-tick contact model is right.
+Next: measure instead of guessing - for every paired sim/real bounce, the position offset the bounce tick itself introduces, as a function of the sub-tick fraction and the velocities, then fit the model to that.
