@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Smoke Solver</title>
 <link rel="icon" href="viewer/favicon.svg" type="image/svg+xml">
-<link rel="stylesheet" href="viewer/app.css?v=113">
+<link rel="stylesheet" href="viewer/app.css?v=114">
 </head>
 <body>
 
@@ -427,6 +427,18 @@ give weapon_smokegrenade<button data-copy="cmd-setup" class="btn">copy</button><
   </div>
 </div>
 
+<!-- Shown once per map (per browser) when the map has breakable glass or
+     doors: the solver assumes round start, and a player who means to shoot the
+     glass out first, or throw through an open door, has to say so. -->
+<div id="world-notice" class="intro" hidden>
+  <div class="intro-card" role="dialog" aria-modal="true" aria-labelledby="world-notice-title">
+    <h1 id="world-notice-title">This map has breakable glass</h1>
+    <p id="world-notice-text"></p>
+    <p class="world-notice-hint">Lineups that break a window on the way carry an amber <b>Glass</b> badge and rank below the rest. You can change this any time under World state in the filters card.</p>
+    <div class="intro-choices" id="world-notice-choices"></div>
+  </div>
+</div>
+
 <div id="preview-modal" class="preview-modal" role="dialog" aria-modal="true" aria-label="Lineup preview" hidden>
   <div class="preview-modal-inner">
     <button id="preview-close" class="btn" aria-label="Close preview">×</button>
@@ -439,6 +451,6 @@ give weapon_smokegrenade<button data-copy="cmd-setup" class="btn">copy</button><
      4h, so bumping ?v= here is what busts that cache. Bump on any change to a
      directly-referenced asset. (The permanent cure is CF Browser Cache TTL ->
      "Respect Existing Headers", after which this is belt-and-suspenders.) -->
-<script type="module" src="viewer/js/main.js?v=113"></script>
+<script type="module" src="viewer/js/main.js?v=114"></script>
 </body>
 </html>

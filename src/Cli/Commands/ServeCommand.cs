@@ -467,6 +467,11 @@ public static class ServeCommand
                 hasProSmokes = File.Exists(Path.Combine(root, "data", $"{kv.Key}.prosmokes.json")),
                 hasMeshDiff = File.Exists(Path.Combine(root, "data", $"{kv.Key}.meshdiff.json")),
                 hasTextured = File.Exists(Path.Combine(root, "data", $"{kv.Key}_textured.glb")),
+                // Round state the solver can be asked about: breakable glass
+                // and doors. The viewer tells a player about the World
+                // setting when a map has either.
+                hasGlass = kv.Value.Mesh.AttributeNames.Contains("EntityBreakable", StringComparer.Ordinal),
+                hasDoors = kv.Value.Mesh.AttributeNames.Contains("EntityDoor", StringComparer.Ordinal),
                 // Content tokens for the big downloads, so the viewer can ask
                 // for them by version and the edge can cache them.
                 texturedVersion = AssetVersionOrNull(Path.Combine(root, "data", $"{kv.Key}_textured.glb")),

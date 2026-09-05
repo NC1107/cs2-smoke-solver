@@ -2,19 +2,19 @@
 // import the feature modules; they call back into the orchestrators defined
 // here (setTarget, select, runQuery) via the init*/set*Callbacks hooks.
 
-import { state, filtered, esc, lowMemoryDevice, loadFavorites, setFavorite, isFavorite, DEFAULT_EYE_HEIGHT, EYE_HEIGHT_BY_TYPE, TARGET_SNAP_RADIUS, favoriteHooks, loadSavedLocal, persistSavedLocal, isExecuteSaved, setExecuteSaved} from "./state.js?v=113";
-import { loadMapList, loadMapData, runQuery as postLineupQuery, fetchTrajectory, fetchLineupOne, fetchSlack, fetchSpawns, fetchProSmokes, fetchMeshDiff, meshDiffExists, fetchLevels, fetchSmokeCoverage, runExecute, findExecuteSpots, fetchTargets, fetchMe, signOut, fetchSavedLineups, putSavedLineups, fetchVotes, castVote} from "./api.js?v=113";
-import { loadRadar, readColors, recolorRadar, draw, scheduleDraw, resize, resetView, initMap2d, screenOf } from "./map2d.js?v=113";
-import { ensure3d, resetEnsure3d, teardown3d, current3d, sync3d, syncProgress3d, syncMeshDiff3d, set3dCallbacks, applyTheme3d, verticalFovFromDesired } from "./view3d.js?v=113";
-import { initAdmin, renderAdmin, syncAdminMode } from "./admin.js?v=113";
-import { resetEnsureTexturedScene } from "./textured-scene.js?v=113";
-import { capturePreview } from "./preview.js?v=113";
+import { state, filtered, esc, lowMemoryDevice, loadFavorites, setFavorite, isFavorite, DEFAULT_EYE_HEIGHT, EYE_HEIGHT_BY_TYPE, TARGET_SNAP_RADIUS, favoriteHooks, loadSavedLocal, persistSavedLocal, isExecuteSaved, setExecuteSaved} from "./state.js?v=114";
+import { loadMapList, loadMapData, runQuery as postLineupQuery, fetchTrajectory, fetchLineupOne, fetchSlack, fetchSpawns, fetchProSmokes, fetchMeshDiff, meshDiffExists, fetchLevels, fetchSmokeCoverage, runExecute, findExecuteSpots, fetchTargets, fetchMe, signOut, fetchSavedLineups, putSavedLineups, fetchVotes, castVote} from "./api.js?v=114";
+import { loadRadar, readColors, recolorRadar, draw, scheduleDraw, resize, resetView, initMap2d, screenOf } from "./map2d.js?v=114";
+import { ensure3d, resetEnsure3d, teardown3d, current3d, sync3d, syncProgress3d, syncMeshDiff3d, set3dCallbacks, applyTheme3d, verticalFovFromDesired } from "./view3d.js?v=114";
+import { initAdmin, renderAdmin, syncAdminMode } from "./admin.js?v=114";
+import { resetEnsureTexturedScene } from "./textured-scene.js?v=114";
+import { capturePreview } from "./preview.js?v=114";
 // Every local import across viewer/js carries the SAME ?v= token, bumped
 // together on any change. The HTML is served no-cache, so a fresh load pulls
 // main.js?v=N, which pulls every module at ?v=N - the whole graph refreshes as
 // one consistent set past Cloudflare's 4h JS cache, with no duplicate module
 // instances (which a partial versioning would cause). Bump the token everywhere.
-import { renderLineups, initPanel, revealSelected, resultStatusText } from "./panel.js?v=113";
+import { renderLineups, initPanel, revealSelected, resultStatusText } from "./panel.js?v=114";
 
 (async () => {
   // Map switching means a failed load is no longer necessarily terminal (the
@@ -1078,6 +1078,7 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
     resetView();
     renderLineups();
     statusEl.textContent = "";
+    maybeWorldNotice(name, extras);
     return true;
   }
 
@@ -1153,6 +1154,60 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
     el.removeEventListener("keydown", el._keydown);
     el._returnFocus?.focus?.();
     el._returnFocus = null;
+  }
+
+  // Round-state notice, once per map per browser: the solver assumes round
+  // start (glass intact, doors closed) and a player who means to shoot the
+  // glass out first, or throw through an open door, has to pick that world
+  // or those lineups never appear. Deferred while the intro is up so the two
+  // dialogs do not stack; shown right after it closes.
+  const worldNotice = document.getElementById("world-notice");
+  const worldSelect = document.getElementById("a-world");
+  let pendingWorldNotice = null;
+  const worldNoticeKey = map => `smokesolver.worldNotice.${map}`;
+  function worldNoticeSeen(map) {
+    try { return Boolean(localStorage.getItem(worldNoticeKey(map))); } catch { return true; }
+  }
+  function markWorldNoticeSeen(map) {
+    try { localStorage.setItem(worldNoticeKey(map), "1"); } catch { /* private mode: shown again next time */ }
+  }
+  function maybeWorldNotice(map, entry) {
+    if (!entry || (!entry.hasGlass && !entry.hasDoors) || worldNoticeSeen(map)) {
+      return;
+    }
+    if (!intro.hidden) {
+      pendingWorldNotice = map;
+      return;
+    }
+    showWorldNotice(map, entry);
+  }
+  function showWorldNotice(map, entry) {
+    pendingWorldNotice = null;
+    const both = entry.hasGlass && entry.hasDoors;
+    document.getElementById("world-notice-title").textContent =
+      both ? "This map has breakable glass and doors" : entry.hasGlass ? "This map has breakable glass" : "This map has doors";
+    document.getElementById("world-notice-text").textContent =
+      "Every lineup here assumes round start: " + (both ? "windows intact and doors closed" : entry.hasGlass ? "windows intact" : "doors closed") +
+      ". " + (entry.hasGlass ? "If you plan to shoot the glass out first (Nuke's roof windows, for example)" : "If a door will be standing open") +
+      (both ? ", or throw through an open door," : "") + " pick that world now, so the throws that only exist then are found.";
+    const choices = [["", "Round start (keep)", true]];
+    if (entry.hasGlass) { choices.push(["glass", "Glass broken", false]); }
+    if (entry.hasDoors) { choices.push(["doors", "Doors open", false]); }
+    if (both) { choices.push(["glass,doors", "Glass broken + doors open", false]); }
+    const wrap = document.getElementById("world-notice-choices");
+    wrap.innerHTML = choices.map(([value, label, primary]) =>
+      `<button type="button" class="btn${primary ? " primary" : ""}" data-world="${esc(value)}">${esc(label)}</button>`).join("");
+    for (const b of wrap.querySelectorAll("button")) {
+      b.addEventListener("click", () => {
+        markWorldNoticeSeen(map);
+        closeModal(worldNotice);
+        if (worldSelect.value !== b.dataset.world) {
+          worldSelect.value = b.dataset.world;
+          worldSelect.dispatchEvent(new Event("change"));
+        }
+      });
+    }
+    openModal(worldNotice, () => { markWorldNoticeSeen(map); closeModal(worldNotice); });
   }
 
   const intro = document.getElementById("intro");
@@ -1239,6 +1294,12 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
     closeModal(intro);
     syncControls();
     statusEl.textContent = "click anywhere on the map to set your smoke target";
+    if (pendingWorldNotice) {
+      const entry = mapList.find(m => m.map === pendingWorldNotice);
+      if (entry) {
+        showWorldNotice(pendingWorldNotice, entry);
+      }
+    }
   }
 
   document.getElementById("intro-map-grid").innerHTML = playable

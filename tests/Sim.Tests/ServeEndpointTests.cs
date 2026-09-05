@@ -110,6 +110,10 @@ public class ServeEndpointTests(ServeFixture server) : IClassFixture<ServeFixtur
         // Other tests in this class may have written a GLB into the shared root.
         Assert.Equal(File.Exists(Path.Combine(server.Root, "data", "arena_textured.glb")), arena.GetProperty("hasTextured").GetBoolean());
         Assert.False(arena.GetProperty("hasProSmokes").GetBoolean());
+        // The synthetic arena has no breakable glass and no doors; the fields
+        // are what the viewer keys its round-state notice on.
+        Assert.False(arena.GetProperty("hasGlass").GetBoolean());
+        Assert.False(arena.GetProperty("hasDoors").GetBoolean());
     }
 
     [Fact]

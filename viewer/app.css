@@ -836,6 +836,8 @@
     background: var(--surface);
   }
   .intro-choices { display: flex; gap: 8px; flex-wrap: wrap; }
+  .world-notice-hint { margin-top: 8px; }
+  .world-notice-hint b { color: var(--target); }
   .intro-choices .btn { --btn-pad: 7px 14px; --btn-font-size: 12.5px; }
   /* Pager header: "<- page N of M ->   results", fixed above the scrolling list
      (#lineup-list is the only flex:1 scroller). The arrows carry .btn so they
