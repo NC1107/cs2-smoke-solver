@@ -242,48 +242,6 @@ public class SubstepBounceTests
 }
 
 /// <summary>
-/// Once the rest condition is met the grenade rolls on for RolloutTime at its
-/// tangential speed before it is still. MEASURED on the same-build corpus
-/// (2026-09-04): the real rest lies past the sim's stop point by 0.1u per
-/// u/s of tangential speed. A roll ends early at a rim (no floor under the
-/// hull centre) instead of going over the edge.
-/// </summary>
-public class RolloutTests
-{
-    static TriangleCollider Floor() => new(SyntheticMeshes.FromQuads([SyntheticMeshes.Ground(-256, 256, 0)]),
-        new Vector3(-256, -256, -16), new Vector3(256, 256, 256));
-
-    static TriangleCollider Ledge() => new(SyntheticMeshes.FromQuads(
-    [
-        SyntheticMeshes.Ground(-256, 512, 0),
-        ([0f, -256f, 64f], [100f, -256f, 64f], [100f, 256f, 64f], [0f, 256f, 64f]), // a ledge 64u up, ending at x=100
-        SyntheticMeshes.WallX(100, -256, 256, 0, 64),
-    ]), new Vector3(-256, -256, -16), new Vector3(512, 256, 256));
-
-    [Fact]
-    public void ASlowGrenadeRollsOnForATenthOfASecondAfterItsLastContact()
-    {
-        var withRoll = GrenadeTrajectory.SimulateExactRaw(Floor(), new Vector3(0f, 0f, 2.5f), new Vector3(10f, 0f, -5f));
-        var instant = GrenadeTrajectory.SimulateExactRaw(Floor(), new Vector3(0f, 0f, 2.5f), new Vector3(10f, 0f, -5f), ThrowConstants.Default with { RolloutTime = 0f });
-
-        Assert.False(withRoll.Lost);
-        // The bounce leaves 4.5 u/s of forward speed; six ticks of it is 0.42u.
-        Assert.InRange(withRoll.RestPoint.X - instant.RestPoint.X, 0.3f, 0.6f);
-        Assert.Equal(0f, withRoll.RestPoint.Y, 0.01f);
-    }
-
-    [Fact]
-    public void ARollTowardAnEdgeStopsAtTheRimInsteadOfFallingOff()
-    {
-        var r = GrenadeTrajectory.SimulateExactRaw(Ledge(), new Vector3(99.7f, 0f, 66.5f), new Vector3(15f, 0f, -5f));
-
-        Assert.False(r.Lost);
-        Assert.True(r.RestPoint.Z > 60f, $"went over the edge: z={r.RestPoint.Z:F1}");
-        Assert.InRange(r.RestPoint.X, 99.7f, 100.6f);
-    }
-}
-
-/// <summary>
 /// A slow contact with a wall and nothing under the hull is an ordinary
 /// bounce. The sim used to slide along the wall there, dropping the
 /// component of velocity the wall had just reversed; the rig's captures on

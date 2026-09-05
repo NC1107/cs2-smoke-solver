@@ -98,10 +98,8 @@ Per tick:
      Free flight integrates identically either way; the old single-step model, which spent the tick's remainder at the reflected velocity minus the remainder's gravity, made every hop after a second-half contact about a tick shorter than the game's.
      Corpus: 56 -> 38 misses over 8u, every map at 94.8% or better within 3u.
    - **Stop rule**: if post-bounce speed `< StopSpeed (19.685 u/s ≈ 0.5 m/s)` on a floor (or with floor directly below), the rest condition is met.
-   - **Roll-out**: the grenade is not still yet; it slides on along the floor at the post-bounce tangential velocity for `RolloutTime` (0.1 s, six ticks) and rests where that ends.
-     MEASURED on the same-build corpus (2026-09-04, `replay --rollout`): the real rest lay past the instant-stop point along that velocity by 0.1u per u/s of tangential speed, with almost no sideways component.
-     Walls end the roll where they are met; when the hull centre loses floor support the roll has reached a rim and the grenade stays there (the real contact normal tilts back at a rim, and rolling the box corner over dropped grenades 57u).
-     Corpus: within 3u up on 12 of 15 maps (overpass 89.7 -> 93.2%, office 89.5 -> 91.2%, anubis 93.9 -> 96.5%), medians down on 13, throws over 8u unchanged at 56.
+   - **No rolling phase**: with the two-step tick the grenade stops where the rest condition is met, and the corpus medians are 0.03u on every map.
+     A roll-out model (0.1 s at the tangential velocity) was kept for a few hours on 2026-09-04; it was compensating for the single-step bounce error and became pure overhead once that was fixed.
    - Otherwise consume the remainder of the tick with the bounced velocity (up to two contacts resolved per tick).
      A slow contact against a wall with no floor beneath is an ordinary bounce, not a rest and not a slide.
      The sim used to slide along the wall there, dropping the velocity component the wall had just reversed; the rig's captures (dust2 top_door, 2026-09-04) show the real grenade leaving at the reflected velocity, and the corpus replay went from 59 to 56 misses over 8u with no map worse when the slide was removed.

@@ -1936,3 +1936,9 @@ That is a 128 Hz physics step inside the 64-tick server: gravity per half-step, 
 Result (same build, 15 maps): 56 -> 38 over 8u; within 3u: italy 97.9, office 95.4, shelter 94.8, ancient 98.8, anubis 100, boulder 98.3, cache 98.8, dust2 98.6, fachwerk 99.6, inferno 98.7, mirage 99.2, nuke 99.6, overpass 98.7, train 98.3, vertigo 99.2. Both halves of the loop target are met.
 Trap found on the way: .NET 10 on-stack replacement mis-compiled the new nested loop once hot (the same throw fell through the floor only after sixty others had run in the process; `DOTNET_TC_OnStackReplacement=0` fixed it). `SimulateExactRaw` is now `[MethodImpl(AggressiveOptimization)]`, which keeps it out of tiering. Three `VerifyExactTests` that failed for the same reason pass again.
 Follow-up: the roll-out (iteration 13) was fitted against the old, shorter hops; re-measure `RolloutTime` under this model.
+
+### Loop iteration 19 (2026-09-04): the roll-out was compensating for the bounce-tick error - REMOVED
+
+Re-sweep of `RolloutTime` under the two-step tick: 0.1 / 0.05 / 0 s all give 38 over 8u; within 3u equal or better at 0 on every map but anubis (100 -> 99.6, one throw); medians 0.38 -> 0.03u on every map at 0.
+The 0.1u per u/s "roll" measured in iteration 13 was the hop-length shortfall of the single-step bounce, not a rolling phase. The roll-out code, its constant and its tests are gone; `replay --rollout` stays as the measurement.
+Same-build corpus now: 38 over 8u of 3,904, medians 0.03-0.04u, within 3u 95.6% (shelter) to 99.6%.

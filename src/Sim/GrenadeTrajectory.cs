@@ -80,14 +80,6 @@ public sealed record ThrowConstants(
     // until the next tick. Corpus replay 2026-09-04: 2 fixed 5 throws and
     // broke 1 on dust2, 1 on nuke, nothing elsewhere; 3 adds nothing over 2.
     int BouncesPerTick = 2,
-    // Once the rest condition is met the grenade is not yet still: it carries
-    // on along the surface at its tangential speed for about this long
-    // before the engine puts it to sleep. MEASURED on the same-build corpus
-    // (2026-09-04, replay --rollout): the real rest lies past the sim's stop
-    // point along the last tangential velocity by 0.1 u per u/s of that
-    // speed (0.2u at 2 u/s, 1u at 10 u/s, 2-3u at 18 u/s), with almost no
-    // sideways component. 0 restores the instant stop.
-    float RolloutTime = 0.1f,
     // A grenade meeting intact breakable glass breaks it and carries on in
     // the same direction at this fraction of its speed; the pane is gone for
     // the rest of the flight. MEASURED on cs_office 2026-09-04: five throws
@@ -273,8 +265,6 @@ public static class GrenadeTrajectory
     // How far from a break point breakable triangles count as the same pane.
     const float BrokenPaneReach = 96f;
     static readonly Vector3 HullHalfExtents = new(GrenadeRadius, GrenadeRadius, GrenadeRadius);
-    // A thin probe under the hull centre: is there floor beneath the middle?
-    static readonly Vector3 CentreProbe = new(0.05f, 0.05f, GrenadeRadius);
     // Physics steps per server tick (128 Hz inside a 64-tick server).
     // MEASURED 2026-09-04 from the rig captures: which half of the tick a
     // contact lands in decides how much of the tick's gravity the rebound
@@ -429,68 +419,9 @@ public static class GrenadeTrajectory
         // the mesh does not say which belong together).
         List<Vector3>? broken = null;
         Func<int, bool>? ignore = null;
-        // Roll-out state: ticks left, and the floor normal it rolls on.
-        var rollTicks = (int)MathF.Round(k.RolloutTime / TimeStep);
-        var rolling = -1;
-        var rollNormal = Vector3.UnitZ;
-        Func<int, bool>? rollIgnore = null;
 
         while (time < MaxFlightSeconds)
         {
-            if (rolling >= 0)
-            {
-                // Sliding along the floor it came to rest on: walls end the
-                // roll where they are met, floor triangles are not obstacles
-                // (the hull touches them the whole way), and losing the floor
-                // under the hull turns the roll back into a fall.
-                rollIgnore ??= t =>
-                {
-                    if (ignore?.Invoke(t) ?? false)
-                    {
-                        return true;
-                    }
-                    var f = collider.Face(t);
-                    var n = Vector3.Cross(f.B - f.A, f.C - f.A);
-                    return MathF.Abs(n.Z) > FloorNormalZ * n.Length();
-                };
-                var slideTo = position + velocity * TimeStep;
-                if (collider.FirstHitHullIndexed(position, slideTo, HullHalfExtents, ignore: rollIgnore) is { } wall)
-                {
-                    position = Vector3.Lerp(position, slideTo, Math.Max(0f, wall.T - 1e-3f));
-                    trace?.Add($"t={time:F2} roll stopped by a wall at ({position.X:F0},{position.Y:F0},{position.Z:F0})");
-                    return new TrajectoryResult(position, bounces, time + TimeStep, Lost: false, firstTouch);
-                }
-                position = slideTo;
-                // Support is read under the hull CENTRE, from a little above
-                // it (a sweep that begins touching the floor reports no hit).
-                // Losing it means the roll has reached a rim; the grenade stays
-                // there rather than going over. At the rim the real contact
-                // normal tilts back toward the surface and the roll dies
-                // (dust2 [51] on a sloped ledge, 2026-09-04), whereas rolling
-                // the box corner off the edge dropped it 57u.
-                var probeFrom = position + new Vector3(0f, 0f, 1f);
-                var probeTo = position + new Vector3(0f, 0f, -4f);
-                if (collider.FirstHitHull(probeFrom, probeTo, CentreProbe, minNormalZ: FloorNormalZ) is not { } floor)
-                {
-                    trace?.Add($"t={time:F2} roll reached a rim, at rest ({position.X:F0},{position.Y:F0},{position.Z:F0})");
-                    return new TrajectoryResult(position, bounces, time + TimeStep, Lost: false, firstTouch);
-                }
-                if (collider.FirstHitHull(probeFrom, probeTo, HullHalfExtents, minNormalZ: FloorNormalZ) is { } under)
-                {
-                    position = Vector3.Lerp(probeFrom, probeTo, Math.Max(0f, under.T - 1e-3f));
-                    rollNormal = under.Normal;
-                    velocity -= Vector3.Dot(velocity, rollNormal) * rollNormal;
-                }
-                if (--rolling == 0)
-                {
-                    trace?.Add($"t={time:F2} rolled out, at rest ({position.X:F0},{position.Y:F0},{position.Z:F0})");
-                    return new TrajectoryResult(position, bounces, time + TimeStep, Lost: false, firstTouch);
-                }
-                time += TimeStep;
-                tick++;
-                tickTrace?.Add((position, velocity));
-                continue;
-            }
             // The engine integrates in half-tick steps. MEASURED 2026-09-04
             // (diverge --offsets, 3,753 paired floor bounces): a contact in
             // the first half of a tick leaves at 0.45 x the half-step
@@ -565,16 +496,6 @@ public static class GrenadeTrajectory
                 if (vAfter.Length() < k.StopSpeed
                     && (hit.Normal.Z > FloorNormalZ || collider.FirstHitHull(position, position + new Vector3(0f, 0f, -2f), HullHalfExtents, minNormalZ: FloorNormalZ) is not null))
                 {
-                    // Edge tipping is the alternative (falsified) settle model;
-                    // when it is switched on for an experiment it takes over.
-                    if (rollTicks > 0 && !k.EdgeTipping)
-                    {
-                        rolling = rollTicks;
-                        rollNormal = hit.Normal;
-                        velocity = vAfter - Vector3.Dot(vAfter, hit.Normal) * hit.Normal;
-                        trace?.Add($"t={time:F2} rest condition, rolling out at ({velocity.X:F1},{velocity.Y:F1},{velocity.Z:F1}) u/s for {rollTicks} ticks");
-                        break;
-                    }
                     if (!k.EdgeTipping || EdgeTip(collider, position, w) is not { } tip)
                     {
                         return new TrajectoryResult(position, bounces, time + TimeStep, Lost: false, firstTouch);
