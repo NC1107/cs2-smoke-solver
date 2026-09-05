@@ -275,6 +275,11 @@ public static class GrenadeTrajectory
     static readonly Vector3 HullHalfExtents = new(GrenadeRadius, GrenadeRadius, GrenadeRadius);
     // A thin probe under the hull centre: is there floor beneath the middle?
     static readonly Vector3 CentreProbe = new(0.05f, 0.05f, GrenadeRadius);
+    // Physics steps per server tick (128 Hz inside a 64-tick server).
+    // MEASURED 2026-09-04 from the rig captures: which half of the tick a
+    // contact lands in decides how much of the tick's gravity the rebound
+    // carries (see SimulateExactRaw).
+    public const int PhysicsSubsteps = 2;
 
     // Support probes around the hull's centre: a point ray each, straight
     // down through where the hull rests, on a ring wide enough to reach past
@@ -404,6 +409,13 @@ public static class GrenadeTrajectory
     // captures were undetonated projectiles culled by the engine during
     // dense validation batches, a harness artifact ValidateCommand now
     // detects and excludes instead.
+    // AggressiveOptimization keeps this method out of tiered compilation.
+    // With on-stack replacement enabled, .NET 10 mis-compiled the sub-step
+    // loop below once it got hot: the same throw that lands 1u from the
+    // capture when simulated alone fell through the floor after sixty other
+    // throws had run in the process (2026-09-04, DOTNET_TC_OnStackReplacement=0
+    // and DOTNET_TieredCompilation=0 both restored the right result).
+    [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveOptimization)]
     public static TrajectoryResult SimulateExactRaw(TriangleCollider collider, Vector3 position, Vector3 velocity, ThrowConstants? constants = null, List<string>? trace = null, List<(Vector3 Position, Vector3 Velocity)>? tickTrace = null, List<BounceRecord>? bounceTrace = null)
     {
         var k = constants ?? ThrowConstants.Default;
@@ -479,14 +491,32 @@ public static class GrenadeTrajectory
                 tickTrace?.Add((position, velocity));
                 continue;
             }
-            velocity = ClampVelocity(velocity);
-            var vzOld = velocity.Z;
-            velocity.Z -= gravityStep;
-            var move = new Vector3(velocity.X, velocity.Y, (vzOld + velocity.Z) * 0.5f) * TimeStep;
-            var next = position + move;
-
-            if (collider.FirstHitHullIndexed(position, next, HullHalfExtents, ignore: ignore) is { } hit)
+            // The engine integrates in half-tick steps. MEASURED 2026-09-04
+            // (diverge --offsets, 3,753 paired floor bounces): a contact in
+            // the first half of a tick leaves at 0.45 x the half-step
+            // velocity and then takes the second half-step's gravity (3.6 u/s
+            // in total below the full-tick reflection), a contact in the
+            // second half leaves at 0.45 x the full-tick velocity and takes
+            // nothing more. Free flight integrates identically either way;
+            // only the bounce tick differs. Spending the remainder of the
+            // tick at the reflected velocity with the remainder's gravity
+            // taken off (the old model) made every hop after a second-half
+            // contact about a tick shorter than the game's.
+            var stepDt = TimeStep / PhysicsSubsteps;
+            var stepG = gravityStep / PhysicsSubsteps;
+            for (var step = 0; step < PhysicsSubsteps; step++)
             {
+                velocity = ClampVelocity(velocity);
+                var vzOld = velocity.Z;
+                velocity.Z -= stepG;
+                var move = new Vector3(velocity.X, velocity.Y, (vzOld + velocity.Z) * 0.5f) * stepDt;
+                var next = position + move;
+
+                if (collider.FirstHitHullIndexed(position, next, HullHalfExtents, ignore: ignore) is not { } hit)
+                {
+                    position = next;
+                    continue;
+                }
                 var contact = Vector3.Lerp(position, next, Math.Max(0f, hit.T - 1e-3f));
                 position = contact;
                 firstTouch ??= contact;
@@ -503,13 +533,10 @@ public static class GrenadeTrajectory
                     velocity *= k.GlassPassFactor;
                     trace?.Add($"t={time:F2} glass at ({contact.X:F0},{contact.Y:F0},{contact.Z:F0}) broken, speed x{k.GlassPassFactor:F2}");
                     bounceTrace?.Add(new BounceRecord(tick, contact, hit.Normal, hit.Triangle, velocity / k.GlassPassFactor, velocity));
-                    var through = position + velocity * ((1f - hit.T) * TimeStep);
+                    var through = position + velocity * ((1f - hit.T) * stepDt);
                     position = collider.FirstHitHullIndexed(position, through, HullHalfExtents, ignore: ignore) is { } behind
                         ? Vector3.Lerp(position, through, Math.Max(0f, behind.T - 1e-3f))
                         : through;
-                    time += TimeStep;
-                    tick++;
-                    tickTrace?.Add((position, velocity));
                     continue;
                 }
 
@@ -546,10 +573,7 @@ public static class GrenadeTrajectory
                         rollNormal = hit.Normal;
                         velocity = vAfter - Vector3.Dot(vAfter, hit.Normal) * hit.Normal;
                         trace?.Add($"t={time:F2} rest condition, rolling out at ({velocity.X:F1},{velocity.Y:F1},{velocity.Z:F1}) u/s for {rollTicks} ticks");
-                        time += TimeStep;
-                        tick++;
-                        tickTrace?.Add((position, velocity));
-                        continue;
+                        break;
                     }
                     if (!k.EdgeTipping || EdgeTip(collider, position, w) is not { } tip)
                     {
@@ -557,53 +581,42 @@ public static class GrenadeTrajectory
                     }
                     trace?.Add($"t={time:F2} balanced on an edge at ({position.X:F0},{position.Y:F0},{position.Z:F0}), tipping ({tip.X:F2},{tip.Y:F2})");
                     velocity = tip * (k.StopSpeed * 0.3f);
-                    velocity.Z -= gravityStep * (1f - hit.T);
-                    position += velocity * ((1f - hit.T) * TimeStep);
-                    time += TimeStep;
-                    tick++;
-                    tickTrace?.Add((position, velocity));
+                    velocity.Z -= stepG * (1f - hit.T);
+                    position += velocity * ((1f - hit.T) * stepDt);
                     continue;
                 }
+
+                velocity = vAfter;
+                var remainder = 1f - hit.T;
+                // The rest of the step at the reflected velocity, with no
+                // more gravity in this step (measured, see above). This
+                // applies to wall bounces too: freezing the hull at the
+                // contact point let it settle straddling thin ridges,
+                // ping-ponging between their two opposing slopes.
+                var next2 = position + vAfter * (remainder * stepDt);
+                for (var sub = 1; ; sub++)
                 {
-                    velocity = vAfter;
-                    var remainder = 1f - hit.T;
-                    velocity.Z -= gravityStep * remainder;
-                    // Consume the remainder of the tick with the bounced
-                    // velocity (no second bounce resolution within the tick).
-                    // This applies to wall bounces too: CS2 telemetry shows the
-                    // projectile keeps moving through the bounce tick, and
-                    // freezing it at the contact point let the hull settle
-                    // straddling thin ridges, ping-ponging between their two
-                    // opposing slopes for hundreds of fake bounces.
-                    var next2 = position + vAfter * (remainder * TimeStep);
-                    for (var sub = 1; ; sub++)
+                    if (collider.FirstHitHullIndexed(position, next2, HullHalfExtents, ignore: ignore) is not { } hit2)
                     {
-                        if (collider.FirstHitHullIndexed(position, next2, HullHalfExtents, ignore: ignore) is not { } hit2)
-                        {
-                            position = next2;
-                            break;
-                        }
-                        position = Vector3.Lerp(position, next2, Math.Max(0f, hit2.T - 1e-3f));
-                        remainder *= 1f - hit2.T;
-                        if (sub >= k.BouncesPerTick || remainder <= 1e-4f)
-                        {
-                            break;
-                        }
-                        // A second surface inside the same tick (the wall right
-                        // after the floor at a corner): reflect again and spend
-                        // what is left of the tick on that velocity.
-                        bounces++;
-                        var w2 = velocity;
-                        velocity = Bounce(w2, hit2.Normal, k);
-                        trace?.Add($"t={time:F2} contact ({position.X:F0},{position.Y:F0},{position.Z:F0}) normal ({hit2.Normal.X:F2},{hit2.Normal.Y:F2},{hit2.Normal.Z:F2}) v after ({velocity.X:F0},{velocity.Y:F0},{velocity.Z:F0}) (same tick)");
-                        bounceTrace?.Add(new BounceRecord(tick, position, hit2.Normal, hit2.Triangle, w2, velocity));
-                        next2 = position + velocity * (remainder * TimeStep);
+                        position = next2;
+                        break;
                     }
+                    position = Vector3.Lerp(position, next2, Math.Max(0f, hit2.T - 1e-3f));
+                    remainder *= 1f - hit2.T;
+                    if (sub >= k.BouncesPerTick || remainder <= 1e-4f)
+                    {
+                        break;
+                    }
+                    // A second surface inside the same step (the wall right
+                    // after the floor at a corner): reflect again and spend
+                    // what is left of the step on that velocity.
+                    bounces++;
+                    var w2 = velocity;
+                    velocity = Bounce(w2, hit2.Normal, k);
+                    trace?.Add($"t={time:F2} contact ({position.X:F0},{position.Y:F0},{position.Z:F0}) normal ({hit2.Normal.X:F2},{hit2.Normal.Y:F2},{hit2.Normal.Z:F2}) v after ({velocity.X:F0},{velocity.Y:F0},{velocity.Z:F0}) (same tick)");
+                    bounceTrace?.Add(new BounceRecord(tick, position, hit2.Normal, hit2.Triangle, w2, velocity));
+                    next2 = position + velocity * (remainder * stepDt);
                 }
-            }
-            else
-            {
-                position = next;
             }
             time += TimeStep;
             tick++;

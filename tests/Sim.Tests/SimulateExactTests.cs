@@ -204,6 +204,44 @@ public class CornerContactTests
 }
 
 /// <summary>
+/// The engine steps physics twice per tick. MEASURED 2026-09-04 on 3,753
+/// paired floor bounces: a contact in the first half of a tick reflects the
+/// half-step velocity and then takes the second half-step's gravity; a
+/// contact in the second half reflects the full-tick velocity and takes no
+/// more gravity that tick. Corpus: 56 -> 38 misses over 8u, every map at
+/// 94.8% or better within 3u.
+/// </summary>
+public class SubstepBounceTests
+{
+    static TriangleCollider Floor() => new(SyntheticMeshes.FromQuads([SyntheticMeshes.Ground(-256, 256, 0)]),
+        new Vector3(-256, -256, -16), new Vector3(256, 256, 256));
+
+    // Falling at 100 u/s the hull moves 1.5625u per tick; the start height
+    // above the contact height (2u, the hull half-extent) picks which half of
+    // the first tick the floor is met in.
+    static float TickEndVzAfterDrop(float heightAboveContact)
+    {
+        var ticks = new List<(Vector3 Position, Vector3 Velocity)>();
+        GrenadeTrajectory.SimulateExactRaw(Floor(), new Vector3(0f, 0f, 2f + heightAboveContact), new Vector3(0f, 0f, -100f), ThrowConstants.Default, tickTrace: ticks);
+        return ticks[0].Velocity.Z;
+    }
+
+    [Fact]
+    public void AContactInTheFirstHalfOfATickReflectsTheHalfStepVelocityAndTakesTheSecondHalfStepsGravity()
+    {
+        // 0.45 x (100 + 2.5) - 2.5
+        Assert.Equal(43.6f, TickEndVzAfterDrop(0.4f), 0.2f);
+    }
+
+    [Fact]
+    public void AContactInTheSecondHalfOfATickReflectsTheFullTickVelocityAndTakesNoMoreGravity()
+    {
+        // 0.45 x (100 + 5)
+        Assert.Equal(47.25f, TickEndVzAfterDrop(1.2f), 0.2f);
+    }
+}
+
+/// <summary>
 /// Once the rest condition is met the grenade rolls on for RolloutTime at its
 /// tangential speed before it is still. MEASURED on the same-build corpus
 /// (2026-09-04): the real rest lies past the sim's stop point by 0.1u per

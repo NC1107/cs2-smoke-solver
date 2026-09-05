@@ -93,6 +93,10 @@ Per tick:
    - **Reflect** the whole velocity about the surface normal (`w - 2·(w·n)·n`), then **snap** any component with magnitude `< STOP_EPSILON (0.1)` to exactly zero *before* the restitution multiply.
    - **Restitution** multiplies the *whole* reflected vector by `Elasticity = 0.45`. There is no tangential-friction term in the grenade path.
    - **Angle damp (floor only)**: if impact speed `> DampGateSpeed (690 u/s)` *and* the impact angle is steeper than 60° (`|w·n|/|w| > 0.5`) *and* the surface is floor-like (`n.z > 0.7`), additionally scale by `(1.5 - |cos angle|)`. Walls never damp (validated: 0/122 gated wall bounces damped vs 68/76 gated ground bounces).
+   - **Two physics steps per tick**: gravity is applied per half-step (2.5 u/s) and a contact is resolved inside the half-step it falls in: the reflection uses the half-step's velocity and the rest of that half-step is travelled at the reflected velocity with no further gravity.
+     MEASURED 2026-09-04 on 3,753 paired floor bounces from the rig captures: contacts in the first half of a tick leave 3.6 u/s below the full-tick reflection (0.45 x 2.5 plus the second half-step's 2.5), contacts in the second half leave exactly at 0.45 x the full-tick velocity.
+     Free flight integrates identically either way; the old single-step model, which spent the tick's remainder at the reflected velocity minus the remainder's gravity, made every hop after a second-half contact about a tick shorter than the game's.
+     Corpus: 56 -> 38 misses over 8u, every map at 94.8% or better within 3u.
    - **Stop rule**: if post-bounce speed `< StopSpeed (19.685 u/s ≈ 0.5 m/s)` on a floor (or with floor directly below), the rest condition is met.
    - **Roll-out**: the grenade is not still yet; it slides on along the floor at the post-bounce tangential velocity for `RolloutTime` (0.1 s, six ticks) and rests where that ends.
      MEASURED on the same-build corpus (2026-09-04, `replay --rollout`): the real rest lay past the instant-stop point along that velocity by 0.1u per u/s of tangential speed, with almost no sideways component.

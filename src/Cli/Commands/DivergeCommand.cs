@@ -37,6 +37,11 @@ public static class DivergeCommand
         var summary = options.ContainsKey("summary");
         TraceEnabled = options.ContainsKey("trace");
         OffsetsEnabled = options.ContainsKey("offsets");
+        if (options.TryGetValue("ticks", out var ticksRaw))
+        {
+            var parts = ticksRaw.Split('-');
+            TickRange = (int.Parse(parts[0], CultureInfo.InvariantCulture), int.Parse(parts[^1], CultureInfo.InvariantCulture));
+        }
         var reportFiles = options.TryGetValue("report", out var one)
             ? [one]
             : Directory.EnumerateFiles(options.GetValueOrDefault("reports", Path.Combine(Path.GetDirectoryName(Path.GetFullPath(Require(options, "geo"))) ?? ".", "validation")), $"{mesh.MapName}-*.json").OrderBy(f => f).ToList();
@@ -128,6 +133,7 @@ public static class DivergeCommand
     // --offsets: one line per paired bounce with the position offset the
     // bounce tick itself introduced between sim and real (measurement mode).
     static bool OffsetsEnabled;
+    static (int From, int To)? TickRange;
     static readonly List<string> Offsets = [];
 
     static List<(int Triangle, Vector3 Where)> Replay(TriangleCollider collider, ThrowConstants constants, JsonElement row, Vector3 pos, Vector3 vel, float[][] samples, bool quiet = false)
@@ -148,6 +154,17 @@ public static class DivergeCommand
             }
         }
         var realBounces = RealBounces(samples, vel);
+        if (TickRange is { } range)
+        {
+            // --ticks a-b: sim and real state per tick, to see where inside a
+            // hop the paths drift apart.
+            output.WriteLine("    tick   sim pos (x,y,z) v(x,y,z)                        real pos (x,y,z) v(x,y,z)                       gap");
+            for (var i = Math.Max(0, range.From); i <= range.To && i < simTicks.Count && i < samples.Length; i++)
+            {
+                var sp = simTicks[i].Position; var sv = simTicks[i].Velocity; var rp = Sample(samples[i]);
+                output.WriteLine(FormattableString.Invariant($"    {i,4}   ({sp.X,8:F2},{sp.Y,8:F2},{sp.Z,7:F2}) v({sv.X,6:F1},{sv.Y,6:F1},{sv.Z,6:F1})   ({rp.X,8:F2},{rp.Y,8:F2},{rp.Z,7:F2}) v({samples[i][4],6:F1},{samples[i][5],6:F1},{samples[i][6],6:F1})   {Vector3.Distance(sp, rp),5:F2}"));
+            }
+        }
         if (OffsetsEnabled)
         {
             CollectOffsets(simTicks, simBounces, samples, realBounces);

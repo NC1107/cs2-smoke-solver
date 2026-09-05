@@ -1927,3 +1927,12 @@ Next: measure instead of guessing - for every paired sim/real bounce, the positi
 Post-bounce velocities: horizontal identical (median difference 0.00 u/s); vertical fits real = sim reflection - 3.33 (1 - T) u/s where the sim subtracts 5 (1 - T) for the remainder's gravity.
 Implemented as `RemainderGravity` 0.667 / 0.0: 63 / 312 over 8u against 56, within 3u down on 11 maps at 0.667. The fit does not transfer, so the (1 - T) dependence is an artifact of how the capture samples velocity within a tick, not an engine rule. Reverted.
 Where the flat-floor hop drift comes from is still open; the bounce tick itself is exonerated.
+
+### Loop iteration 18 (2026-09-04): two physics steps per tick - KEPT
+
+`diverge --ticks a-b` (new) dumps sim and real state per tick. On the shelter flat-floor hops the drift was entirely vertical velocity: the game left the bounce with exactly 0.45 x the impact velocity and no remainder gravity, while the sim took 5 u/s x (1 - T) off.
+On italy's steep impacts the game did take about 3.6 u/s off. Binning 3,753 paired floor bounces by the sub-tick fraction T: T < 0.5 -> 3.6 u/s taken off (median), T >= 0.5 -> 0.0. No dependence on speed or angle.
+That is a 128 Hz physics step inside the 64-tick server: gravity per half-step, contact resolved within its half-step from the half-step velocity, no further gravity in that half-step. Free flight integrates identically.
+Result (same build, 15 maps): 56 -> 38 over 8u; within 3u: italy 97.9, office 95.4, shelter 94.8, ancient 98.8, anubis 100, boulder 98.3, cache 98.8, dust2 98.6, fachwerk 99.6, inferno 98.7, mirage 99.2, nuke 99.6, overpass 98.7, train 98.3, vertigo 99.2. Both halves of the loop target are met.
+Trap found on the way: .NET 10 on-stack replacement mis-compiled the new nested loop once hot (the same throw fell through the floor only after sixty others had run in the process; `DOTNET_TC_OnStackReplacement=0` fixed it). `SimulateExactRaw` is now `[MethodImpl(AggressiveOptimization)]`, which keeps it out of tiering. Three `VerifyExactTests` that failed for the same reason pass again.
+Follow-up: the roll-out (iteration 13) was fitted against the old, shorter hops; re-measure `RolloutTime` under this model.
