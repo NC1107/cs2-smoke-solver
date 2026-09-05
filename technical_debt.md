@@ -1978,3 +1978,9 @@ Corpus: 33 -> 26 over 8u (office 7 -> 5, shelter 7 -> 2), 7 throws re-graded aga
 
 Breakable model prop data cannot be read from the compiled model (the KV3 block carries the keys, the values are empty), so the rule rests on the probe: every pane the game let a grenade through has "window" or "glass" in its model path (office, shelter, anubis, nuke and train windows, inferno shop-front glass and apartment windows, ancient lantern glass, overpass door glass); the one breakable prop it bounced off, de_train's electronics enclosure doors, has neither.
 Extraction now keeps such props as EntitySolid. Re-extracted de_train (EntityBreakable 432 -> 72 triangles, the rest solid) and de_vertigo (its fence rails become solid; the game bounced there too). Corpus unchanged on both (1 and 1 over 8u, medians 0.03u); the dry-run probe shows the sim bouncing at the enclosure like the game.
+
+### Glass loop iteration 4 (2026-09-05): state leads the ranking; end-to-end proof - KEPT, loop closed
+
+The live API put a state-dependent lineup first on an office solve (better aim band); state now leads the ranking and the band orders throws within a state.
+`validate --origin x,y --reach u` forces a route. cs_office target behind the back-courtyard window, throws only from the courtyard: 25 of 30 broke the pane, grader read 17 gone / 8 intact, 28 of 30 within 3u, median 0.0u, max 7.3u. de_inferno behind the apartments window: 30 of 30 within 3u, median 0.1u.
+Doors on nuke, inferno, vertigo, office and shelter and nuke's vents bounce in the game and in the sim (0.1u); no door state logic is needed beyond the existing `broken: doors` toggle.
