@@ -1003,6 +1003,47 @@ public static class MapExtractor
     /// are not breakable (de_nuke's vent slats) stand open or animated in
     /// the game and cost 48 throws on nuke and 83 on mirage when merged.
     /// </summary>
+    // Whether a breakable prop lets a grenade through once it breaks. The
+    // model's prop_data says what it is made of: every pane the rig's probe
+    // passed through (office, nuke, anubis, train windows, inferno shop
+    // fronts and apartment windows, ancient lanterns, overpass door glass)
+    // is base=Glass.Window; the two it bounced off are Metal.break (train's
+    // electronics enclosure) and Wooden.Medium (vertigo's fence rails).
+    // Community maps' models can carry no base at all (cs_shelter), so the
+    // model path decides when the data is silent.
+    static bool PassableGlass(Model model, string modelPath)
+    {
+        var baseName = PropDataBase(model);
+        if (!string.IsNullOrEmpty(baseName))
+        {
+            return baseName.StartsWith("Glass", StringComparison.OrdinalIgnoreCase);
+        }
+        return modelPath.Contains("window", StringComparison.OrdinalIgnoreCase) || modelPath.Contains("glass", StringComparison.OrdinalIgnoreCase);
+    }
+
+    static string? PropDataBase(Model model)
+    {
+        try
+        {
+            if (model.KeyValues is not ValveKeyValue.KVObject { IsCollection: true } kv)
+            {
+                return null;
+            }
+            var propData = kv.Children.FirstOrDefault(c => c.Key == "prop_data").Value;
+            if (propData is not { IsCollection: true })
+            {
+                return null;
+            }
+            var baseKv = propData.Children.FirstOrDefault(c => c.Key == "base").Value;
+            var text = baseKv?.ToString();
+            return string.IsNullOrEmpty(text) || text == "null" ? null : text;
+        }
+        catch (Exception e) when (e is InvalidOperationException or NullReferenceException or InvalidCastException)
+        {
+            return null;
+        }
+    }
+
     static bool BreakableModel(Model model)
     {
         try
@@ -1125,7 +1166,7 @@ public static class MapExtractor
                     // ancient lantern glass, overpass door glass - while the
                     // one breakable prop it bounced off, de_train's electronics
                     // enclosure doors, is neither. Those stay plain solid.
-                    passableGlass = model.Contains("window", StringComparison.OrdinalIgnoreCase) || model.Contains("glass", StringComparison.OrdinalIgnoreCase);
+                    passableGlass = PassableGlass(modelData, model);
                 }
                 var phys = modelData.GetEmbeddedPhys();
                 if (phys == null &&

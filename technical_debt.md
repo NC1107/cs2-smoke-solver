@@ -2014,3 +2014,5 @@ Deferred, with the reason:
 - `/api/execute/spots` bills one rate-limit token for up to four solves: bounded by the four-target cap and the per-target gate; revisit if the queue ever starves.
 - Glass met behind a just-broken pane in the same half-step reflects one sub-step late (no corpus effect); solid contact behind glass in the same half-step likewise.
 - RebuildValidationIndex re-parses every report per target (about 0.5 s today); DivergeCommand's static per-throw state; no dedicated lost-capture counter.
+
+Follow-up the same evening: with the formatter fixed, model prop_data is readable after all (`base=Glass.Window health=1` on every passable pane; `Metal.break health=50` on train's enclosure; `Wooden.Medium` on vertigo's rails; cs_shelter's community models carry no base). Breakable classification now reads `prop_data.base` and keeps the model-path check as the fallback; re-extracted train, shelter and vertigo are byte-identical to the installed meshes.
