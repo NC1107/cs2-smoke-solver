@@ -497,23 +497,34 @@ public static partial class LineupSolver
         // One work item per (kind, yaw column): fifteen kinds on sixteen cores
         // left cores idle and the whole search waiting on the slowest kind
         // (100 s per origin measured; the columns finish in a third of that).
-        var columns = new List<(ThrowType Type, float Strength, float Run, float Yaw)>();
+        // The same two physical bounds the sweep applies, and no other: a kind
+        // whose maximum range falls short of the target cannot land there by
+        // any angle, and the steep band (-65 to -89) lands within 1500u by
+        // arithmetic. Everything else is flown.
+        var distance = new Vector2(toTarget.X, toTarget.Y).Length();
+        var columns = new List<(ThrowType Type, float Strength, float Run, float Yaw, float PitchFloor)>();
         foreach (var (type, strength, run) in kinds)
         {
+            var speedFactor = k.SpeedScale(strength);
+            if (distance > MaxRange(type) * speedFactor * speedFactor)
+            {
+                continue;
+            }
+            var pitchFloor = distance <= SteepLobMaxRange * speedFactor * speedFactor ? SteepPitchFloorDeg : StandardPitchFloorDeg;
             var shiftShallow = RunYawShiftDeg(k, strength, 0f, run);
-            var shiftSteep = RunYawShiftDeg(k, strength, SteepPitchFloorDeg, run);
+            var shiftSteep = RunYawShiftDeg(k, strength, pitchFloor, run);
             var yawLo = yawCenter + MathF.Min(shiftShallow, shiftSteep) - YawSpreadDeg;
             var yawHi = yawCenter + MathF.Max(shiftShallow, shiftSteep) + YawSpreadDeg;
             for (var yaw = yawLo; yaw <= yawHi; yaw += stepDeg)
             {
-                columns.Add((type, strength, run, yaw));
+                columns.Add((type, strength, run, yaw, pitchFloor));
             }
         }
         Parallel.ForEach(columns, Cpu.BoundWith(ct), column =>
         {
-            var (type, strength, run, yaw) = column;
+            var (type, strength, run, yaw, pitchFloor) = column;
             var eye = feet + new Vector3(0, 0, GrenadeTrajectory.EyeHeight(type));
-            for (var pitch = SteepPitchFloorDeg; pitch <= 0f; pitch += stepDeg)
+            for (var pitch = pitchFloor; pitch <= 0f; pitch += stepDeg)
             {
                 var r = GrenadeTrajectory.SimulateExact(collider, new ThrowSpec(eye, yaw, pitch, type, strength, run), k);
                 if (!Settled(r))

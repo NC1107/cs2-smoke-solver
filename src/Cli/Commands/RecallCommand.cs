@@ -18,11 +18,16 @@ namespace SmokeSolver.Cli;
 /// </summary>
 public static class RecallCommand
 {
-    // A throw kind, as a player tells them apart: stance, click, run
-    // direction, and the route (bounce count) the grenade takes to the target.
+    // A throw kind, as a player asks for one: stance, click and run direction.
+    // The route (bounce count) is reported separately: the first cs_italy
+    // pairs showed the referee landing the same kind by four to eleven
+    // bounces, and counting each as a missed lineup would have measured the
+    // sweep against chaos nobody would throw. Bounces is 0 in a kind key and
+    // the real count in a route key.
     public readonly record struct Kind(ThrowType Type, float Strength, float RunYawOffsetDeg, int Bounces);
 
-    public static Kind KindOf(Lineup l) => new(l.Type, l.Strength, l.RunYawOffsetDeg, l.Bounces);
+    public static Kind KindOf(Lineup l) => new(l.Type, l.Strength, l.RunYawOffsetDeg, 0);
+    public static Kind RouteOf(Lineup l) => new(l.Type, l.Strength, l.RunYawOffsetDeg, l.Bounces);
 
     public sealed record Tally(int Both, int ExactOnly, int SweepOnly)
     {
@@ -32,15 +37,27 @@ public static class RecallCommand
         public double Recall => ExactLandable == 0 ? 1.0 : (double)Both / ExactLandable;
     }
 
+    public sealed record Comparison(Tally Kinds, List<Kind> ExactOnly, List<Kind> SweepOnly, Tally Routes, List<Kind> ExactOnlyRoutes);
+
     /// <summary>
     /// Kinds in both lists, kinds only the referee landed (the sweep's
     /// misses) and kinds only the sweep returned (lattice artefacts, or a
-    /// route the 1-degree referee lattice stepped over).
+    /// route the 1-degree referee lattice stepped over); the same again per
+    /// route.
     /// </summary>
-    public static (Tally Tally, List<Kind> ExactOnly, List<Kind> SweepOnly) Compare(IEnumerable<Lineup> normal, IEnumerable<Lineup> referee)
+    public static Comparison Compare(IEnumerable<Lineup> normal, IEnumerable<Lineup> referee)
     {
-        var sweep = normal.Select(KindOf).ToHashSet();
-        var exact = referee.Select(KindOf).ToHashSet();
+        var normalList = normal.ToList();
+        var refereeList = referee.ToList();
+        var (kinds, exactOnly, sweepOnly) = Diff(normalList, refereeList, KindOf);
+        var (routes, exactOnlyRoutes, _) = Diff(normalList, refereeList, RouteOf);
+        return new Comparison(kinds, exactOnly, sweepOnly, routes, exactOnlyRoutes);
+    }
+
+    static (Tally, List<Kind>, List<Kind>) Diff(List<Lineup> normal, List<Lineup> referee, Func<Lineup, Kind> key)
+    {
+        var sweep = normal.Select(key).ToHashSet();
+        var exact = referee.Select(key).ToHashSet();
         var exactOnly = exact.Except(sweep).OrderBy(k => k.Type).ThenBy(k => k.Strength).ThenBy(k => k.Bounces).ToList();
         var sweepOnly = sweep.Except(exact).OrderBy(k => k.Type).ThenBy(k => k.Strength).ThenBy(k => k.Bounces).ToList();
         return (new Tally(sweep.Intersect(exact).Count(), exactOnly.Count, sweepOnly.Count), exactOnly, sweepOnly);
@@ -96,6 +113,7 @@ public static class RecallCommand
         }
 
         var grand = Tally.Zero;
+        var grandRoutes = Tally.Zero;
         var perMap = new List<(string Map, Tally Tally, double SolveSeconds, int Pairs)>();
         var rows = new List<object>();
         var started = System.Diagnostics.Stopwatch.StartNew();
@@ -121,6 +139,7 @@ public static class RecallCommand
             var bench = BenchFor(map, dataDir, standSpots, targetCap, spotsPerTarget, seed, minDist, maxDist);
 
             var mapTally = Tally.Zero;
+            var mapRoutes = Tally.Zero;
             var solveSeconds = 0.0;
             var pairs = 0;
             foreach (var t in bench)
@@ -128,43 +147,52 @@ public static class RecallCommand
                 foreach (var o in t.Origins)
                 {
                     var sw = System.Diagnostics.Stopwatch.StartNew();
-                    Action<string, int>? onPhase = verbose
-                        ? (phase, n) => Console.WriteLine($"    [{sw.Elapsed.TotalSeconds,6:F1}s] {phase} {n}")
-                        : null;
+                    // The solve path's own time ends where the lattice starts;
+                    // the rest of the wall time is the referee's.
+                    var latticeAt = double.NaN;
+                    Action<string, int> onPhase = (phase, n) =>
+                    {
+                        if (phase == "exhaustive" && double.IsNaN(latticeAt)) { latticeAt = sw.Elapsed.TotalSeconds; }
+                        if (verbose) { Console.WriteLine($"    [{sw.Elapsed.TotalSeconds,6:F1}s] {phase} {n}"); }
+                    };
                     var refereePath = Path.Combine(refereeDir, RefereeKey(map, mesh.GameBuildId, t.Pos, o.Feet, tolerance) + ".json");
                     var cached = !refreshReferee && File.Exists(refereePath) ? ReadReferee(refereePath) : null;
                     var solve = SolveForTarget(mesh, attributeFilter, navAreas, t.Pos, hasTargetZ: true,
                         new Vector2(o.Feet.X, o.Feet.Y), 0f, tolerance, constants, onPhase,
                         standSpots: standSpots, exactOrigin: true, originZ: o.Feet.Z, referee: cached is null);
-                    // The wall time the user would wait; the referee's own search
-                    // is charged separately (it is not part of the product).
-                    var seconds = sw.Elapsed.TotalSeconds;
+                    var total = sw.Elapsed.TotalSeconds;
+                    // A cached referee, or a sweep that found something, means the
+                    // lattice never ran for the user: the wall time is all theirs.
+                    var seconds = double.IsNaN(latticeAt) || solve.Lineups.Count > 0 && cached is not null ? total : latticeAt;
                     var referee = cached ?? solve.Referee ?? [];
                     if (cached is null)
                     {
                         WriteReferee(refereePath, referee);
                     }
-                    var (tally, exactOnly, sweepOnly) = Compare(solve.Lineups, referee);
-                    mapTally += tally;
+                    var c = Compare(solve.Lineups, referee);
+                    mapTally += c.Kinds;
+                    mapRoutes += c.Routes;
                     solveSeconds += seconds;
                     pairs++;
-                    if (listMisses && (exactOnly.Count > 0 || sweepOnly.Count > 0))
+                    if (listMisses && (c.ExactOnly.Count > 0 || c.SweepOnly.Count > 0))
                     {
-                        Console.WriteLine($"  {map} {t.Name} <- {o.Label} ({o.Feet.X:F0},{o.Feet.Y:F0},{o.Feet.Z:F0}): both {tally.Both}, exact-only {Describe(exactOnly)}, sweep-only {Describe(sweepOnly)}");
+                        Console.WriteLine($"  {map} {t.Name} <- {o.Label} ({o.Feet.X:F0},{o.Feet.Y:F0},{o.Feet.Z:F0}): both {c.Kinds.Both}, exact-only {Describe(c.ExactOnly)}, sweep-only {Describe(c.SweepOnly)}; routes both {c.Routes.Both} exact-only {c.Routes.ExactOnly}; solve {seconds:F0}s, referee {total - seconds:F0}s");
                     }
                     rows.Add(new
                     {
                         map, target = t.Name, targetPos = new[] { t.Pos.X, t.Pos.Y, t.Pos.Z }, origin = o.Label,
-                        feet = new[] { o.Feet.X, o.Feet.Y, o.Feet.Z }, both = tally.Both, exactOnly = exactOnly.Select(k => k.ToString()).ToList(),
-                        sweepOnly = sweepOnly.Select(k => k.ToString()).ToList(), seconds,
+                        feet = new[] { o.Feet.X, o.Feet.Y, o.Feet.Z }, both = c.Kinds.Both, exactOnly = c.ExactOnly.Select(k => k.ToString()).ToList(),
+                        sweepOnly = c.SweepOnly.Select(k => k.ToString()).ToList(), routesBoth = c.Routes.Both,
+                        routesExactOnly = c.ExactOnlyRoutes.Select(k => k.ToString()).ToList(), seconds, refereeSeconds = total - seconds,
                     });
                 }
             }
             perMap.Add((map, mapTally, solveSeconds, pairs));
             grand += mapTally;
-            Console.WriteLine($"{map,-12} pairs {pairs,3}  both {mapTally.Both,4}  exact-only {mapTally.ExactOnly,4}  sweep-only {mapTally.SweepOnly,4}  recall {mapTally.Recall * 100,5:F1}%  solve {solveSeconds / Math.Max(1, pairs),5:F1}s/pair");
+            grandRoutes += mapRoutes;
+            Console.WriteLine(MapLine(map, pairs, mapTally, mapRoutes, solveSeconds / Math.Max(1, pairs)));
         }
-        Console.WriteLine($"{"TOTAL",-12} pairs {perMap.Sum(m => m.Pairs),3}  both {grand.Both,4}  exact-only {grand.ExactOnly,4}  sweep-only {grand.SweepOnly,4}  recall {grand.Recall * 100,5:F1}%  ({started.Elapsed.TotalMinutes:F1} min)");
+        Console.WriteLine(MapLine("TOTAL", perMap.Sum(m => m.Pairs), grand, grandRoutes, perMap.Sum(m => m.SolveSeconds) / Math.Max(1, perMap.Sum(m => m.Pairs))) + $"  ({started.Elapsed.TotalMinutes:F1} min)");
         if (jsonOut.Length > 0)
         {
             File.WriteAllText(jsonOut, JsonSerializer.Serialize(new { tolerance, seed, rows }, new JsonSerializerOptions { WriteIndented = false }));
@@ -208,8 +236,11 @@ public static class RecallCommand
         }
     }
 
+    static string MapLine(string map, int pairs, Tally kinds, Tally routes, double secondsPerPair) =>
+        $"{map,-12} pairs {pairs,3}  kinds: both {kinds.Both,4} exact-only {kinds.ExactOnly,4} sweep-only {kinds.SweepOnly,3} recall {kinds.Recall * 100,5:F1}%  routes: both {routes.Both,4} exact-only {routes.ExactOnly,4}  solve {secondsPerPair,5:F1}s/pair";
+
     static string Describe(List<Kind> kinds) => kinds.Count == 0 ? "-" :
-        string.Join(" ", kinds.Select(k => $"{k.Type}/{k.Strength:0.#}{(k.RunYawOffsetDeg != 0 ? $"@{k.RunYawOffsetDeg:0}" : "")}x{k.Bounces}"));
+        string.Join(" ", kinds.Select(k => $"{k.Type}/{k.Strength:0.#}{(k.RunYawOffsetDeg != 0 ? $"@{k.RunYawOffsetDeg:0}" : "")}{(k.Bounces > 0 ? $"x{k.Bounces}" : "")}"));
 
     /// <summary>
     /// The map's targets (canonical pro-landing clusters when the map has
