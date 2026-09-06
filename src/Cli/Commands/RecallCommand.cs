@@ -236,7 +236,8 @@ public static class RecallCommand
             {
                 using var doc = JsonDocument.Parse(File.ReadAllText(indexPath));
                 var seen = new HashSet<(int, int, int)>();
-                foreach (var run in doc.RootElement.EnumerateArray())
+                var runs = doc.RootElement.ValueKind == JsonValueKind.Array ? doc.RootElement : doc.RootElement.GetProperty("runs");
+                foreach (var run in runs.EnumerateArray())
                 {
                     if (run.GetProperty("map").GetString() != map || !run.TryGetProperty("target", out var tp) || tp.ValueKind != JsonValueKind.Array)
                     {
