@@ -472,6 +472,10 @@ public static partial class LineupSolver
         IReadOnlyList<float>? strengths,
         ThrowConstants? constants,
         float stepDeg = 1f,
+        // Keep one hit per bounce count as well as per kind: a route off a
+        // different wall is a different lineup to a player, which the recall
+        // bench counts separately. The solve path keeps the default.
+        bool distinctBounces = false,
         CancellationToken ct = default)
     {
         var k = constants ?? ThrowConstants.Default;
@@ -490,29 +494,37 @@ public static partial class LineupSolver
         }
         var found = new ConcurrentBag<Lineup>();
         var tolSq = tolerance * tolerance;
-        Parallel.ForEach(kinds, Cpu.BoundWith(ct), kind =>
+        // One work item per (kind, yaw column): fifteen kinds on sixteen cores
+        // left cores idle and the whole search waiting on the slowest kind
+        // (100 s per origin measured; the columns finish in a third of that).
+        var columns = new List<(ThrowType Type, float Strength, float Run, float Yaw)>();
+        foreach (var (type, strength, run) in kinds)
         {
-            var (type, strength, run) = kind;
-            var eye = feet + new Vector3(0, 0, GrenadeTrajectory.EyeHeight(type));
             var shiftShallow = RunYawShiftDeg(k, strength, 0f, run);
             var shiftSteep = RunYawShiftDeg(k, strength, SteepPitchFloorDeg, run);
             var yawLo = yawCenter + MathF.Min(shiftShallow, shiftSteep) - YawSpreadDeg;
             var yawHi = yawCenter + MathF.Max(shiftShallow, shiftSteep) + YawSpreadDeg;
             for (var yaw = yawLo; yaw <= yawHi; yaw += stepDeg)
             {
-                for (var pitch = SteepPitchFloorDeg; pitch <= 0f; pitch += stepDeg)
+                columns.Add((type, strength, run, yaw));
+            }
+        }
+        Parallel.ForEach(columns, Cpu.BoundWith(ct), column =>
+        {
+            var (type, strength, run, yaw) = column;
+            var eye = feet + new Vector3(0, 0, GrenadeTrajectory.EyeHeight(type));
+            for (var pitch = SteepPitchFloorDeg; pitch <= 0f; pitch += stepDeg)
+            {
+                var r = GrenadeTrajectory.SimulateExact(collider, new ThrowSpec(eye, yaw, pitch, type, strength, run), k);
+                if (!Settled(r))
                 {
-                    var r = GrenadeTrajectory.SimulateExact(collider, new ThrowSpec(eye, yaw, pitch, type, strength, run), k);
-                    if (!Settled(r))
-                    {
-                        continue;
-                    }
-                    var dx = r.RestPoint.X - target.X;
-                    var dy = r.RestPoint.Y - target.Y;
-                    if (dx * dx + dy * dy <= tolSq)
-                    {
-                        found.Add(new Lineup(feet, Normalize(yaw), pitch, type, r.RestPoint, r.Bounces, r.FlightTime, 1, Strength: strength, RunYawOffsetDeg: run));
-                    }
+                    continue;
+                }
+                var dx = r.RestPoint.X - target.X;
+                var dy = r.RestPoint.Y - target.Y;
+                if (dx * dx + dy * dy <= tolSq)
+                {
+                    found.Add(new Lineup(feet, Normalize(yaw), pitch, type, r.RestPoint, r.Bounces, r.FlightTime, 1, Strength: strength, RunYawOffsetDeg: run));
                 }
             }
         });
@@ -520,7 +532,7 @@ public static partial class LineupSolver
         // thousand near-identical hits from one kind would cost verification
         // time to say the same thing.
         return [.. found
-            .GroupBy(l => (l.Type, l.Strength, l.RunYawOffsetDeg))
+            .GroupBy(l => (l.Type, l.Strength, l.RunYawOffsetDeg, distinctBounces ? l.Bounces : 0))
             .Select(g => g.OrderBy(l => Vector3.DistanceSquared(l.RestPoint, target)).First())];
     }
 

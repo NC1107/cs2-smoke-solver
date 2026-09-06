@@ -136,4 +136,8 @@ public sealed record TargetSolve(
     // The grenade world with every breakable pane gone (null when the map has
     // none, or when the query already asked for broken glass): what glass-
     // dependent lineups are re-checked against.
-    TriangleCollider? ColliderGlassGone = null);
+    TriangleCollider? ColliderGlassGone = null,
+    // What the exhaustive exact search lands from the same origins, verified
+    // exactly as the solve's own candidates were: the recall bench's referee.
+    // Only filled when the solve asked for it (SolveForTarget referee: true).
+    List<Lineup>? Referee = null);

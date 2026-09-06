@@ -174,7 +174,7 @@ public static class MapRegistry
         }
         return Convert.ToHexString(sha.GetHashAndReset())[..12].ToLowerInvariant();
     }
-    static IReadOnlyList<StandSpotOrigin>? LoadStandSpots(string dataDir, string mapName)
+    internal static IReadOnlyList<StandSpotOrigin>? LoadStandSpots(string dataDir, string mapName)
     {
         var path = Path.Combine(dataDir, $"{mapName}.standspots.json");
         if (!File.Exists(path))

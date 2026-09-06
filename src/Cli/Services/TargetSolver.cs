@@ -122,6 +122,10 @@ public static class TargetSolver
         // The height the caller means, when it has one - a solved throw spot or
         // a pasted setpos both carry their own.
         float? originZ = null,
+        // Also run the exhaustive exact search from every origin, whatever the
+        // sweep found, and hand its verified lineups back as TargetSolve.Referee
+        // (the recall bench). Exact-origin solves only.
+        bool referee = false,
         CancellationToken ct = default)
     {
         var hasOrigin = originClickOpt.HasValue;
@@ -426,18 +430,37 @@ public static class TargetSolver
         // the real simulator over the whole lattice before it is allowed to
         // say no: the grid is an approximation, and "from right here" is the
         // one question where its misses are the whole answer.
-        if (deepSpot && verified.Count == 0 && origins.Count > 0)
+        // The recall bench's referee is the same search from the same origins,
+        // whatever the sweep found, kept one per bounce count; the fallback's
+        // own candidate set (one per kind) is that list regrouped, so the
+        // lattice is only ever flown once.
+        List<Lineup>? refereeLineups = null;
+        if (deepSpot && origins.Count > 0 && (referee || verified.Count == 0))
         {
             onPhase?.Invoke("exhaustive", origins.Count);
-            var rescued = new List<Lineup>();
+            var lattice = new List<Lineup>();
             foreach (var o in origins)
             {
-                rescued.AddRange(LineupSolver.ExhaustiveExactSpot(collider, o, target, tolerance,
+                lattice.AddRange(LineupSolver.ExhaustiveExactSpot(collider, o, target, tolerance,
                     types ?? [ThrowType.Stand, ThrowType.Crouch, ThrowType.JumpThrow, ThrowType.CrouchJumpThrow, ThrowType.RunJumpThrow],
-                    strengths, constants, ct: ct));
+                    strengths, constants, distinctBounces: referee, ct: ct));
             }
-            onPhase?.Invoke("verify", rescued.Count);
-            verified = LineupSolver.VerifyExact(grid, collider, zoneCrossings, rescued, minStability: minStability, constants: constants, onCandidate: onCandidate, aimTarget: target, tolerance: tolerance, colliderGlassGone: colliderGlassGone, ct: ct);
+            List<Lineup> VerifyAll(List<Lineup> candidates)
+            {
+                onPhase?.Invoke("verify", candidates.Count);
+                return LineupSolver.VerifyExact(grid, collider, zoneCrossings, candidates, minStability: minStability, constants: constants, onCandidate: onCandidate, aimTarget: target, tolerance: tolerance, colliderGlassGone: colliderGlassGone, ct: ct);
+            }
+            if (referee)
+            {
+                refereeLineups = VerifyAll(lattice);
+            }
+            if (verified.Count == 0)
+            {
+                var rescued = referee
+                    ? [.. lattice.GroupBy(l => (l.Feet, l.Type, l.Strength, l.RunYawOffsetDeg)).Select(g => g.OrderBy(l => Vector3.DistanceSquared(l.RestPoint, target)).First())]
+                    : lattice;
+                verified = VerifyAll(rescued);
+            }
         }
 
         // Some stand spots only fit the player crouched - under a vent, a stair
@@ -446,20 +469,19 @@ public static class TargetSolver
         // standing eye height, 18u above where the grenade would really leave
         // the hand. Keep only the crouched variants there. 0.5% of spots
         // overall, but 4% on cs_office, which is full of them.
+        static (int, int, int) Key(Vector3 v) =>
+            ((int)MathF.Round(v.X), (int)MathF.Round(v.Y), (int)MathF.Round(v.Z));
+        var crouchOnly = crouchOnlyExtras.Select(Key).ToHashSet();
+        if (standSpots is { Count: > 0 })
         {
-            static (int, int, int) Key(Vector3 v) =>
-                ((int)MathF.Round(v.X), (int)MathF.Round(v.Y), (int)MathF.Round(v.Z));
-            var crouchOnly = crouchOnlyExtras.Select(Key).ToHashSet();
-            if (standSpots is { Count: > 0 })
-            {
-                crouchOnly.UnionWith(standSpots.Where(s => s.Crouched).Select(s => Key(s.Feet)));
-            }
-            if (crouchOnly.Count > 0)
-            {
-                verified = [.. verified.Where(l =>
-                    !crouchOnly.Contains(Key(l.Feet)) ||
-                    l.Type is ThrowType.Crouch or ThrowType.CrouchJumpThrow)];
-            }
+            crouchOnly.UnionWith(standSpots.Where(s => s.Crouched).Select(s => Key(s.Feet)));
+        }
+        List<Lineup> DropStandingAtCrouchOnly(List<Lineup> ls) => crouchOnly.Count == 0 ? ls
+            : [.. ls.Where(l => !crouchOnly.Contains(Key(l.Feet)) || l.Type is ThrowType.Crouch or ThrowType.CrouchJumpThrow)];
+        verified = DropStandingAtCrouchOnly(verified);
+        if (refereeLineups is not null)
+        {
+            refereeLineups = DropStandingAtCrouchOnly(refereeLineups);
         }
 
         // Flag lineups whose throw spot has a clear line of sight to the area
@@ -510,7 +532,8 @@ public static class TargetSolver
             collider,
             playerCollider,
             emptyReason,
-            colliderGlassGone);
+            colliderGlassGone,
+            Referee: refereeLineups);
     }
 
     // How far a settled target sits out from a wall: about a smoke grenade's
