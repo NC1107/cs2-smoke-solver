@@ -2035,3 +2035,29 @@ What was actually wrong, and what changed (commit 0158902, cache token 116):
   It answers "do we only test at spawn?": dust2 alone is 845 throws to 8 targets on the current build, from all over the map.
 
 Open: the difficulty word conflates "needs precise aim" with "bad" (a 2,232u jump throw scores Tricky 35 from distance x aim band plus 40% stability); see [[scoring-and-difficulty-words]] once Nick decides.
+
+## Recall loop (2026-09-06)
+
+Goal: raise the share of throw kinds the exhaustive exact search lands from a stand spot that the normal solve path also returns, at no cost to the end user (solve time, accuracy).
+A kind is stance x click x run direction x route (bounce count).
+
+### Iteration 0: the instrument - `recall`
+
+`recall [--maps a,b] [--targets 4] [--spots 6] [--seed 1] [--tolerance 32] [--list] [--json out] [--refresh-referee]` and `recall --mapwide [--repeats 3]`.
+Bench: for each of the 15 validated maps, the canonical targets (`data/<map>.targets.json`, 7 maps) or the distinct targets of its validation runs (the other 8), capped at 4, times 6 stand spots drawn with a stable seeded hash from the spots 150-1500u away, plus Nick's nine A-site bench positions on de_dust2.
+Normal path = `SolveForTarget` with `exactOrigin: true` and the spot's own height (the viewer's Exact button: 0.25-degree sweep, every kind kept, exhaustive fallback only on zero), tolerance 32u.
+Referee = `ExhaustiveExactSpot` from the same feet kept one per route, then the same `VerifyExact` (stability 0.05, exact tolerance) and the same crouch-only filter; cached per pair under `data/tmp/recall-referee/` because no recall hypothesis changes physics or the mesh.
+`--refresh-referee` after touching `VerifyExact` or the exhaustive search.
+
+Measured while building it (de_nuke, one pair):
+the exhaustive lattice took 100 s per origin with one work item per kind (15 kinds on 16 cores, the slowest kind setting the pace); one work item per (kind, yaw column) brings it to 46 s with identical results.
+That is also the production fallback's time when the Exact button's sweep finds nothing.
+The exact-spot sweep itself is 6-9 s per pair.
+`HashCode.Combine` over strings is randomised per process, so the first draw of bench spots differed between runs; the bench uses an FNV hash.
+The empty-sweep fallback and the referee now share one lattice pass.
+
+Sizing: 15 maps x 4 targets x 6 spots + 9 = up to 369 pairs; the first (referee-building) run costs ~56 s per pair, later runs ~10 s.
+
+| iteration | hypothesis | exact-only before -> after (total; per-map deltas over 2 named) | solve time before -> after | verdict | commit |
+|---|---|---|---|---|---|
+| 0 | baseline | (running) | (running) | - | e0d6621 |
