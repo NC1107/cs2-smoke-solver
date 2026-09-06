@@ -2016,3 +2016,22 @@ Deferred, with the reason:
 - RebuildValidationIndex re-parses every report per target (about 0.5 s today); DivergeCommand's static per-throw state; no dedicated lost-capture counter.
 
 Follow-up the same evening: with the formatter fixed, model prop_data is readable after all (`base=Glass.Window health=1` on every passable pane; `Metal.break health=50` on train's enclosure; `Wooden.Medium` on vertigo's rails; cs_shelter's community models carry no base). Breakable classification now reads `prop_data.base` and keeps the model-path check as the fallback; re-extracted train, shelter and vertigo are byte-identical to the installed meshes.
+
+## Viewer UX pass (2026-09-05)
+
+Nick reported four things at once: the filter labels "glitch" when the mouse sits on their edge, the toolbar folds into two rows on a half-width desktop window, the "Narrow it down" step is unpleasant, and named pins cannot be selected on the fly in the map views.
+What was actually wrong, and what changed (commit 0158902, cache token 116):
+
+- The popup glitch was the `.filter-desc` explanation sliding in from 4px above its resting place with `pointer-events: auto`: it landed under the pointer at the label's bottom edge, took the hover, closed, and reopened in a loop.
+  It now slides in from below and only a pinned (tapped) one takes pointer events.
+- The toolbar wrapped because the font was wider for Nick than for me: `ui-sans-serif, system-ui` resolved to a monospace face on his desktop, which is also why his screenshots looked like a terminal.
+  The stack is now explicit (`--font-sans`, Noto Sans first) and the toolbar is `nowrap` with the status line as the only shrinkable item; the readout hides under 1100px.
+- Pins: the 2D click hit only the dot, and neither view gave hover feedback.
+  `viewer/js/markers.js` is now the one vocabulary for named pins, spawns and lineup dots: `resolveTap` decides what a tap does, `markerTooltip` names what is under the pointer, both views set a pointer cursor.
+  On 2D a pin's label is a hit box too, but a dot within reach beats a label: zoomed out, one label lies across a neighbour's dot (Squeaky vs Squeaky 2 on nuke).
+  In 3D the marker pick runs on every pointermove; only the ground ghost keeps the 80 ms throttle, because the ghost casts against the whole map.
+- The intro's filter step is three titled groups (Your throw, Aiming, Landing) in two columns, each field with a one-line hint (the opening sentence of its description, cut at the first clause when long); the sidebar keeps the full text on hover.
+- The Accuracy page has an "Every throw on <map>" section pooling all runs of the selected map on the whole radar (stand spots, real landings, every target), defaulting to the current map build.
+  It answers "do we only test at spawn?": dust2 alone is 845 throws to 8 targets on the current build, from all over the map.
+
+Open: the difficulty word conflates "needs precise aim" with "bad" (a 2,232u jump throw scores Tricky 35 from distance x aim band plus 40% stability); see [[scoring-and-difficulty-words]] once Nick decides.
