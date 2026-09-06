@@ -2,19 +2,19 @@
 // import the feature modules; they call back into the orchestrators defined
 // here (setTarget, select, runQuery) via the init*/set*Callbacks hooks.
 
-import { state, filtered, esc, lowMemoryDevice, loadFavorites, setFavorite, isFavorite, DEFAULT_EYE_HEIGHT, EYE_HEIGHT_BY_TYPE, TARGET_SNAP_RADIUS, favoriteHooks, loadSavedLocal, persistSavedLocal, isExecuteSaved, setExecuteSaved} from "./state.js?v=115";
-import { loadMapList, loadMapData, runQuery as postLineupQuery, fetchTrajectory, fetchLineupOne, fetchSlack, fetchSpawns, fetchProSmokes, fetchMeshDiff, meshDiffExists, fetchLevels, fetchSmokeCoverage, runExecute, findExecuteSpots, fetchTargets, fetchMe, signOut, fetchSavedLineups, putSavedLineups, fetchVotes, castVote} from "./api.js?v=115";
-import { loadRadar, readColors, recolorRadar, draw, scheduleDraw, resize, resetView, initMap2d, screenOf } from "./map2d.js?v=115";
-import { ensure3d, resetEnsure3d, teardown3d, current3d, sync3d, syncProgress3d, syncMeshDiff3d, set3dCallbacks, applyTheme3d, verticalFovFromDesired } from "./view3d.js?v=115";
-import { initAdmin, renderAdmin, syncAdminMode } from "./admin.js?v=115";
-import { resetEnsureTexturedScene } from "./textured-scene.js?v=115";
-import { capturePreview } from "./preview.js?v=115";
+import { state, filtered, esc, lowMemoryDevice, loadFavorites, setFavorite, isFavorite, DEFAULT_EYE_HEIGHT, EYE_HEIGHT_BY_TYPE, TARGET_SNAP_RADIUS, favoriteHooks, loadSavedLocal, persistSavedLocal, isExecuteSaved, setExecuteSaved} from "./state.js?v=116";
+import { loadMapList, loadMapData, runQuery as postLineupQuery, fetchTrajectory, fetchLineupOne, fetchSlack, fetchSpawns, fetchProSmokes, fetchMeshDiff, meshDiffExists, fetchLevels, fetchSmokeCoverage, runExecute, findExecuteSpots, fetchTargets, fetchMe, signOut, fetchSavedLineups, putSavedLineups, fetchVotes, castVote} from "./api.js?v=116";
+import { loadRadar, readColors, recolorRadar, draw, scheduleDraw, resize, resetView, initMap2d, screenOf } from "./map2d.js?v=116";
+import { ensure3d, resetEnsure3d, teardown3d, current3d, sync3d, syncProgress3d, syncMeshDiff3d, set3dCallbacks, applyTheme3d, verticalFovFromDesired } from "./view3d.js?v=116";
+import { initAdmin, renderAdmin, syncAdminMode } from "./admin.js?v=116";
+import { resetEnsureTexturedScene } from "./textured-scene.js?v=116";
+import { capturePreview } from "./preview.js?v=116";
 // Every local import across viewer/js carries the SAME ?v= token, bumped
 // together on any change. The HTML is served no-cache, so a fresh load pulls
 // main.js?v=N, which pulls every module at ?v=N - the whole graph refreshes as
 // one consistent set past Cloudflare's 4h JS cache, with no duplicate module
 // instances (which a partial versioning would cause). Bump the token everywhere.
-import { renderLineups, initPanel, revealSelected, resultStatusText } from "./panel.js?v=115";
+import { renderLineups, initPanel, revealSelected, resultStatusText } from "./panel.js?v=116";
 
 (async () => {
   // Map switching means a failed load is no longer necessarily terminal (the
@@ -1293,10 +1293,32 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
   for (const f of filterEls) {
     slotFor(filterBody, f).appendChild(f);
   }
+  // The intro asks the same questions in three titled groups with the
+  // explanation printed under each name: a first-time visitor has no idea what
+  // "reproducible" means, and a hover popup is not discoverable on a dialog
+  // they are reading top to bottom.
+  const INTRO_GROUPS = [
+    { title: "Your throw", keys: ["stance", "type", "strength"] },
+    { title: "Aiming", keys: ["reference", "sky", "stability"] },
+    { title: "Landing", keys: ["precision", "repro", "pin", "bounces", "flight"] },
+  ];
+  // One line of explanation per field: the opening sentence, cut at its first
+  // clause when even that runs long. The full text stays on the sidebar's
+  // hover popup, where someone who wants the detail goes looking for it.
+  const introHint = desc => {
+    const first = desc.split(/(?<=\.)\s/)[0];
+    return first.length <= 140 ? first : first.split(/[:;]/)[0];
+  };
+  const introRowsHtml = () => INTRO_GROUPS.map(g => `<section class="intro-group"><h2>${esc(g.title)}</h2><div class="intro-fields">` +
+    g.keys.map(k => state.filters[k]).filter(Boolean).map(f => `<div class="filter-row" data-for="${f.id}">` +
+      `<label class="filter-head" for="${f.id}"><b>${esc(f.dataset.label)}</b><span class="filter-slot"></span></label>` +
+      `<p class="filter-hint">${esc(introHint(f.dataset.desc))}</p></div>`).join("") +
+    `</div></section>`).join("");
   function mountIntroFilters() {
-    document.getElementById("intro-filter-rows").innerHTML = filterRowsHtml();
+    const rows = document.getElementById("intro-filter-rows");
+    rows.innerHTML = introRowsHtml();
     for (const f of filterEls) {
-      slotFor(document.getElementById("intro-filter-rows"), f).appendChild(f);
+      (slotFor(rows, f) ?? rows).appendChild(f);
     }
   }
 

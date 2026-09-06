@@ -3,8 +3,9 @@
 // actions (set target, select, run query) go through callbacks that main.js
 // registers, so this module never imports the orchestrator.
 
-import { cacheBust } from "./api.js?v=115";
-import { isDrag, state, filtered, clickWords, movementWords, clickClass, esc, SMOKE_BLOOM_RADIUS, PICK_RADIUS_PX, TOUCH_PICK_RADIUS_PX, HEAT_CELL } from "./state.js?v=115";
+import { cacheBust } from "./api.js?v=116";
+import { isDrag, state, filtered, clickClass, SMOKE_BLOOM_RADIUS, PICK_RADIUS_PX, TOUCH_PICK_RADIUS_PX, HEAT_CELL } from "./state.js?v=116";
+import { markerTooltip, resolveTap, preferSpawnOverLineup, showTip, hideTip } from "./markers.js?v=116";
 
 const canvas = state.canvas;
 const ctx = canvas.getContext("2d");
@@ -218,9 +219,10 @@ export function draw() {
       const x = t.pos[0], y = -t.pos[1];
       const active = state.targetName === t.name && state.target &&
         Math.hypot(state.target[0] - t.pos[0], state.target[1] - t.pos[1]) < 1;
-      ctx.globalAlpha = t.named ? 0.95 : 0.6;
+      const hovered = state.hoveredPin === t;
+      ctx.globalAlpha = t.named || hovered ? 0.95 : 0.6;
       ctx.strokeStyle = colors.target;
-      ctx.fillStyle = active ? colors.target : colors.surface;
+      ctx.fillStyle = active || hovered ? colors.target : colors.surface;
       ctx.beginPath();
       ctx.arc(x, y, r, 0, Math.PI * 2);
       ctx.fill();
@@ -231,7 +233,12 @@ export function draw() {
       ctx.lineTo(x, y + r * 2.2);
       ctx.stroke();
       ctx.fillStyle = colors.target;
-      ctx.fillText((t.named ? "" : "? ") + t.name, x + r * 1.8, y);
+      const label = (t.named ? "" : "? ") + t.name;
+      ctx.fillText(label, x + r * 1.8, y);
+      // The name is part of the pin: remember where it was drawn (world
+      // units) so a click on the word counts, not only the dot.
+      const tw = ctx.measureText(label).width;
+      t._label = [x + r * 1.8, y - 6 / scale, x + r * 1.8 + tw, y + 6 / scale];
     }
     ctx.restore();
   }
@@ -533,17 +540,6 @@ function drawSpawnSet(pts, color) {
 // is sized the same way rather than in world units.
 const SPAWN_GRAB_PX = 14;
 
-// Keeps a tooltip beside the cursor and inside the stage.
-function placeTip(tip, e) {
-  const stageRect = canvas.parentElement.getBoundingClientRect();
-  let tx = e.clientX - stageRect.left + 14;
-  let ty = e.clientY - stageRect.top + 14;
-  if (tx + tip.offsetWidth > stageRect.width - 8) { tx = e.clientX - stageRect.left - tip.offsetWidth - 10; }
-  if (ty + tip.offsetHeight > stageRect.height - 8) { ty = e.clientY - stageRect.top - tip.offsetHeight - 10; }
-  tip.style.left = Math.max(8, tx) + "px";
-  tip.style.top = Math.max(8, ty) + "px";
-}
-
 // The shown pro landing nearest a click within grab range, or null - so a
 // click on a landing dot smokes exactly where that pro's smoke landed,
 // including the height a 2D click cannot express.
@@ -576,7 +572,30 @@ function nearestNamedPin(wx, wy, radius) {
     const d = Math.hypot(t.pos[0] - wx, t.pos[1] - wy);
     if (d < bestD) { bestD = d; best = t; }
   }
-  return best;
+  if (best) { return best; }
+  // A pointer on the name grabs the pin as surely as one on the dot, but only
+  // when no dot is in reach: zoomed out, one name can lie across a
+  // neighbour's dot. The label box is in canvas space (y flipped).
+  return state.targets.find(t => t._label && wx >= t._label[0] && wx <= t._label[2] && -wy >= t._label[1] && -wy <= t._label[3]) ?? null;
+}
+
+// What is under the pointer, in the precedence markers.js documents: a named
+// pin first, then spawn or lineup dot (whichever the moment favours), then
+// the ground.
+function hitAt(wx, wy, pickPx) {
+  const pin = nearestNamedPin(wx, wy, (pickPx + SPAWN_GRAB_PX) / scale);
+  if (pin) {
+    return { kind: "named", target: pin };
+  }
+  const spawn = state.picking ? null : nearestSpawn(wx, wy, (pickPx + SPAWN_GRAB_PX) / scale);
+  const lineupIdx = state.result && !state.heatOn ? nearestLineup(wx, wy, pickPx / scale) : -1;
+  if (spawn && (lineupIdx < 0 || preferSpawnOverLineup())) {
+    return { kind: "spawn", origin: [spawn[0], spawn[1], spawn[2]], team: spawn[3] };
+  }
+  if (lineupIdx >= 0) {
+    return { kind: "lineup", idx: lineupIdx };
+  }
+  return { kind: "ground", point: [wx, wy] };
 }
 
 function nearestSpawn(wx, wy, radius) {
@@ -719,64 +738,32 @@ export function initMap2d(cb) {
     const [wx, wy] = worldOf(e.clientX - rect.left, e.clientY - rect.top);
     // Fingers are not mouse pointers: give touch a fatter marker grab zone.
     const pickPx = e.pointerType === "touch" ? TOUCH_PICK_RADIUS_PX : PICK_RADIUS_PX;
-    // A spawn diamond is drawn at a fixed on-screen size, so its grab zone is
-    // sized the same way - matching the marker plus a margin, rather than the
-    // tighter radius used for the dense lineup markers.
-    //
-    // Tested before the target rules on purpose. A spawn marker only exists to
-    // be clicked, but every click without a target used to be swallowed as
-    // "set the target here", so clicking a spawn first - the obvious way to
-    // ask "what can I throw from spawn?" - put the target on the spawn instead
-    // and the marker appeared to do nothing at all.
-    // A named pin takes the click before anything else does: it is the one
-    // marker whose only job is to be clicked, and with a target already set
-    // a plain click would otherwise mean "solve from here" or select a row.
-    const pin = nearestNamedPin(wx, wy, (pickPx + SPAWN_GRAB_PX) / scale);
-    const spawn = state.picking ? null : nearestSpawn(wx, wy, (pickPx + SPAWN_GRAB_PX) / scale);
-    // "Set throw position" armed: this click is the throw spot, whatever it
-    // landed on, and the arming ends here (a spawn or pin click used to
-    // leave it armed).
-    if (state.pickingOrigin) {
-      callbacks.onPickThrowSpot(spawn ? [spawn[0], spawn[1]] : pin ? [...pin.pos] : [wx, wy]);
-      return;
-    }
-    if (pin) {
-      callbacks.onSetTarget([...pin.pos]);
-      return;
-    }
-    if (spawn) {
-      if (state.target) {
-        callbacks.onRunQuery({ target: state.target, origin: [spawn[0], spawn[1]] });
-      } else {
-        callbacks.onPickOrigin([spawn[0], spawn[1]], spawn[3]);
+    // Markers first, the ground last, with the tap meaning decided in
+    // markers.js so the 3D view answers the same click the same way.
+    const hit = hitAt(wx, wy, pickPx);
+    resolveTap(hit, callbacks, () => {
+      // The map takes the two positions in order: the first left click
+      // answers "where does the smoke go", the second "where do you throw it
+      // from". Either button in the sidebar can re-arm one of them out of turn.
+      if (state.picking || !state.target) {
+        // With the pro overlay up, a click on a landing dot means "smoke where
+        // they smoke" - including the floor they smoke, which a 2D click alone
+        // cannot express on a stacked map.
+        const proLand = state.picking ? null : nearestProLanding(wx, wy, (pickPx + SPAWN_GRAB_PX) / scale);
+        if (proLand) {
+          callbacks.onSetTarget([proLand[0], proLand[1], proLand[2]],
+            `target ${proLand[0].toFixed(0)}, ${proLand[1].toFixed(0)}, ${proLand[2].toFixed(0)} (pro landing)`);
+          return true;
+        }
+        setTargetAt(e.clientX, e.clientY);
+        return true;
       }
-      return;
-    }
-    // The map takes the two positions in order: the first left click answers
-    // "where does the smoke go", the second answers "where do you throw it
-    // from". Either button in the sidebar can re-arm one of them out of turn.
-    if (state.picking || !state.target) {
-      // With the pro overlay up, a click on a landing dot means "smoke where
-      // they smoke" - including the floor they smoke, which a 2D click alone
-      // cannot express on a stacked map.
-      const proLand = state.picking ? null : nearestProLanding(wx, wy, (pickPx + SPAWN_GRAB_PX) / scale);
-      if (proLand) {
-        callbacks.onSetTarget([proLand[0], proLand[1], proLand[2]],
-          `target ${proLand[0].toFixed(0)}, ${proLand[1].toFixed(0)}, ${proLand[2].toFixed(0)} (pro landing)`);
-        return;
+      if (state.heatOn) {
+        return false;
       }
-      setTargetAt(e.clientX, e.clientY);
-      return;
-    }
-    if (state.heatOn) {
-      return;
-    }
-    const bestIdx = nearestLineup(wx, wy, pickPx / scale);
-    if (bestIdx >= 0) {
-      callbacks.onSelect(bestIdx);
-      return;
-    }
-    callbacks.onPickThrowSpot([wx, wy]);
+      callbacks.onPickThrowSpot([wx, wy]);
+      return true;
+    });
   });
   canvas.addEventListener("pointercancel", e => {
     touches.delete(e.pointerId);
@@ -823,52 +810,31 @@ export function initMap2d(cb) {
     const [wx, wy] = worldOf(e.clientX - rect.left, e.clientY - rect.top);
     readout.textContent = `${wx.toFixed(0)}, ${wy.toFixed(0)}`;
 
-    // Hover details: nearest marker within grab distance shows a tooltip and
-    // highlights; the map itself is the lineup list.
+    // Hover: whatever marker is under the pointer names itself and says what
+    // a click does (pins, spawns and lineup dots alike); the lineup dot and
+    // the pin also light up on the map.
     const tip = document.getElementById("tip");
-    const best = state.result && !state.heatOn && !panning ? nearestLineup(wx, wy, PICK_RADIUS_PX / scale) : -1;
-    if (best !== state.hovered) {
-      state.hovered = best;
+    const hit = panning ? { kind: "ground" } : hitAt(wx, wy, PICK_RADIUS_PX);
+    const hoveredLineup = hit.kind === "lineup" ? hit.idx : -1;
+    const hoveredPin = hit.kind === "named" ? hit.target : null;
+    if (hoveredLineup !== state.hovered || hoveredPin !== state.hoveredPin) {
+      state.hovered = hoveredLineup;
+      state.hoveredPin = hoveredPin;
       scheduleDraw();
     }
-    // A spawn under the cursor says what clicking it will do. Spawn markers are
-    // the one thing on the map whose click means something different from the
-    // ground around them, and nothing said so until it had happened.
-    //
-    // While a position is being picked the spawn wins over a lineup marker
-    // sitting on it: the question on screen is "which spot", and the markers
-    // are answers to a different one.
-    const choosing = state.picking || state.pickingOrigin || !state.target;
-    const hoverSpawn = panning || (best >= 0 && !choosing) ? null
-      : nearestSpawn(wx, wy, (PICK_RADIUS_PX + SPAWN_GRAB_PX) / scale);
-    if (hoverSpawn) {
-      const what = state.picking ? "your smoke target" : "your throw position";
-      tip.innerHTML = `<b>${hoverSpawn[3]} spawn</b><br>Select this spawn as ${what}`;
-      tip.style.display = "block";
-      placeTip(tip, e);
-      canvas.style.cursor = "pointer";
-      if (state.hovered !== -1) { state.hovered = -1; scheduleDraw(); }
-      return;
-    }
-    if (best >= 0) {
-      const l = state.result.lineups[best];
-      tip.innerHTML =
-        `<b class="${clickClass(l.strength)}">${clickWords(l.strength)}</b> · ${movementWords(l)}` +
-        ` · ${l.Bounces} bounce${l.Bounces === 1 ? "" : "s"} · ${l.flightTime.toFixed(1)}s · ${(l.stability * 100).toFixed(0)}%<br>` +
-        `${esc(l.how)}<br><span class="cmd2">${esc(l.console)}</span><br>` +
-        `<span class="cmd2">rest ${l.rest[0].toFixed(0)}, ${l.rest[1].toFixed(0)} · click marker to pin</span>`;
-      tip.style.display = "block";
-      placeTip(tip, e);
+    const html = markerTooltip(hit);
+    if (html) {
+      showTip(tip, html, e.clientX, e.clientY);
       canvas.style.cursor = "pointer";
     } else {
-      tip.style.display = "none";
+      hideTip(tip);
       canvas.style.cursor = "";
     }
   });
   canvas.addEventListener("pointerleave", () => {
     readout.textContent = "";
-    document.getElementById("tip").style.display = "none";
-    if (state.hovered !== -1) { state.hovered = -1; scheduleDraw(); }
+    hideTip(document.getElementById("tip"));
+    if (state.hovered !== -1 || state.hoveredPin) { state.hovered = -1; state.hoveredPin = null; scheduleDraw(); }
   });
 
   canvas.addEventListener("wheel", e => {

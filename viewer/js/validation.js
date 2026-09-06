@@ -143,6 +143,8 @@ const state = {
   filterMap: null, // sidebar shows only this map's runs when set
   report: null, // the report currently on screen
   showOrigins: false, // landing map also draws where each throw stood
+  mapwide: { paths: true, origins: true, sameBuild: true }, // the every-throw map's toggles
+  mapwideMap: null, // the map the every-throw section is showing
 };
 
 // A report is only comparable to its mesh when the game server that threw
@@ -640,6 +642,7 @@ function renderReport(file, report) {
   renderReportMeta(report);
   renderSummaryCards(report.summary ?? {});
   renderLanding(report);
+  renderMapWide(report.map);
   renderRunCharts(report);
   renderSegments(report.results);
   renderDivergence(report.results);
@@ -1099,6 +1102,141 @@ async function renderLanding(report) {
     state.showOrigins = ev.target.checked;
     renderLanding(report);
   });
+}
+
+// ---- every throw on the map ------------------------------------------------
+
+// A campaign is one target at a time, so the per-run landing map always looks
+// like "a cluster next to spawn". This one pools every run of the map on the
+// whole radar: where each throw stood, where it came down, and every target
+// that was ever validated, so the spread of the corpus is visible at a glance.
+const reportCache = new Map();
+function loadReport(file) {
+  if (!reportCache.has(file)) {
+    reportCache.set(file, (async () => {
+      const res = await fetch(REPORT_BASE + file, { cache: "no-cache" });
+      if (!res.ok) {
+        throw new Error(`HTTP ${res.status}`);
+      }
+      const report = await res.json();
+      report.results = normalizeRows(report.results ?? []);
+      return report;
+    })());
+  }
+  return reportCache.get(file);
+}
+
+function mapWideOverlay(map, reports, meta) {
+  const [x0, , x1, y1] = meta.region;
+  const ps = meta.pixelSize || 1;
+  const w = Math.round((x1 - x0) / ps);
+  const h = Math.round((y1 - meta.region[1]) / ps);
+  const px = wx => ((wx - x0) / ps).toFixed(1);
+  const py = wy => ((y1 - wy) / ps).toFixed(1);
+  const dotR = Math.max(1.4, w / 520);
+  const counts = { ok: 0, warn: 0, bad: 0 };
+  const targets = new Map();
+  let paths = "";
+  let origins = "";
+  let landings = "";
+  for (const report of reports) {
+    const target = report.target ?? [0, 0, 0];
+    if (Array.isArray(report.target)) {
+      const key = report.target.map(v => Math.round(v)).join(",");
+      const t = targets.get(key) ?? { pos: report.target, tol: report.tolerance ?? 0, runs: 0, name: report.name };
+      t.runs++;
+      targets.set(key, t);
+    }
+    for (const r of landingRows(report)) {
+      const band = errBand(r.ErrPredicted);
+      counts[band]++;
+      const color = ERR_BAND[band];
+      const lx = px(r.RealRest[0]);
+      const ly = py(r.RealRest[1]);
+      const title = `${typeLabelFor(r)} (${clickShort(r.Strength)}) - ${fmtErr(r.ErrPredicted)}u off - ` +
+        `${r.PredictedBounces}${Number.isFinite(r.RealBounces) ? "/" + r.RealBounces : ""} bounces - ${fmtDateOnly(report.timestamp)}`;
+      if (Array.isArray(r.Feet)) {
+        const ox = px(r.Feet[0]);
+        const oy = py(r.Feet[1]);
+        if (state.mapwide.paths) {
+          paths += `<line x1="${ox}" y1="${oy}" x2="${lx}" y2="${ly}" stroke="${color}" stroke-opacity="0.2" stroke-width="1" vector-effect="non-scaling-stroke"/>`;
+        }
+        if (state.mapwide.origins) {
+          origins += `<circle cx="${ox}" cy="${oy}" r="${(dotR * 0.8).toFixed(2)}" fill="var(--ink)" fill-opacity="0.45"/>`;
+        }
+      }
+      landings += `<a href="${esc(openLinkFor(map, target, r))}" target="_blank" rel="noopener">` +
+        `<circle cx="${lx}" cy="${ly}" r="${dotR.toFixed(2)}" fill="${color}"/><title>${esc(title)}</title></a>`;
+    }
+  }
+  let rings = "";
+  for (const t of targets.values()) {
+    const tx = px(t.pos[0]);
+    const ty = py(t.pos[1]);
+    rings += `<circle cx="${tx}" cy="${ty}" r="${Math.max(dotR * 2.4, t.tol / ps).toFixed(1)}" fill="var(--target)" fill-opacity="0.1" stroke="var(--target)" stroke-width="1.5" vector-effect="non-scaling-stroke">` +
+      `<title>${esc(`target ${t.name ? t.name + " " : ""}${fmtVec0(t.pos)} - ${t.runs} run${t.runs === 1 ? "" : "s"}`)}</title></circle>`;
+  }
+  const svg = `<svg class="landing-overlay" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" role="img" ` +
+    `aria-label="Every validated throw on ${esc(map)}: stand spots, real landings and targets">${paths}${origins}${rings}${landings}</svg>`;
+  return { svg, counts, targets: targets.size, w, h };
+}
+
+async function renderMapWide(map) {
+  const wrap = document.getElementById("mapwide");
+  const title = document.getElementById("mapwide-map");
+  if (!map) {
+    wrap.innerHTML = "";
+    return;
+  }
+  state.mapwideMap = map;
+  title.textContent = map;
+  const groups = groupsByMap(state.runs).get(map) ?? [];
+  const runsAll = groups.flatMap(g => g.runs);
+  // Only throws made on the mesh's own map build are comparable to the solver
+  // (Valve moves geometry between builds; see the corpus notes), so the
+  // default view is the newest build and older campaigns are one toggle away.
+  const currentBuild = runsAll.at(-1)?.build;
+  const comparable = runsAll.filter(r => r.build === currentBuild);
+  const runs = state.mapwide.sameBuild && comparable.length ? comparable : runsAll;
+  if (!runs.length) {
+    wrap.innerHTML = `<p class="muted">no runs for ${esc(map)}</p>`;
+    return;
+  }
+  wrap.innerHTML = `<p class="muted">loading ${runs.length} runs…</p>`;
+  let assets;
+  let reports;
+  try {
+    [assets, reports] = await Promise.all([loadMapAssets(map), Promise.all(runs.map(r => loadReport(r.file)))]);
+  } catch (e) {
+    wrap.innerHTML = `<p class="muted">could not load ${esc(map)}: ${esc(e.message)}</p>`;
+    return;
+  }
+  if (state.mapwideMap !== map) {
+    return; // another map was picked while these loaded
+  }
+  const { svg, counts, targets, w, h } = mapWideOverlay(map, reports, assets.meta);
+  const total = counts.ok + counts.warn + counts.bad;
+  const toggle = (key, label) => `<label class="landing-toggle"><input type="checkbox" data-mapwide="${key}"${state.mapwide[key] ? " checked" : ""}> ${label}</label>`;
+  wrap.innerHTML =
+    `<div class="landing-frame mapwide-frame" style="aspect-ratio:${w} / ${h}"><canvas class="landing-radar"></canvas>${svg}</div>` +
+    `<div class="landing-tools">` +
+    legendChips([
+      [`within 3u (${counts.ok})`, ERR_BAND.ok],
+      [`3 to 8u (${counts.warn})`, ERR_BAND.warn],
+      [`over 8u (${counts.bad})`, ERR_BAND.bad],
+      [`target (${targets})`, "var(--target)"],
+    ]) +
+    toggle("paths", "throw lines") + toggle("origins", "stand spots") +
+    (runsAll.length > comparable.length ? toggle("sameBuild", `current map build only (${comparable.length} of ${runsAll.length} runs)`) : "") +
+    `<span class="muted">${total} throws across ${runs.length} runs; dot = where the real grenade came down, line = from where it was thrown</span>` +
+    `</div>`;
+  paintRadarCrop(wrap.querySelector(".landing-radar"), assets.img, { x: 0, y: 0, w, h });
+  for (const input of wrap.querySelectorAll("input[data-mapwide]")) {
+    input.addEventListener("change", ev => {
+      state.mapwide[ev.target.dataset.mapwide] = ev.target.checked;
+      renderMapWide(map);
+    });
+  }
 }
 
 // ---- bounce risk ------------------------------------------------------------

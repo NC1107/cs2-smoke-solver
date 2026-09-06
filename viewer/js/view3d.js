@@ -3,10 +3,11 @@
 // wraps init/sync. Raycast picks route through callbacks that main.js
 // registers, so this module never imports the orchestrator.
 
-import { state, filtered, clickClass, lowMemoryDevice, SMOKE_BLOOM_RADIUS, EYE_HEIGHT_BY_TYPE, DEFAULT_EYE_HEIGHT } from "./state.js?v=115";
-import { fetchMesh } from "./api.js?v=115";
-import { createFlyCamera } from "./flycam.js?v=115";
-import { loadScript, ensureTexturedScene, currentTexturedScene, disposeSceneContents, disposeTexturedScene } from "./textured-scene.js?v=115";
+import { state, filtered, clickClass, lowMemoryDevice, SMOKE_BLOOM_RADIUS, EYE_HEIGHT_BY_TYPE, DEFAULT_EYE_HEIGHT } from "./state.js?v=116";
+import { fetchMesh } from "./api.js?v=116";
+import { createFlyCamera } from "./flycam.js?v=116";
+import { markerTooltip, resolveTap, showTip, hideTip } from "./markers.js?v=116";
+import { loadScript, ensureTexturedScene, currentTexturedScene, disposeSceneContents, disposeTexturedScene } from "./textured-scene.js?v=116";
 
 const stage3d = state.stage3d;
 // Warning tint for phantom blockers (grenade-clips, physics-clips, glass) - a
@@ -548,6 +549,20 @@ async function init3d() {
     if (e.pointerType !== "mouse" || e.buttons !== 0) {
       return;
     }
+    // A marker under the pointer names itself, as on the 2D map, and the
+    // cursor says it is clickable. Markers are a few hundred objects, so this
+    // runs on every move; the ground ghost below casts against the whole map
+    // and is throttled.
+    const tip = document.getElementById("tip");
+    const marker = markerHitAt(e.clientX, e.clientY);
+    if (marker) {
+      showTip(tip, markerTooltip(marker), e.clientX, e.clientY);
+      renderer.domElement.style.cursor = "pointer";
+      if (ghost.visible) { ghost.visible = false; dirty = true; }
+      return;
+    }
+    hideTip(tip);
+    renderer.domElement.style.cursor = "";
     const now = performance.now();
     if (now - ghostAt < 80) {
       return;
@@ -564,8 +579,21 @@ async function init3d() {
     dirty = true;
   });
   renderer.domElement.addEventListener("pointerleave", () => {
+    hideTip(document.getElementById("tip"));
+    renderer.domElement.style.cursor = "";
     if (ghost.visible) { ghost.visible = false; dirty = true; }
   });
+
+  // The marker under a screen point as the shared vocabulary (markers.js), or
+  // null for the ground: what pickAt found, with the same names 2D uses.
+  function markerHitAt(clientX, clientY) {
+    const hit = pickAt(clientX, clientY, true);
+    if (!hit) { return null; }
+    if (hit.named) { return { kind: "named", target: hit.named }; }
+    if (hit.markerIdx !== undefined) { return { kind: "lineup", idx: hit.markerIdx }; }
+    if (hit.spawnOrigin) { return { kind: "spawn", origin: hit.spawnOrigin, team: hit.spawnTeam }; }
+    return null;
+  }
   const cam = createFlyCamera(camera, renderer.domElement, {
     requestRender: () => { dirty = true; },
     onLongPress: setTargetAt,
@@ -579,49 +607,23 @@ async function init3d() {
       }
       const hit = pickAt(x, y, true);
       if (!hit) { return; }
-      // "Set throw position" is armed: whatever was tapped is where you
-      // throw from - a pin, a spawn, a marker's feet, the ground - and the
-      // arming ends with this tap. It used to end only on a terrain tap, so
-      // tapping a pin or a marker first left it armed for good and every
-      // later click kept setting the throw spot.
-      if (state.pickingOrigin) {
-        const at = hit.named ? hit.named.pos
-          : hit.spawnOrigin ? hit.spawnOrigin
-          : hit.markerIdx !== undefined ? state.result.lineups[hit.markerIdx].feet
-          : [hit.point.x, hit.point.y, hit.point.z];
-        callbacks.onPickThrowSpot([...at]);
-        return;
-      }
-      if (hit.named) {
-        callbacks.onSetTarget([...hit.named.pos]);
-        return;
-      }
-      if (hit.markerIdx !== undefined) {
-        callbacks.onSelect(hit.markerIdx);
-        return;
-      }
-      if (hit.spawnOrigin) {
-        // Same busy gate as the 2D canvas: a tap during a live solve must not
-        // dispatch a second one.
-        if (state.busy) {
-          return;
+      // A tap during a live solve must not dispatch a second one (spawns and
+      // ground both solve); selecting a pin or a dot is always fine.
+      const marker = hit.named ? { kind: "named", target: hit.named }
+        : hit.markerIdx !== undefined ? { kind: "lineup", idx: hit.markerIdx }
+        : hit.spawnOrigin ? { kind: "spawn", origin: hit.spawnOrigin, team: hit.spawnTeam }
+        : { kind: "ground", point: [hit.point.x, hit.point.y, hit.point.z] };
+      if (marker.kind === "spawn" && state.busy) { return; }
+      if (marker.kind === "spawn" && state.target && state.heatOn) { return; }
+      resolveTap(marker, callbacks, g => {
+        const [px, py, pz] = g.point;
+        if (state.picking || !state.target) {
+          callbacks.onSetTarget([px, py, pz], `target ${px.toFixed(0)}, ${py.toFixed(0)}, ${pz.toFixed(0)} (3D)`);
+        } else if (!state.heatOn && !state.busy) {
+          callbacks.onPickThrowSpot([px, py, pz]);
         }
-        // Without a target there is nothing to solve yet, but the tap still
-        // said something - hold the spawn until the target arrives rather than
-        // dropping the click, which made the ring look inert.
-        if (!state.target) {
-          callbacks.onPickOrigin(hit.spawnOrigin, hit.spawnTeam);
-        } else if (!state.heatOn) {
-          callbacks.onRunQuery({ target: state.target, origin: hit.spawnOrigin });
-        }
-        return;
-      }
-      const pnt = hit.point;
-      if (state.picking || !state.target) {
-        callbacks.onSetTarget([pnt.x, pnt.y, pnt.z], `target ${pnt.x.toFixed(0)}, ${pnt.y.toFixed(0)}, ${pnt.z.toFixed(0)} (3D)`);
-      } else if (!state.heatOn && !state.busy) {
-        callbacks.onPickThrowSpot([pnt.x, pnt.y, pnt.z]);
-      }
+        return true;
+      });
     },
     ignoreKeys: e => e.target instanceof Element &&
       e.target.closest("#controls, .panel, input, select, button, summary, details"),

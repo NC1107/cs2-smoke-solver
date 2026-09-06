@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Smoke Solver</title>
 <link rel="icon" href="viewer/favicon.svg" type="image/svg+xml">
-<link rel="stylesheet" href="viewer/app.css?v=115">
+<link rel="stylesheet" href="viewer/app.css?v=116">
 </head>
 <body>
 
@@ -177,7 +177,7 @@
         </select>
         <select id="f-reference" aria-label="Aim reference quality" data-default=""
                 data-label="Aim reference" data-desc="How close the thing you line up against sits to your crosshair. CS2's grenade crosshair puts its ticks 10° apart, so a landmark 18° out is nearly two ticks away - technically a reference, useless in a round. &quot;On the crosshair&quot; wants a silhouette within 3°. If no lineup for a target clears the bar, all of them are shown anyway rather than none.">
-          <option value="" selected>any - the reproducible filter above weighs it by distance</option>
+          <option value="" selected>any reference</option>
           <option value="0">dead on (≤1°)</option>
           <option value="1">on the crosshair (≤3°)</option>
           <option value="2">near the crosshair (≤6°)</option>
@@ -185,7 +185,7 @@
         </select>
         <select id="f-sky" aria-label="Sky-aimed lineups" data-default=""
                 data-label="Sky throws" data-desc="Sky-aimed lineups have no wall or silhouette under the crosshair to line up against - only the horizon. Allowed keeps the reasonable ones (up to 65° above the horizon); none shows only throws aimed against real geometry. Applies instantly to shown results.">
-          <option value="" selected>any angle - the reproducible filter weighs sky aim by distance</option>
+          <option value="" selected>any angle</option>
           <option value="65">allowed ≤65° up</option>
           <option value="off">none - wall aim only</option>
         </select>
@@ -418,7 +418,7 @@ give weapon_smokegrenade<button data-copy="cmd-setup" class="btn">copy</button><
     <div class="intro-step" id="intro-filters" hidden>
       <h1>Narrow it down</h1>
       <p>Which throws you want to see. The defaults keep it to standing throws with something to line the crosshair up against; loosen them here, or later from the filters card.</p>
-      <div class="filter-rows" id="intro-filter-rows"></div>
+      <div class="intro-groups" id="intro-filter-rows"></div>
       <div class="intro-choices">
         <button id="intro-done" class="btn primary">Show me the map</button>
         <button id="intro-back" class="btn">Back</button>
@@ -451,6 +451,6 @@ give weapon_smokegrenade<button data-copy="cmd-setup" class="btn">copy</button><
      4h, so bumping ?v= here is what busts that cache. Bump on any change to a
      directly-referenced asset. (The permanent cure is CF Browser Cache TTL ->
      "Respect Existing Headers", after which this is belt-and-suspenders.) -->
-<script type="module" src="viewer/js/main.js?v=115"></script>
+<script type="module" src="viewer/js/main.js?v=116"></script>
 </body>
 </html>

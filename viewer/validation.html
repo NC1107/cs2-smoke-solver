@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Smoke Solver &middot; Accuracy</title>
 <link rel="icon" href="favicon.svg" type="image/svg+xml">
-<link rel="stylesheet" href="app.css?v=115">
+<link rel="stylesheet" href="app.css?v=116">
 </head>
 <body>
 
@@ -32,6 +32,11 @@
       <h3>Scoreboard <span class="muted">latest pass per map on matching game builds; click a map to see its runs</span></h3>
       <div class="metric-grid" id="scoreboard-total"></div>
       <div class="scoreboard" id="scoreboard"></div>
+    </section>
+
+    <section class="acc-section" id="section-mapwide">
+      <h3>Every throw on <span id="mapwide-map"></span> <span class="muted">all validated runs pooled on the whole map: stand spots, real landings and every target; click a landing to open its lineup</span></h3>
+      <div id="mapwide" class="landing"></div>
     </section>
 
     <h2 id="report-title">Accuracy report</h2>
@@ -90,6 +95,6 @@
      reverse proxy briefly answers 404, and Cloudflare caches that 404 for
      hours under the bare URL. A versioned reference can never collide with
      an entry poisoned that way. -->
-<script type="module" src="js/validation.js?v=115"></script>
+<script type="module" src="js/validation.js?v=116"></script>
 </body>
 </html>

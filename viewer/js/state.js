@@ -122,6 +122,8 @@ export const state = {
   // Places that can throw every smoke in the list, from /api/execute/spots.
   executeSpots: null,
   hovered: -1,
+  // The named target pin under the pointer (its object), or null.
+  hoveredPin: null,
   canvas: document.getElementById("map"),
   stage3d: document.getElementById("stage3d"),
   statusEl: document.getElementById("status"),
