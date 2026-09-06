@@ -177,6 +177,10 @@ public static partial class LineupSolver
         // the corner wedge at a site lost its cell to the open ground beside
         // it every time, and the lineups people actually use never surfaced.
         Func<Vector3, bool>? ownBucketAt = null,
+        // Diagnosis only (the recall bench): called with the origin, the kind
+        // and the reason whenever a kind is pruned from an origin before any
+        // angle of it is simulated. Null in production.
+        Action<Vector3, ThrowType, float, float, string>? onPruned = null,
         // Cancelling stops the sweep within one origin's worth of work; the
         // partial result is nobody's answer and is not returned.
         CancellationToken ct = default)
@@ -227,6 +231,7 @@ public static partial class LineupSolver
             if ((reach.DistanceFrom(release) ?? reach.DistanceFrom(feet)) is not { } pathDistance)
             {
                 coverage?[((int)MathF.Round(feet.X), (int)MathF.Round(feet.Y))] = 0;
+                onPruned?.Invoke(feet, ThrowType.Stand, float.NaN, 0f, $"no free-space path from the origin to the zone within {reachBudget:F0}u");
                 continue;
             }
             pathDistances[feet] = pathDistance;
@@ -331,15 +336,18 @@ public static partial class LineupSolver
                     {
                         // Range scales with the square of throw speed.
                         var speedFactor = k.SpeedScale(strength);
-                        if (distance > MaxRange(type) * speedFactor * speedFactor)
+                        var maxRange = MaxRange(type) * speedFactor * speedFactor;
+                        if (distance > maxRange)
                         {
+                            onPruned?.Invoke(feet, type, strength, runOffset, $"straight-line distance {distance:F0}u over max range {maxRange:F0}u");
                             continue;
                         }
                         // Same range test against the honest distance: the path
                         // the grenade must actually travel, not the line the
                         // wall is in the way of.
-                        if (pathDistance > MaxRange(type) * speedFactor * speedFactor * FreeSpaceBudgetScale)
+                        if (pathDistance > maxRange * FreeSpaceBudgetScale)
                         {
+                            onPruned?.Invoke(feet, type, strength, runOffset, $"free-space path {pathDistance:F0}u over budget {maxRange * FreeSpaceBudgetScale:F0}u (straight line {distance:F0}u)");
                             continue;
                         }
                         // Vertical reach. A projectile launched at speed v
@@ -362,6 +370,7 @@ public static partial class LineupSolver
                             var reachAtDistance = apex - gravity * distance * distance / (2f * launchSpeed * launchSpeed);
                             if (zoneRise > reachAtDistance + VerticalReachMargin)
                             {
+                                onPruned?.Invoke(feet, type, strength, runOffset, $"zone rises {zoneRise:F0}u, vertical reach at {distance:F0}u is {reachAtDistance:F0}u");
                                 continue;
                             }
                         }
@@ -497,34 +506,28 @@ public static partial class LineupSolver
         // One work item per (kind, yaw column): fifteen kinds on sixteen cores
         // left cores idle and the whole search waiting on the slowest kind
         // (100 s per origin measured; the columns finish in a third of that).
-        // The same two physical bounds the sweep applies, and no other: a kind
-        // whose maximum range falls short of the target cannot land there by
-        // any angle, and the steep band (-65 to -89) lands within 1500u by
-        // arithmetic. Everything else is flown.
-        var distance = new Vector2(toTarget.X, toTarget.Y).Length();
-        var columns = new List<(ThrowType Type, float Strength, float Run, float Yaw, float PitchFloor)>();
+        // No pruning here, on purpose: this is the referee the sweep's own
+        // prunes are measured against. The one time it borrowed the sweep's
+        // range bound (2026-09-06) that bound turned out to be wrong for weak
+        // clicks of the jump family, and the referee stopped seeing the very
+        // throws the bench exists to find.
+        var columns = new List<(ThrowType Type, float Strength, float Run, float Yaw)>();
         foreach (var (type, strength, run) in kinds)
         {
-            var speedFactor = k.SpeedScale(strength);
-            if (distance > MaxRange(type) * speedFactor * speedFactor)
-            {
-                continue;
-            }
-            var pitchFloor = distance <= SteepLobMaxRange * speedFactor * speedFactor ? SteepPitchFloorDeg : StandardPitchFloorDeg;
             var shiftShallow = RunYawShiftDeg(k, strength, 0f, run);
-            var shiftSteep = RunYawShiftDeg(k, strength, pitchFloor, run);
+            var shiftSteep = RunYawShiftDeg(k, strength, SteepPitchFloorDeg, run);
             var yawLo = yawCenter + MathF.Min(shiftShallow, shiftSteep) - YawSpreadDeg;
             var yawHi = yawCenter + MathF.Max(shiftShallow, shiftSteep) + YawSpreadDeg;
             for (var yaw = yawLo; yaw <= yawHi; yaw += stepDeg)
             {
-                columns.Add((type, strength, run, yaw, pitchFloor));
+                columns.Add((type, strength, run, yaw));
             }
         }
         Parallel.ForEach(columns, Cpu.BoundWith(ct), column =>
         {
-            var (type, strength, run, yaw, pitchFloor) = column;
+            var (type, strength, run, yaw) = column;
             var eye = feet + new Vector3(0, 0, GrenadeTrajectory.EyeHeight(type));
-            for (var pitch = pitchFloor; pitch <= 0f; pitch += stepDeg)
+            for (var pitch = SteepPitchFloorDeg; pitch <= 0f; pitch += stepDeg)
             {
                 var r = GrenadeTrajectory.SimulateExact(collider, new ThrowSpec(eye, yaw, pitch, type, strength, run), k);
                 if (!Settled(r))

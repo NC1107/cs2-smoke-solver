@@ -66,7 +66,7 @@ if (args.Length == 0 || !commands.TryGetValue(args[0], out var command))
           exportgltf --vpk <map.vpk> [--out out.glb] (textured render mesh export)
           reindex    (rebuild data/validation/index.json from the reports on disk)
           probe      --geo <file.s2geo> [--distance 160] [--speed 600] (fire one synthetic grenade through every breakable on the rig, record pass/bounce)
-          recall     [--maps a,b] [--targets 4] [--spots 6] [--seed 1] [--tolerance 32] [--list] [--json out.json] | --mapwide [--repeats 3] (recall bench: what the exhaustive exact search lands that the solve path misses; --mapwide times cold map-wide solves)
+          recall     [--maps a,b] [--targets 3] [--spots 4] [--seed 1] [--tolerance 32] [--list] [--json out.json] | --mapwide [--repeats 3] (recall bench: what the exhaustive exact search lands that the solve path misses; --mapwide times cold map-wide solves)
         """);
     return 1;
 }

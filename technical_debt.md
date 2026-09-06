@@ -2058,6 +2058,23 @@ The empty-sweep fallback and the referee now share one lattice pass.
 
 Sizing: 15 maps x 4 targets x 6 spots + 9 = up to 369 pairs; the first (referee-building) run costs ~56 s per pair, later runs ~10 s.
 
+What the first two maps taught before the baseline was even complete (d1b4db7 and after):
+
+- The referee lands the same kind by four to eleven bounces at stability 0.2 (one of five aims 0.6 degrees apart), and counting each as a missed lineup measured the sweep against chaos: kinds (stance x click x run direction) are the primary tally, routes secondary, and a referee lineup under stability 0.4 (the product's own map-wide floor) is not landable.
+- `--why` prints, per missed kind, whether the coarse sim at the referee's own aim lands in the zone, whether a candidate of that kind existed and failed verification, or which prune dropped the kind before any angle was flown (`LineupSolver.Solve(onPruned:)`).
+- The referee must carry NO prunes: it briefly borrowed the sweep's range bound and stopped seeing exactly the throws the bench exists to find (37 cached referees built that way were deleted).
+- The exact-spot solve path itself is 12-25 s per pair, 280 s at worst on cs_italy (the viewer's Exact button waits for that).
+
+### Iteration 1: weak clicks were bounded by the click scale squared - range is measured instead
+
+`--why` on cs_italy auto-2 spot 1: `RunJumpThrow/0@90`, stability 1.00, the coarse sim lands it in the zone at the referee's own aim, "pruned before the sweep: straight-line distance 702u over max range 279u".
+The sweep's range bound was `MaxRange(type) x SpeedScale(strength)^2` (3100 x 0.09 for a right-click run-jump), but only the throw scales with the click: the jump and the run add the same velocity at every strength, and the grenade rolls on after it lands.
+On flat ground the exact simulator lands a right-click run-jump at 1,350-1,616u, a right-click jump throw at 590u, a right-click stand throw at 264u (bound was 180u).
+An analytic ratio of launch speeds (0.39 for the run-jump) still fell short of the measured 1,616u, so `ReachTable` measures each (type, weaker click) once per process on a flat plane with the exact simulator (1 degree pitch lattice, x1.3 margin, capped at the left-click constant), and the sweep adds the drop to a zone below the feet.
+Left clicks keep the 2000/2700/3100 constants, so the map-wide sweep changes only for right and both clicks.
+Tests: `WeakClickRangeTests` (bounds; the sweep proposes a right-click run-jump the simulator lands 1,450u out, which the old bound pruned unflown).
+
 | iteration | hypothesis | exact-only before -> after (total; per-map deltas over 2 named) | solve time before -> after | verdict | commit |
 |---|---|---|---|---|---|
 | 0 | baseline | (running) | (running) | - | e0d6621 |
+| 1 | measured weak-click range bound (ReachTable) | (measuring) | (measuring) | - | - |

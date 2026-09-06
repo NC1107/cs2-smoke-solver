@@ -140,4 +140,8 @@ public sealed record TargetSolve(
     // What the exhaustive exact search lands from the same origins, verified
     // exactly as the solve's own candidates were: the recall bench's referee.
     // Only filled when the solve asked for it (SolveForTarget referee: true).
-    List<Lineup>? Referee = null);
+    List<Lineup>? Referee = null,
+    // One line per referee kind the solve missed, saying where along the
+    // path it was lost (no voxel hit at the referee's own aim, a candidate
+    // that failed verification, ...). Referee solves only.
+    List<string>? RefereeNotes = null);

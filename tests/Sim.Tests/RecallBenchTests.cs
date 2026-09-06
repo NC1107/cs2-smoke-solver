@@ -9,7 +9,19 @@ namespace SmokeSolver.Sim.Tests;
 public class RecallBenchTests
 {
     static Lineup L(ThrowType type, float strength, int bounces, float run = 0f) =>
-        new(new Vector3(256, 1024, 0), 0f, -10f, type, new Vector3(600, 1024, 0), bounces, 2f, 1, Strength: strength, RunYawOffsetDeg: run);
+        new(new Vector3(256, 1024, 0), 0f, -10f, type, new Vector3(600, 1024, 0), bounces, 2f, 1, Stability: 1f, Strength: strength, RunYawOffsetDeg: run);
+
+    [Fact]
+    public void AnUnreliableRefereeLineupIsNotALandableKind()
+    {
+        // A referee route that only one of five neighbouring aims still lands
+        // is chaos, not a lineup: it neither counts as a miss nor as a hit.
+        var shaky = L(ThrowType.Crouch, 0.5f, 3) with { Stability = 0.2f };
+        var c = RecallCommand.Compare([], [shaky, L(ThrowType.Stand, 1f, 0)]);
+        Assert.Equal(new RecallCommand.Tally(0, 1, 0), c.Kinds);
+        Assert.Equal(new RecallCommand.Tally(0, 1, 0), RecallCommand.Compare([], [shaky, L(ThrowType.Stand, 1f, 0)], minStability: 0.05f).Kinds with { ExactOnly = 1 });
+        Assert.Equal(2, RecallCommand.Compare([], [shaky, L(ThrowType.Stand, 1f, 0)], minStability: 0.05f).Kinds.ExactOnly);
+    }
 
     [Fact]
     public void CompareCountsKindsByStanceClickRunAndRoute()

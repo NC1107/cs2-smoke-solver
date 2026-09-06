@@ -39,16 +39,24 @@ public static class RecallCommand
 
     public sealed record Comparison(Tally Kinds, List<Kind> ExactOnly, List<Kind> SweepOnly, Tally Routes, List<Kind> ExactOnlyRoutes);
 
+    // A referee lineup below this stability is not one a person can throw
+    // (fewer than two of five aims 0.6 degrees apart still land it), and the
+    // first cs_italy pairs were full of them: seven-bounce run-jumps at 0.2.
+    // Measuring the sweep against those measures noise. The product's own
+    // map-wide floor is the same 0.4.
+    public const float ReliableStability = 0.4f;
+
     /// <summary>
     /// Kinds in both lists, kinds only the referee landed (the sweep's
     /// misses) and kinds only the sweep returned (lattice artefacts, or a
     /// route the 1-degree referee lattice stepped over); the same again per
-    /// route.
+    /// route. Only referee lineups at or above <paramref name="minStability"/>
+    /// count as landable.
     /// </summary>
-    public static Comparison Compare(IEnumerable<Lineup> normal, IEnumerable<Lineup> referee)
+    public static Comparison Compare(IEnumerable<Lineup> normal, IEnumerable<Lineup> referee, float minStability = ReliableStability)
     {
         var normalList = normal.ToList();
-        var refereeList = referee.ToList();
+        var refereeList = referee.Where(l => l.Stability >= minStability).ToList();
         var (kinds, exactOnly, sweepOnly) = Diff(normalList, refereeList, KindOf);
         var (routes, exactOnlyRoutes, _) = Diff(normalList, refereeList, RouteOf);
         return new Comparison(kinds, exactOnly, sweepOnly, routes, exactOnlyRoutes);
@@ -91,13 +99,15 @@ public static class RecallCommand
         var maps = options.TryGetValue("maps", out var mapsRaw)
             ? mapsRaw.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
             : BenchMaps;
-        var targetCap = int.Parse(options.GetValueOrDefault("targets", "4"), CultureInfo.InvariantCulture);
-        var spotsPerTarget = int.Parse(options.GetValueOrDefault("spots", "6"), CultureInfo.InvariantCulture);
+        var targetCap = int.Parse(options.GetValueOrDefault("targets", "3"), CultureInfo.InvariantCulture);
+        var spotsPerTarget = int.Parse(options.GetValueOrDefault("spots", "4"), CultureInfo.InvariantCulture);
         var seed = int.Parse(options.GetValueOrDefault("seed", "1"), CultureInfo.InvariantCulture);
         var tolerance = float.Parse(options.GetValueOrDefault("tolerance", "32"), CultureInfo.InvariantCulture);
         var (minDist, maxDist) = (150f, 1500f);
         var listMisses = options.ContainsKey("list");
         var verbose = options.ContainsKey("verbose");
+        var why = options.ContainsKey("why");
+        var minStability = float.Parse(options.GetValueOrDefault("min-stability", ReliableStability.ToString(CultureInfo.InvariantCulture)), CultureInfo.InvariantCulture);
         // The referee depends on physics, the mesh and VerifyExact, none of
         // which a recall hypothesis touches, so it is kept on disk per pair
         // and a later run only pays for the solve path. --refresh-referee
@@ -159,7 +169,7 @@ public static class RecallCommand
                     var cached = !refreshReferee && File.Exists(refereePath) ? ReadReferee(refereePath) : null;
                     var solve = SolveForTarget(mesh, attributeFilter, navAreas, t.Pos, hasTargetZ: true,
                         new Vector2(o.Feet.X, o.Feet.Y), 0f, tolerance, constants, onPhase,
-                        standSpots: standSpots, exactOrigin: true, originZ: o.Feet.Z, referee: cached is null);
+                        standSpots: standSpots, exactOrigin: true, originZ: o.Feet.Z, referee: cached is null, refereeKnown: why ? cached : null);
                     var total = sw.Elapsed.TotalSeconds;
                     // A cached referee, or a sweep that found something, means the
                     // lattice never ran for the user: the wall time is all theirs.
@@ -169,7 +179,12 @@ public static class RecallCommand
                     {
                         WriteReferee(refereePath, referee);
                     }
-                    var c = Compare(solve.Lineups, referee);
+                    var c = Compare(solve.Lineups, referee, minStability);
+                    if (why && solve.RefereeNotes is { Count: > 0 })
+                    {
+                        Console.WriteLine($"  {map} {t.Name} <- {o.Label}:");
+                        foreach (var note in solve.RefereeNotes) { Console.WriteLine($"      {note}"); }
+                    }
                     mapTally += c.Kinds;
                     mapRoutes += c.Routes;
                     solveSeconds += seconds;

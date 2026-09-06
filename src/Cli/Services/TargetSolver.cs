@@ -126,6 +126,9 @@ public static class TargetSolver
         // sweep found, and hand its verified lineups back as TargetSolve.Referee
         // (the recall bench). Exact-origin solves only.
         bool referee = false,
+        // A referee list computed earlier for these same feet and target (the
+        // bench's cache): used as-is, so only the miss diagnosis is redone.
+        List<Lineup>? refereeKnown = null,
         CancellationToken ct = default)
     {
         var hasOrigin = originClickOpt.HasValue;
@@ -394,6 +397,7 @@ public static class TargetSolver
             minStability = MathF.Min(minStability, 0.05f);
         }
         var coverage = new System.Collections.Concurrent.ConcurrentDictionary<(int X, int Y), int>();
+        var pruned = referee || refereeKnown is not null ? new System.Collections.Concurrent.ConcurrentDictionary<(ThrowType, float, float), string>() : null;
         onPhase?.Invoke("sweep", origins.Count);
         var candidates = LineupSolver.Solve(
             grid, zoneCrossings, min, max,
@@ -417,6 +421,23 @@ public static class TargetSolver
             ownBucketAt: pinnedOrigins.Count > 0
                 ? feet => pinnedOrigins.Contains(((int)MathF.Round(feet.X * 4f), (int)MathF.Round(feet.Y * 4f)))
                 : null,
+            onPruned: pruned is null ? null : (_, type, strength, run, why) =>
+            {
+                if (float.IsNaN(strength))
+                {
+                    foreach (var t in types ?? [ThrowType.Stand, ThrowType.Crouch, ThrowType.JumpThrow, ThrowType.CrouchJumpThrow, ThrowType.RunJumpThrow])
+                    {
+                        foreach (var s in strengths ?? [1f, 0.5f, 0f])
+                        {
+                            foreach (var r in t is ThrowType.RunJumpThrow ? new[] { 0f, 45f, -45f, 90f, -90f } : [0f]) { pruned[(t, s, r)] = why; }
+                        }
+                    }
+                }
+                else
+                {
+                    pruned[(type, strength, run)] = why;
+                }
+            },
             ct: ct,
             // Ordering only, and only for a map-wide sweep: a one-spot probe
             // has a single origin, so there is no order to grow.
@@ -434,7 +455,7 @@ public static class TargetSolver
         // whatever the sweep found, kept one per bounce count; the fallback's
         // own candidate set (one per kind) is that list regrouped, so the
         // lattice is only ever flown once.
-        List<Lineup>? refereeLineups = null;
+        List<Lineup>? refereeLineups = refereeKnown;
         if (deepSpot && origins.Count > 0 && (referee || verified.Count == 0))
         {
             onPhase?.Invoke("exhaustive", origins.Count);
@@ -479,9 +500,11 @@ public static class TargetSolver
         List<Lineup> DropStandingAtCrouchOnly(List<Lineup> ls) => crouchOnly.Count == 0 ? ls
             : [.. ls.Where(l => !crouchOnly.Contains(Key(l.Feet)) || l.Type is ThrowType.Crouch or ThrowType.CrouchJumpThrow)];
         verified = DropStandingAtCrouchOnly(verified);
+        List<string>? refereeNotes = null;
         if (refereeLineups is not null)
         {
             refereeLineups = DropStandingAtCrouchOnly(refereeLineups);
+            refereeNotes = ExplainMisses(grid, zoneCrossings, candidates, verified, refereeLineups, target, tolerance, constants, pruned);
         }
 
         // Flag lineups whose throw spot has a clear line of sight to the area
@@ -533,7 +556,8 @@ public static class TargetSolver
             playerCollider,
             emptyReason,
             colliderGlassGone,
-            Referee: refereeLineups);
+            Referee: refereeLineups,
+            RefereeNotes: refereeNotes);
     }
 
     // How far a settled target sits out from a wall: about a smoke grenade's
@@ -545,6 +569,38 @@ public static class TargetSolver
     /// A 3D-clicked target moved to where a grenade could actually rest: onto
     /// the floor under it, and a grenade's width out from any wall it touches.
     /// </summary>
+    // For each referee kind the solve path did not return: was it lost in the
+    // voxel stage (the coarse sim at the referee's own aim never lands in the
+    // zone), or after it (a candidate of that kind existed and verification
+    // dropped it)? The recall loop's first question for every miss.
+    static List<string> ExplainMisses(VoxelGrid grid, IReadOnlyDictionary<int, int> zoneCrossings, IReadOnlyList<Lineup> candidates,
+        IReadOnlyList<Lineup> verified, IReadOnlyList<Lineup> referee, Vector3 target, float tolerance, ThrowConstants constants,
+        IReadOnlyDictionary<(ThrowType, float, float), string>? pruned)
+    {
+        static (ThrowType, float, float) KindOf(Lineup l) => (l.Type, l.Strength, l.RunYawOffsetDeg);
+        var found = verified.Select(KindOf).ToHashSet();
+        var candidateKinds = candidates.GroupBy(KindOf).ToDictionary(g => g.Key, g => g.Count());
+        var notes = new List<string>();
+        foreach (var r in referee.Where(r => !found.Contains(KindOf(r))).GroupBy(KindOf).Select(g => g.OrderBy(l => Vector3.DistanceSquared(l.RestPoint, target)).First()))
+        {
+            var eye = r.Feet + new Vector3(0, 0, GrenadeTrajectory.EyeHeight(r.Type));
+            var spec = new ThrowSpec(eye, r.YawDeg, r.PitchDeg, r.Type, r.Strength, r.RunYawOffsetDeg);
+            var voxel = GrenadeTrajectory.Simulate(grid, spec, constants);
+            var (cx, cy, cz) = grid.CellOf(voxel.RestPoint);
+            var inZone = grid.InBounds(cx, cy, cz) && zoneCrossings.ContainsKey(grid.Index(cx, cy, cz));
+            var voxelMiss = Vector2.Distance(new Vector2(voxel.RestPoint.X, voxel.RestPoint.Y), new Vector2(target.X, target.Y));
+            var kind = $"{r.Type}/{r.Strength:0.#}{(r.RunYawOffsetDeg != 0 ? $"@{r.RunYawOffsetDeg:0}" : "")}";
+            var stage = candidateKinds.TryGetValue(KindOf(r), out var n)
+                ? $"{n} candidate(s) of this kind failed verification"
+                : pruned is not null && pruned.TryGetValue(KindOf(r), out var why)
+                    ? $"pruned before the sweep: {why}"
+                    : "no candidate of this kind left the sweep";
+            notes.Add($"{kind}: referee aim yaw {r.YawDeg:F1} pitch {r.PitchDeg:F1} bounces {r.Bounces} stability {r.Stability:F2}; " +
+                $"voxel sim at that aim {(voxel.Lost ? "lost" : inZone ? "lands in zone" : $"misses by {voxelMiss:F0}u ({voxel.Bounces} bounces, rest z {voxel.RestPoint.Z:F0} vs {r.RestPoint.Z:F0})")}; {stage}");
+        }
+        return notes;
+    }
+
     public static Vector3 SettleTarget(TriangleCollider collider, VoxelGrid grid, Vector3 target)
     {
         var p = target;
