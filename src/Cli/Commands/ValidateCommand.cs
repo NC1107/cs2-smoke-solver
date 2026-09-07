@@ -72,13 +72,18 @@ public static class ValidateCommand
         // throw through a particular window, say.
         Vector2? originClick = options.TryGetValue("origin", out var originRaw) ? new Vector2(ParseVec2or3(originRaw).Item1.X, ParseVec2or3(originRaw).Item1.Y) : null;
         var originReach = float.Parse(options.GetValueOrDefault("reach", "3100"), CultureInfo.InvariantCulture);
+        // --exact: the viewer's Exact button - solve from exactly --origin
+        // x,y,z (its own height, no lattice neighbours), the path the recall
+        // bench measures, so the rig can throw what that path surfaced.
+        var exact = options.ContainsKey("exact") && originClick.HasValue;
+        float? originZ = exact && originRaw is not null && ParseVec2or3(originRaw).HasZ ? ParseVec2or3(originRaw).Target.Z : null;
         // --broken glass[,doors]: solve in the world where those groups are
         // gone, the API's "glass broken" setting. The rig must be in the same
         // state (the panes shot out) for the grading to mean anything.
         IReadOnlyList<string>? brokenGroups = options.TryGetValue("broken", out var brokenRaw)
             ? brokenRaw.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Select(g => g == "glass" ? "EntityBreakable" : g == "doors" ? "EntityDoor" : g).ToList()
             : null;
-        var solve = SolveForTarget(mesh, attributeFilter, navAreas, target, hasTargetZ, originClick, originReach, tolerance, constants, brokenGroups: brokenGroups);
+        var solve = SolveForTarget(mesh, attributeFilter, navAreas, target, hasTargetZ, originClick, originReach, tolerance, constants, brokenGroups: brokenGroups, exactOrigin: exact, originZ: originZ);
         // In the API's order, so a limited run throws what a player sees
         // first - the solver's own order put the top of the list last.
         var ordered = LineupApi.Ranked(solve);
@@ -89,6 +94,18 @@ public static class ValidateCommand
 
     public static int Run(Dictionary<string, string> options, Action? onSolved)
     {
+        // --changelevel: put the rig on this report's map first (batchvalidate
+        // does this per map; a single run used to need the server there already).
+        if (options.ContainsKey("changelevel") && options.TryGetValue("geo", out var geoForLevel))
+        {
+            var mapName = Path.GetFileNameWithoutExtension(geoForLevel);
+            var levelCalib = options.GetValueOrDefault("calib", Environment.GetEnvironmentVariable("SMOKESOLVER_CALIB_DIR") ?? "data/calib");
+            if (!BatchValidateCommand.ChangeLevel(mapName, levelCalib))
+            {
+                Console.Error.WriteLine($"could not put the rig on {mapName}");
+                return 1;
+            }
+        }
         // --markers <file.json>: run the full validation once per saved in-game
         // marker (written by the plugin's !mark command), using each marker as the
         // target. One report per marker.
