@@ -457,8 +457,12 @@ public static class TargetSolver
         // own candidate set (one per kind) is that list regrouped, so the
         // lattice is only ever flown once.
         List<Lineup>? refereeLineups = refereeKnown;
+        // Once the full 1-degree lattice has flown (the empty-sweep fallback,
+        // or the referee), a 2-degree escalation has nothing left to find.
+        var latticeFlown = false;
         if (deepSpot && origins.Count > 0 && (referee || verified.Count == 0))
         {
+            latticeFlown = true;
             onPhase?.Invoke("exhaustive", origins.Count);
             var lattice = new List<Lineup>();
             foreach (var o in origins)
@@ -501,6 +505,36 @@ public static class TargetSolver
         List<Lineup> DropStandingAtCrouchOnly(List<Lineup> ls) => crouchOnly.Count == 0 ? ls
             : [.. ls.Where(l => !crouchOnly.Contains(Key(l.Feet)) || l.Type is ThrowType.Crouch or ThrowType.CrouchJumpThrow)];
         verified = DropStandingAtCrouchOnly(verified);
+
+        // An exact-spot solve asks "from exactly here, is there ANY way": the
+        // kinds the voxel sweep came back without get the real simulator over
+        // a 2-degree lattice (verification's re-aim window of +-1.2 degrees
+        // closes the gaps), one origin, only those kinds. The recall bench
+        // found the sweep blind to whole kinds from some spots: the coarse
+        // grid drops a grenade off a train roof the exact one rests on, or
+        // parks it on an awning the exact one clears, so no voxel angle ever
+        // lands and nothing reaches verification (de_train auto-1 spot 3:
+        // 3 of 22 reliable kinds found, the rest at full stability).
+        if (deepSpot && origins.Count > 0 && !latticeFlown)
+        {
+            var kindTypes = types ?? [ThrowType.Stand, ThrowType.Crouch, ThrowType.JumpThrow, ThrowType.CrouchJumpThrow, ThrowType.RunJumpThrow];
+            var have = verified.Select(l => (l.Type, l.Strength, l.RunYawOffsetDeg)).ToHashSet();
+            var missing = LineupSolver.AllKinds(kindTypes, strengths).Where(kd => !have.Contains(kd)).ToList();
+            if (missing.Count > 0)
+            {
+                onPhase?.Invoke("escalate", missing.Count);
+                var escalated = new List<Lineup>();
+                foreach (var o in origins)
+                {
+                    escalated.AddRange(LineupSolver.ExhaustiveExactSpot(collider, o, target, tolerance, kindTypes, strengths, constants, stepDeg: 2f, onlyKinds: missing, ct: ct));
+                }
+                if (escalated.Count > 0)
+                {
+                    onPhase?.Invoke("verify", escalated.Count);
+                    verified = [.. verified, .. DropStandingAtCrouchOnly(LineupSolver.VerifyExact(grid, collider, zoneCrossings, escalated, minStability: minStability, constants: constants, onCandidate: onCandidate, aimTarget: target, tolerance: tolerance, colliderGlassGone: colliderGlassGone, ct: ct))];
+                }
+            }
+        }
         List<string>? refereeNotes = null;
         if (refereeLineups is not null)
         {
@@ -580,7 +614,7 @@ public static class TargetSolver
     {
         static (ThrowType, float, float) KindOf(Lineup l) => (l.Type, l.Strength, l.RunYawOffsetDeg);
         var found = verified.Select(KindOf).ToHashSet();
-        var candidateKinds = candidates.GroupBy(KindOf).ToDictionary(g => g.Key, g => g.Count());
+        var candidateKinds = candidates.GroupBy(KindOf).ToDictionary(g => g.Key, g => g.ToList());
         var notes = new List<string>();
         foreach (var r in referee.Where(r => !found.Contains(KindOf(r))).GroupBy(KindOf).Select(g => g.OrderBy(l => Vector3.DistanceSquared(l.RestPoint, target)).First()))
         {
@@ -591,8 +625,8 @@ public static class TargetSolver
             var inZone = grid.InBounds(cx, cy, cz) && zoneCrossings.ContainsKey(grid.Index(cx, cy, cz));
             var voxelMiss = Vector2.Distance(new Vector2(voxel.RestPoint.X, voxel.RestPoint.Y), new Vector2(target.X, target.Y));
             var kind = $"{r.Type}/{r.Strength:0.#}{(r.RunYawOffsetDeg != 0 ? $"@{r.RunYawOffsetDeg:0}" : "")}";
-            var stage = candidateKinds.TryGetValue(KindOf(r), out var n)
-                ? $"{n} candidate(s) of this kind failed verification"
+            var stage = candidateKinds.TryGetValue(KindOf(r), out var same)
+                ? $"{same.Count} candidate(s) of this kind failed verification, nearest aim {NearestAim(same, r)}"
                 : pruned is not null && pruned.TryGetValue(KindOf(r), out var why)
                     ? $"pruned before the sweep: {why}"
                     : "no candidate of this kind left the sweep";
@@ -600,6 +634,13 @@ public static class TargetSolver
                 $"voxel sim at that aim {(voxel.Lost ? "lost" : inZone ? "lands in zone" : $"misses by {voxelMiss:F0}u ({voxel.Bounces} bounces, rest z {voxel.RestPoint.Z:F0} vs {r.RestPoint.Z:F0})")}; {stage}");
         }
         return notes;
+    }
+
+    static string NearestAim(IReadOnlyList<Lineup> candidates, Lineup referee)
+    {
+        static float YawDelta(float a, float b) => MathF.Abs(((a - b) % 360f + 540f) % 360f - 180f);
+        var near = candidates.Select(c => (Yaw: YawDelta(c.YawDeg, referee.YawDeg), Pitch: MathF.Abs(c.PitchDeg - referee.PitchDeg))).MinBy(d => d.Yaw + d.Pitch);
+        return $"{near.Yaw:F1} yaw / {near.Pitch:F1} pitch away";
     }
 
     public static Vector3 SettleTarget(TriangleCollider collider, VoxelGrid grid, Vector3 target)

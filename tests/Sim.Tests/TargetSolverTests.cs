@@ -154,6 +154,54 @@ public class TargetSolverTests
     }
 
     [Fact]
+    public void ExactOriginEscalatesOnlyTheKindsTheSweepCameBackWithout()
+    {
+        // From 600u on open ground every left click lands; the right and both
+        // clicks of a standing throw cannot reach. The sweep finds the left
+        // clicks; the kinds it comes back without go to the exact 2-degree
+        // lattice, which must fly only those, add nothing the sweep already
+        // had, and stay within the tolerance the user was promised.
+        var spot = new Vector2(-300, 0);
+        var target = new Vector3(300, 0, 0);
+        var phases = new List<(string Phase, int Count)>();
+        var solve = TargetSolver.SolveForTarget(
+            Arena(), null, ArenaNav(), target, hasTargetZ: true,
+            spot, 0f, 48f, ThrowConstants.Default, onPhase: (p, n) => phases.Add((p, n)),
+            types: [ThrowType.Stand, ThrowType.JumpThrow], strengths: [1f, 0f], exactOrigin: true);
+
+        var escalate = phases.Where(p => p.Phase == "escalate").ToList();
+        var kinds = solve.Lineups.Select(l => (l.Type, l.Strength)).Distinct().ToList();
+        Assert.Contains((ThrowType.Stand, 1f), kinds);
+        // Four kinds asked for; whatever the sweep found, the escalation flew
+        // exactly the rest, and never the whole lattice a second time.
+        Assert.Single(escalate);
+        Assert.True(escalate[0].Count >= 1 && escalate[0].Count <= 3, $"escalated {escalate[0].Count} kinds");
+        Assert.DoesNotContain("exhaustive", phases.Select(p => p.Phase));
+        Assert.All(solve.Lineups, l =>
+        {
+            Assert.Equal(spot.X, l.Feet.X, 1f);
+            Assert.True(Vector2.Distance(new Vector2(l.RestPoint.X, l.RestPoint.Y), new Vector2(target.X, target.Y)) <= 48f, $"{l.Type}/{l.Strength} rests {l.RestPoint}");
+        });
+        Assert.Equal(kinds.Count, solve.Lineups.Select(l => (l.Type, l.Strength)).Distinct().Count());
+    }
+
+    [Fact]
+    public void ExactOriginSkipsEscalationWhenTheFullLatticeAlreadyFlew()
+    {
+        // A sweep that finds nothing gets the full 1-degree lattice (the old
+        // fallback); a 2-degree pass after that has nothing left to find.
+        var phases = new List<string>();
+        var solve = TargetSolver.SolveForTarget(
+            Arena(), null, ArenaNav(), new Vector3(300, 0, 0), hasTargetZ: true,
+            new Vector2(-300, 0), 0f, 48f, ThrowConstants.Default, onPhase: (p, _) => phases.Add(p),
+            types: [ThrowType.Stand], strengths: [0f], exactOrigin: true);
+
+        Assert.Empty(solve.Lineups);
+        Assert.Contains("exhaustive", phases);
+        Assert.DoesNotContain("escalate", phases);
+    }
+
+    [Fact]
     public void SpawnsOnlyThrowsFromTheSpawnsAndSeatsThemOnTheFloor()
     {
         // Spawn entities are markers, not foot positions - de_dust2's T spawn

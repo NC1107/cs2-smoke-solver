@@ -2074,7 +2074,25 @@ An analytic ratio of launch speeds (0.39 for the run-jump) still fell short of t
 Left clicks keep the 2000/2700/3100 constants, so the map-wide sweep changes only for right and both clicks.
 Tests: `WeakClickRangeTests` (bounds; the sweep proposes a right-click run-jump the simulator lands 1,450u out, which the old bound pruned unflown).
 
+### Iteration 2 (in progress): the remaining misses are voxel-invisible routes
+
+With iteration 1 in place the bench (14 maps, 177 pairs, cs_shelter excluded) stands at 723 kinds found, 388 missed (65.1% recall), 74 pairs with nothing landable on either side (indoor targets with random spots: cs_office and de_nuke contribute almost nothing).
+`--why` on the worst pairs (de_train auto-1 spot 3: 3 of 22 reliable kinds found; de_inferno Banana; Ruins):
+
+- Where a candidate of the kind existed and failed verification, its aim was more than 8 degrees from the referee's in 15 of 19 inferno cases (36 degrees on train): widening the re-aim window would not help, the voxel candidate is a different route.
+- The coarse simulation at the referee's own aim misses by 200-1,300u with a rest height on another level: it drops the grenade off the train roof the exact one rests on (rest z -336 vs -175), or parks it on an awning the exact one clears (inferno, rest z 320-400 vs 125).
+- `Bounces` counts the settle bounces too, so every throw has 4+ and "route" is a poor axis; 26% of misses are direct throws (5 bounces or fewer).
+
+Hypothesis 2: an exact-spot solve escalates the kinds the sweep came back without to the real simulator over a 2-degree lattice from that one origin (verification's +-1.2 degree re-aim closes the gaps), skipped when the full 1-degree fallback already flew.
+First measurement on de_train auto-1 spot 2, under contention: 20 missing kinds escalated in 110 s, exact-only 2 -> 0, and 6 kinds the 1-degree referee itself had missed.
+Cost lands on the Exact button only (map-wide is untouched); the clean number is the open question.
+
+Map-wide cold solves at the API's own query (3100u reach, 80u tolerance, all stand spots), old binary, median of 3: dust2 MidDoors 373 s, UpperTunnel 173 s, LongDoors 254 s; mirage 192 / 128 / 215 s; nuke 247 / 189 / 53 s (sum 1,823 s).
+That is 3-6x the 60-102 s the July notes quote, and it is the number a first click on an unwarmed target waits for; worth its own loop.
+
 | iteration | hypothesis | exact-only before -> after (total; per-map deltas over 2 named) | solve time before -> after | verdict | commit |
 |---|---|---|---|---|---|
-| 0 | baseline | (running) | (running) | - | e0d6621 |
-| 1 | measured weak-click range bound (ReachTable) | (measuring) | (measuring) | - | - |
+| 0 | baseline (14 maps, 177 pairs, cs_shelter excluded) | 579 missed of 1,111 landable kinds (47.9% recall) | - | - | 09cd7de |
+| 1 | measured weak-click range bound (ReachTable), everywhere | 579 -> 388 (65.1%); every map improved: italy 47->15, ancient 77->45, fachwerk 72->47, overpass 53->31, dust2 42->26, train 62->49, inferno 83->72 | map-wide cold solve de_dust2 near MidDoors 373 s -> 548 s (+47%): FAILS the 10% gate | replay unchanged; recall kept, speed not | 3e329c2 |
+| 1b | the measured bound on spot and exact solves only; map-wide keeps the old bound byte for byte | 388 (exact path unchanged) | map-wide identical to baseline: dust2 near MidDoors 371.5 s and 4,423 lineups vs 373.1 s and 4,423 | KEPT | a3ffd1d |
+| 2 | exact-spot solve escalates the kinds the sweep came back without to a 2-degree exact lattice (skipped when the full fallback flew) | 388 -> 76 (93.2%); no map worse: italy 15->3, ancient 45->5, anubis 8->4, boulder 37->4, cache 10->5, dust2 26->1, fachwerk 47->13, inferno 72->12, mirage 31->5, overpass 31->6, train 49->10, vertigo 17->8 | map-wide untouched by construction (deep spot only); Exact-spot solve per pair median 30 s -> 48 s, p90 39 -> 135 s, mean 32 -> 69 s | KEPT (Nick's call on the Exact-button cost stands open) | (pending) |
