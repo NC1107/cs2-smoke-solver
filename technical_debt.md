@@ -2090,9 +2090,16 @@ Cost lands on the Exact button only (map-wide is untouched); the clean number is
 Map-wide cold solves at the API's own query (3100u reach, 80u tolerance, all stand spots), old binary, median of 3: dust2 MidDoors 373 s, UpperTunnel 173 s, LongDoors 254 s; mirage 192 / 128 / 215 s; nuke 247 / 189 / 53 s (sum 1,823 s).
 That is 3-6x the 60-102 s the July notes quote, and it is the number a first click on an unwarmed target waits for; worth its own loop.
 
+### Rig check after three kept iterations (2026-09-07)
+
+`validate --exact --reach 0 --tolerance 32 --changelevel` on five bench spots where the new code surfaced the most kinds (dust2 UpperTunnel spot 4; inferno near Banana spot 3 and Ruins spot 2; train auto-1 spot 3 and auto-3 spot 1): 111 throws, 108 within 3u, 3 over 8u; of the 82 throws of kinds the baseline never returned, 79 within 3u and 3 over 8u (a right-click run-jump on Ruins 23u off, a left-click run-jump on train 313u off, a both-click run-jump on train 112u off).
+The surfaced kinds are real throws at the corpus's usual rate; the three misses count against the recall claim (67 + 3).
+The dust2 A-site bench spot at (1235.96, 2460.91) solved to nothing from the height the rig script guessed; the bench's own draw of Nick's spots 3, 4, 6, 7, 8, 9 also sits at the wrong height (172 or -10 to -43, the site floor is ~96-100), which is why those six pairs show nothing landable on either side - a bench defect to fix, not a solver one.
+
 | iteration | hypothesis | exact-only before -> after (total; per-map deltas over 2 named) | solve time before -> after | verdict | commit |
 |---|---|---|---|---|---|
 | 0 | baseline (14 maps, 177 pairs, cs_shelter excluded) | 579 missed of 1,111 landable kinds (47.9% recall) | - | - | 09cd7de |
 | 1 | measured weak-click range bound (ReachTable), everywhere | 579 -> 388 (65.1%); every map improved: italy 47->15, ancient 77->45, fachwerk 72->47, overpass 53->31, dust2 42->26, train 62->49, inferno 83->72 | map-wide cold solve de_dust2 near MidDoors 373 s -> 548 s (+47%): FAILS the 10% gate | replay unchanged; recall kept, speed not | 3e329c2 |
 | 1b | the measured bound on spot and exact solves only; map-wide keeps the old bound byte for byte | 388 (exact path unchanged) | map-wide identical to baseline: dust2 near MidDoors 371.5 s and 4,423 lineups vs 373.1 s and 4,423 | KEPT | a3ffd1d |
+| 3 | a kind the 2-degree escalation landed and verification dropped gets the full 1-degree lattice (untouched kinds left alone) | 76 -> 67 (94.0%); no map worse: anubis 4->3, boulder 4->3, inferno 12->10, mirage 5->4, overpass 6->5, vertigo 8->5 | map-wide untouched (deep spot only); Exact-spot solve median 48 -> 53 s, mean 69 -> 75 s | KEPT | 41ec503 |
 | 2 | exact-spot solve escalates the kinds the sweep came back without to a 2-degree exact lattice (skipped when the full fallback flew) | 388 -> 76 (93.2%); no map worse: italy 15->3, ancient 45->5, anubis 8->4, boulder 37->4, cache 10->5, dust2 26->1, fachwerk 47->13, inferno 72->12, mirage 31->5, overpass 31->6, train 49->10, vertigo 17->8 | map-wide untouched by construction (deep spot only); Exact-spot solve per pair median 30 s -> 48 s, p90 39 -> 135 s, mean 32 -> 69 s | KEPT (Nick's call on the Exact-button cost stands open) | 628b055 |
