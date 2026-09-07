@@ -53,9 +53,18 @@ public class WeakClickRangeTests
 
         var found = LineupSolver.Solve(grid, zone, new Vector3(0, 0, -16), new Vector3(2048, 2048, 512), [ThrowType.RunJumpThrow],
             yawStepDeg: 2f, pitchStepDeg: 2f, origins: [feet], strengths: [0f], collider: collider, target: target,
-            keepEveryKind: true, onPruned: (_, _, _, _, why) => pruned.Add(why));
+            keepEveryKind: true, measuredWeakClickReach: true, onPruned: (_, _, _, _, why) => pruned.Add(why));
 
         Assert.Empty(pruned);
         Assert.Contains(found, l => l.Type == ThrowType.RunJumpThrow && l.Strength == 0f);
+
+        // The map-wide sweep keeps the old bound on purpose (its cold solve
+        // is what a user waits for): the same kind is still pruned there.
+        var prunedMapWide = new List<string>();
+        var mapWide = LineupSolver.Solve(grid, zone, new Vector3(0, 0, -16), new Vector3(2048, 2048, 512), [ThrowType.RunJumpThrow],
+            yawStepDeg: 2f, pitchStepDeg: 2f, origins: [feet], strengths: [0f], collider: collider, target: target,
+            keepEveryKind: true, onPruned: (_, _, _, _, why) => prunedMapWide.Add(why));
+        Assert.Empty(mapWide);
+        Assert.Contains(prunedMapWide, why => why.Contains("max range 279u"));
     }
 }

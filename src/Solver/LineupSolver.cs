@@ -191,6 +191,13 @@ public static partial class LineupSolver
         // and the reason whenever a kind is pruned from an origin before any
         // angle of it is simulated. Null in production.
         Action<Vector3, ThrowType, float, float, string>? onPruned = null,
+        // Bound a weaker click by what the simulator lands (ReachTable) rather
+        // than by the click scale squared. True for a spot or exact solve,
+        // where the recall it buys is the whole point; false map-wide, where
+        // flying every weak-click jump throw from every origin cost 47% of
+        // the cold solve (de_dust2 MidDoors 373 s -> 548 s, 2026-09-07) for
+        // lineups that rank last, so the map-wide sweep keeps its old bound.
+        bool measuredWeakClickReach = false,
         // Cancelling stops the sweep within one origin's worth of work; the
         // partial result is nobody's answer and is not returned.
         CancellationToken ct = default)
@@ -350,7 +357,9 @@ public static partial class LineupSolver
                         // to stand in for this and bounded a right-click
                         // run-jump at 279u (the simulator lands it at 1,600u).
                         var speedFactor = k.SpeedScale(strength);
-                        var maxRange = ReachTable.Bound(k, type, strength) + MathF.Max(0f, -zoneRise);
+                        var maxRange = measuredWeakClickReach
+                            ? ReachTable.Bound(k, type, strength) + MathF.Max(0f, -zoneRise)
+                            : MaxRange(type) * speedFactor * speedFactor;
                         if (distance > maxRange)
                         {
                             onPruned?.Invoke(feet, type, strength, runOffset, $"straight-line distance {distance:F0}u over max range {maxRange:F0}u");

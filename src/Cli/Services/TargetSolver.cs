@@ -421,6 +421,7 @@ public static class TargetSolver
             ownBucketAt: pinnedOrigins.Count > 0
                 ? feet => pinnedOrigins.Contains(((int)MathF.Round(feet.X * 4f), (int)MathF.Round(feet.Y * 4f)))
                 : null,
+            measuredWeakClickReach: hasOrigin,
             onPruned: pruned is null ? null : (_, type, strength, run, why) =>
             {
                 if (float.IsNaN(strength))
