@@ -72,10 +72,13 @@ public static class RecallCommand
     }
 
     // The maps with an in-game validation corpus: the only ones whose solver
-    // output has ever been checked against the real game.
+    // output has ever been checked against the real game. cs_shelter is left
+    // out of the default: its open terrain keeps lattice flights rolling for
+    // the full ten seconds and a single referee pair took over forty minutes
+    // (the bench sat on one pair for an hour); pass --maps cs_shelter to run it.
     static readonly string[] BenchMaps =
     [
-        "cs_italy", "cs_office", "cs_shelter", "de_ancient", "de_anubis", "de_boulder", "de_cache", "de_dust2",
+        "cs_italy", "cs_office", "de_ancient", "de_anubis", "de_boulder", "de_cache", "de_dust2",
         "de_fachwerk", "de_inferno", "de_mirage", "de_nuke", "de_overpass", "de_train", "de_vertigo",
     ];
 
@@ -337,6 +340,12 @@ public static class RecallCommand
     // change can be charged for the time it costs the map-wide sweep.
     static int RunMapWideTiming(Dictionary<string, string> options, string dataDir, IReadOnlyList<string> maps, int targetCap, float tolerance)
     {
+        _ = tolerance;
+        return RunMapWideTimingCore(options, dataDir, maps, targetCap);
+    }
+
+    static int RunMapWideTimingCore(Dictionary<string, string> options, string dataDir, IReadOnlyList<string> maps, int targetCap)
+    {
         var repeats = int.Parse(options.GetValueOrDefault("repeats", "3"), CultureInfo.InvariantCulture);
         double total = 0;
         foreach (var map in maps)
@@ -357,7 +366,10 @@ public static class RecallCommand
                 for (var r = 0; r < repeats; r++)
                 {
                     var sw = System.Diagnostics.Stopwatch.StartNew();
-                    var solve = SolveForTarget(mesh, attributeFilter, navAreas, t.Pos, hasTargetZ: true, null, 0f, tolerance, constants,
+                    // The API's map-wide query: every stand spot within 3100u
+                    // and the 80u default tolerance, so the time is the one a
+                    // user waits for on a cold target.
+                    var solve = SolveForTarget(mesh, attributeFilter, navAreas, t.Pos, hasTargetZ: true, null, 3100f, 80f, constants,
                         standSpots: standSpots, spawnFronts: spawnFronts);
                     times.Add(sw.Elapsed.TotalSeconds);
                     count = solve.Lineups.Count;
