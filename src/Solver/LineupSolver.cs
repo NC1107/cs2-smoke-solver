@@ -77,6 +77,21 @@ public static partial class LineupSolver
     static readonly float[] RunYawOffsets = [0f, 45f, -45f, 90f, -90f];
     static readonly float[] NoRunOffset = [0f];
 
+    /// <summary>Every kind a solve asks for: stance x click x run direction.</summary>
+    public static IEnumerable<(ThrowType Type, float Strength, float Run)> AllKinds(IReadOnlyList<ThrowType> types, IReadOnlyList<float>? strengths)
+    {
+        foreach (var type in types)
+        {
+            foreach (var run in type is ThrowType.RunJumpThrow ? RunYawOffsets : NoRunOffset)
+            {
+                foreach (var strength in strengths ?? AllStrengths)
+                {
+                    yield return (type, strength, run);
+                }
+            }
+        }
+    }
+
     // The free-space path is a lower bound on flight distance, but a real arc
     // curves and bounces over it, so the budget is scaled generously before
     // anything is discarded: this prune exists to remove the impossible, not
@@ -95,14 +110,9 @@ public static partial class LineupSolver
     static bool Settled(TrajectoryResult r) =>
         !r.Lost && r.FlightTime < GrenadeTrajectory.MaxFlightSeconds - 0.01f;
 
-    // Loose upper bounds used only to prune hopeless origins; a real measured
-    // jumpthrow covers 2286u, so err generously.
-    static float MaxRange(ThrowType type) => type switch
-    {
-        ThrowType.Stand or ThrowType.Crouch => 2000f,
-        ThrowType.JumpThrow or ThrowType.CrouchJumpThrow => 2700f,
-        _ => 3100f,
-    };
+    // Loose upper bounds used only to prune hopeless origins (see ReachTable
+    // for the weaker clicks, which are measured rather than assumed).
+    static float MaxRange(ThrowType type) => ReachTable.LeftClickBound(type);
 
     // The first open cell at or above a point, or null when the column is
     // solid for the whole search. Three cells is a body's worth of headroom -
@@ -334,9 +344,13 @@ public static partial class LineupSolver
                 {
                     foreach (var strength in strengths ?? AllStrengths)
                     {
-                        // Range scales with the square of throw speed.
+                        // How far this kind carries on the flat, plus whatever
+                        // drop the zone sits below the feet: a throw that falls
+                        // further flies further. The click scale squared used
+                        // to stand in for this and bounded a right-click
+                        // run-jump at 279u (the simulator lands it at 1,600u).
                         var speedFactor = k.SpeedScale(strength);
-                        var maxRange = MaxRange(type) * speedFactor * speedFactor;
+                        var maxRange = ReachTable.Bound(k, type, strength) + MathF.Max(0f, -zoneRise);
                         if (distance > maxRange)
                         {
                             onPruned?.Invoke(feet, type, strength, runOffset, $"straight-line distance {distance:F0}u over max range {maxRange:F0}u");
@@ -386,7 +400,7 @@ public static partial class LineupSolver
                         // paying for angles that physically cannot reach, while a
                         // player standing near the target gets the near-vertical
                         // drop-on-your-own-head lineups real play uses.
-                        var pitchFloor = distance <= SteepLobMaxRange * speedFactor * speedFactor
+                        var pitchFloor = distance <= SteepLobMaxRange * (maxRange / MaxRange(type))
                             ? SteepPitchFloorDeg
                             : StandardPitchFloorDeg;
                         // A lateral run carries the grenade sideways, so the aim yaw
@@ -485,19 +499,30 @@ public static partial class LineupSolver
         // different wall is a different lineup to a player, which the recall
         // bench counts separately. The solve path keeps the default.
         bool distinctBounces = false,
+        // Exactly these kinds and no others, when the caller already knows
+        // which ones it is after (the escalation below flies only the kinds
+        // the sweep came back without).
+        IReadOnlyList<(ThrowType Type, float Strength, float Run)>? onlyKinds = null,
         CancellationToken ct = default)
     {
         var k = constants ?? ThrowConstants.Default;
         var toTarget = target - feet;
         var yawCenter = MathF.Atan2(toTarget.Y, toTarget.X) * 180f / MathF.PI;
         var kinds = new List<(ThrowType Type, float Strength, float Run)>();
-        foreach (var type in types)
+        if (onlyKinds is not null)
         {
-            foreach (var run in type is ThrowType.RunJumpThrow ? RunYawOffsets : NoRunOffset)
+            kinds.AddRange(onlyKinds);
+        }
+        else
+        {
+            foreach (var type in types)
             {
-                foreach (var strength in strengths ?? AllStrengths)
+                foreach (var run in type is ThrowType.RunJumpThrow ? RunYawOffsets : NoRunOffset)
                 {
-                    kinds.Add((type, strength, run));
+                    foreach (var strength in strengths ?? AllStrengths)
+                    {
+                        kinds.Add((type, strength, run));
+                    }
                 }
             }
         }
