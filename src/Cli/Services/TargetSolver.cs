@@ -533,6 +533,30 @@ public static class TargetSolver
                     onPhase?.Invoke("verify", escalated.Count);
                     verified = [.. verified, .. DropStandingAtCrouchOnly(LineupSolver.VerifyExact(grid, collider, zoneCrossings, escalated, minStability: minStability, constants: constants, onCandidate: onCandidate, aimTarget: target, tolerance: tolerance, colliderGlassGone: colliderGlassGone, ct: ct))];
                 }
+                // A kind the 2-degree lattice landed but verification dropped
+                // has a route within a degree or two of that aim, and the
+                // 0.6-degree re-aim window does not reach the odd degrees:
+                // the recall bench's 1-degree referee kept landing kinds
+                // this pass had touched and lost (12 of 20 remaining misses on
+                // the four worst maps). Those kinds, and only those, get the
+                // full 1-degree lattice; a kind the 2-degree pass never
+                // landed at all is left alone.
+                var stillMissing = escalated.Select(l => (l.Type, l.Strength, l.RunYawOffsetDeg)).Distinct()
+                    .Where(kd => !verified.Any(l => (l.Type, l.Strength, l.RunYawOffsetDeg) == kd)).ToList();
+                if (stillMissing.Count > 0)
+                {
+                    onPhase?.Invoke("escalate-fine", stillMissing.Count);
+                    var fine = new List<Lineup>();
+                    foreach (var o in origins)
+                    {
+                        fine.AddRange(LineupSolver.ExhaustiveExactSpot(collider, o, target, tolerance, kindTypes, strengths, constants, stepDeg: 1f, onlyKinds: stillMissing, ct: ct));
+                    }
+                    if (fine.Count > 0)
+                    {
+                        onPhase?.Invoke("verify", fine.Count);
+                        verified = [.. verified, .. DropStandingAtCrouchOnly(LineupSolver.VerifyExact(grid, collider, zoneCrossings, fine, minStability: minStability, constants: constants, onCandidate: onCandidate, aimTarget: target, tolerance: tolerance, colliderGlassGone: colliderGlassGone, ct: ct))];
+                    }
+                }
             }
         }
         List<string>? refereeNotes = null;

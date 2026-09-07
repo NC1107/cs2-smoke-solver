@@ -186,6 +186,25 @@ public class TargetSolverTests
     }
 
     [Fact]
+    public void TheFinePassFliesOnlyKindsTheCoarseLatticeTouchedAndLost()
+    {
+        // On open ground the 2-degree lattice either lands a kind and keeps it
+        // or never touches it; nothing is touched-and-lost, so the 1-degree
+        // pass has no work and must not run. The pass is for the one case the
+        // bench found (a landed candidate that verification dropped with the
+        // real route a degree or two away), never a blanket second lattice.
+        var phases = new List<(string Phase, int Count)>();
+        var solve = TargetSolver.SolveForTarget(
+            Arena(), null, ArenaNav(), new Vector3(300, 0, 0), hasTargetZ: true,
+            new Vector2(-300, 0), 0f, 48f, ThrowConstants.Default, onPhase: (p, n) => phases.Add((p, n)),
+            types: [ThrowType.Stand, ThrowType.JumpThrow], strengths: [1f, 0f], exactOrigin: true);
+
+        Assert.Contains(phases, p => p.Phase == "escalate");
+        Assert.DoesNotContain(phases, p => p.Phase == "escalate-fine");
+        Assert.Equal(solve.Lineups.Count, solve.Lineups.Select(l => (l.Type, l.Strength)).Distinct().Count());
+    }
+
+    [Fact]
     public void ExactOriginSkipsEscalationWhenTheFullLatticeAlreadyFlew()
     {
         // A sweep that finds nothing gets the full 1-degree lattice (the old
