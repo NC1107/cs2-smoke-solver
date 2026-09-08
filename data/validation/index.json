@@ -1,5 +1,5 @@
 {
-  "generated": "2026-09-05T13:03:57.3034844-04:00",
+  "generated": "2026-09-07T18:09:05.3493797-04:00",
   "runs": [
     {
       "file": "cs_italy-20260904-141605.json",
@@ -4076,6 +4076,39 @@
       }
     },
     {
+      "file": "de_dust2-20260907-175655.json",
+      "map": "de_dust2",
+      "name": "recall-iter3-uppertunnel-s4",
+      "batch": "",
+      "timestamp": "2026-09-07T17:56:55.4665351-04:00",
+      "build": "2000899",
+      "serverBuild": "2000899",
+      "target": [
+        -2000,
+        1585,
+        31.050982
+      ],
+      "summary": {
+        "lineups": 25,
+        "submitted": 25,
+        "matched": 25,
+        "graded": 25,
+        "notDetonated": 0,
+        "culled": 0,
+        "stuck": 0,
+        "passRadius": 3,
+        "withinPass": 25,
+        "within1": 25,
+        "within2": 25,
+        "within8": 25,
+        "errMedian": 0.09251573,
+        "errMean": 0.158345,
+        "errP90": 0.25296792,
+        "errMax": 0.9605826,
+        "perturbed": null
+      }
+    },
+    {
       "file": "de_fachwerk-20260904-164453.json",
       "map": "de_fachwerk",
       "name": "auto-1",
@@ -4737,6 +4770,72 @@
         "errMean": 0.10297544,
         "errP90": 0.19284621,
         "errMax": 1.3523653,
+        "perturbed": null
+      }
+    },
+    {
+      "file": "de_inferno-20260907-180004.json",
+      "map": "de_inferno",
+      "name": "recall-iter3-nearbanana-s3",
+      "batch": "",
+      "timestamp": "2026-09-07T18:00:04.7867353-04:00",
+      "build": "2000899",
+      "serverBuild": "2000899",
+      "target": [
+        136,
+        1042,
+        84.127914
+      ],
+      "summary": {
+        "lineups": 26,
+        "submitted": 26,
+        "matched": 23,
+        "graded": 23,
+        "notDetonated": 0,
+        "culled": 0,
+        "stuck": 0,
+        "passRadius": 3,
+        "withinPass": 23,
+        "within1": 19,
+        "within2": 22,
+        "within8": 23,
+        "errMedian": 0.09745982,
+        "errMean": 0.47367772,
+        "errP90": 1.5905994,
+        "errMax": 2.984567,
+        "perturbed": null
+      }
+    },
+    {
+      "file": "de_inferno-20260907-180415.json",
+      "map": "de_inferno",
+      "name": "recall-iter3-ruins-s2",
+      "batch": "",
+      "timestamp": "2026-09-07T18:04:15.0241385-04:00",
+      "build": "2000899",
+      "serverBuild": "2000899",
+      "target": [
+        1004,
+        2694,
+        130.25949
+      ],
+      "summary": {
+        "lineups": 23,
+        "submitted": 23,
+        "matched": 23,
+        "graded": 23,
+        "notDetonated": 0,
+        "culled": 0,
+        "stuck": 0,
+        "passRadius": 3,
+        "withinPass": 22,
+        "within1": 21,
+        "within2": 22,
+        "within8": 22,
+        "errMedian": 0.06459458,
+        "errMean": 1.2140867,
+        "errP90": 0.7347567,
+        "errMax": 23.190203,
         "perturbed": null
       }
     },
@@ -6351,6 +6450,72 @@
         "errMean": 0.67916733,
         "errP90": 2.435017,
         "errMax": 4.249075,
+        "perturbed": null
+      }
+    },
+    {
+      "file": "de_train-20260907-180717.json",
+      "map": "de_train",
+      "name": "recall-iter3-auto1-s3",
+      "batch": "",
+      "timestamp": "2026-09-07T18:07:17.3061780-04:00",
+      "build": "2000899",
+      "serverBuild": "2000899",
+      "target": [
+        417.7,
+        -1546.1,
+        -177.37708
+      ],
+      "summary": {
+        "lineups": 18,
+        "submitted": 18,
+        "matched": 18,
+        "graded": 18,
+        "notDetonated": 0,
+        "culled": 0,
+        "stuck": 0,
+        "passRadius": 3,
+        "withinPass": 17,
+        "within1": 17,
+        "within2": 17,
+        "within8": 17,
+        "errMedian": 0.065225564,
+        "errMean": 17.47856,
+        "errP90": 0.6767586,
+        "errMax": 312.9374,
+        "perturbed": null
+      }
+    },
+    {
+      "file": "de_train-20260907-180905.json",
+      "map": "de_train",
+      "name": "recall-iter3-auto3-s1",
+      "batch": "",
+      "timestamp": "2026-09-07T18:09:05.2643809-04:00",
+      "build": "2000899",
+      "serverBuild": "2000899",
+      "target": [
+        1215,
+        1614.7,
+        -216
+      ],
+      "summary": {
+        "lineups": 22,
+        "submitted": 22,
+        "matched": 22,
+        "graded": 22,
+        "notDetonated": 0,
+        "culled": 0,
+        "stuck": 0,
+        "passRadius": 3,
+        "withinPass": 21,
+        "within1": 20,
+        "within2": 21,
+        "within8": 21,
+        "errMedian": 0.060553182,
+        "errMean": 5.2321887,
+        "errP90": 0.5222034,
+        "errMax": 112.12988,
         "perturbed": null
       }
     },
