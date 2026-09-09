@@ -84,14 +84,19 @@ public static class RecallCommand
 
     // Nick's A-site bench (technical_debt.md, "The A-site test bench"): the
     // target at the centre of de_dust2's A site and nine spots he calls
-    // reasonable lineups. Positions are getpos eye heights; feet are 64u lower,
-    // and the ones without a height take the nearest stand spot's floor.
+    // reasonable lineups. Each spot's feet sit on the nearest stand spot
+    // that is within a step of the site's own floor: the site is ringed with
+    // crates, and the nearest spot in the plane alone put three of the nine
+    // on a crate top 70u up (and a misread of the "(z 54)" notes put three
+    // more 100u under the floor), where nothing was landable from any of
+    // them and the bench measured nothing.
     static readonly Vector3 ASiteTarget = new(1130.38f, 2504.53f, 95.75f);
-    static readonly (float X, float Y, float? EyeZ)[] ASiteSpots =
+    static readonly (float X, float Y)[] ASiteSpots =
     [
-        (1069.05f, 2348.03f, null), (1235.97f, 2348.05f, null), (1235.96f, 2460.91f, null), (1069.03f, 2411.97f, null),
-        (1101.04f, 2569.63f, null), (1235.97f, 2561.04f, null), (1300.04f, 2446.28f, 54f), (1300.03f, 2342.97f, 22f), (1004.97f, 2379.97f, 21f),
+        (1069.05f, 2348.03f), (1235.97f, 2348.05f), (1235.96f, 2460.91f), (1069.03f, 2411.97f),
+        (1101.04f, 2569.63f), (1235.97f, 2561.04f), (1300.04f, 2446.28f), (1300.03f, 2342.97f), (1004.97f, 2379.97f),
     ];
+    const float ASiteFloorBand = 40f;
 
     public sealed record BenchOrigin(Vector3 Feet, string Label);
     public sealed record BenchTarget(string Map, string Name, Vector3 Pos, List<BenchOrigin> Origins);
@@ -326,10 +331,10 @@ public static class RecallCommand
             var origins = new List<BenchOrigin>();
             for (var i = 0; i < ASiteSpots.Length; i++)
             {
-                var (x, y, eyeZ) = ASiteSpots[i];
-                var z = eyeZ is { } e ? e - 64f
-                    : standSpots.OrderBy(s => Vector2.Distance(new Vector2(s.Feet.X, s.Feet.Y), new Vector2(x, y))).First().Feet.Z;
-                origins.Add(new BenchOrigin(new Vector3(x, y, z), $"bench {i + 1}"));
+                var (x, y) = ASiteSpots[i];
+                var onFloor = standSpots.Where(s => MathF.Abs(s.Feet.Z - ASiteTarget.Z) <= ASiteFloorBand)
+                    .OrderBy(s => Vector2.Distance(new Vector2(s.Feet.X, s.Feet.Y), new Vector2(x, y))).First();
+                origins.Add(new BenchOrigin(new Vector3(x, y, onFloor.Feet.Z), $"bench {i + 1}"));
             }
             bench.Add(new BenchTarget(map, "A site (bench)", ASiteTarget, origins));
         }
