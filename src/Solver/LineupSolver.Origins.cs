@@ -339,16 +339,72 @@ public static partial class LineupSolver
 
     static void AddPinnedOrigins(VoxelGrid grid, TriangleCollider collider, List<Vector3> origins, List<Vector3>? crouchOnlyOut = null)
     {
-        var seen = new HashSet<(int, int)>(origins.Select(o => ((int)MathF.Round(o.X / 4f), (int)MathF.Round(o.Y / 4f))));
-        var pinned = new List<Vector3>();
-
-        void TryAdd(Vector3 baseFeet, Vector2 xy)
+        // Three passes where there was one loop, so the collider work runs on
+        // every core while the output stays exactly what the serial loop
+        // produced (the 4u dedupe is first-come, so origin order decides which
+        // pin wins a cell, and the pins are appended in origin order). The
+        // serial loop was 32 s of a 373 s cold solve on de_dust2 (29,136
+        // origins, 2026-09-08).
+        // Pass 1, parallel: the wall planes near each origin and the pin
+        // positions they propose, in the order the serial loop tried them.
+        var proposals = new List<Vector2>[origins.Count];
+        Parallel.For(0, origins.Count, Cpu.Bound, i =>
         {
-            if (Vector2.Distance(xy, new Vector2(baseFeet.X, baseFeet.Y)) > WallProbeRange + PlayerHalfWidth ||
-                !seen.Add(((int)MathF.Round(xy.X / 4f), (int)MathF.Round(xy.Y / 4f))))
+            var feet = origins[i];
+            var walls = NearbyWallPlanes(collider, feet, WallProbeRange);
+            var xy = new List<Vector2>();
+            var feetXy = new Vector2(feet.X, feet.Y);
+            foreach (var (n, d) in walls)
             {
-                return;
+                var dist = Vector2.Dot(n, feetXy) - d;
+                if (dist > PlayerHalfWidth + 0.5f)
+                {
+                    xy.Add(feetXy - n * (dist - PlayerHalfWidth));
+                }
             }
+            for (var a1 = 0; a1 < walls.Count; a1++)
+            {
+                for (var b1 = a1 + 1; b1 < walls.Count; b1++)
+                {
+                    var (a, da) = walls[a1];
+                    var (b, db) = walls[b1];
+                    // Solve for the point 16u off BOTH planes - the corner wedge.
+                    var det = a.X * b.Y - a.Y * b.X;
+                    if (MathF.Abs(Vector2.Dot(a, b)) > 0.5f || MathF.Abs(det) < 0.3f)
+                    {
+                        continue; // not corner-like
+                    }
+                    var ra = da + PlayerHalfWidth;
+                    var rb = db + PlayerHalfWidth;
+                    xy.Add(new Vector2((ra * b.Y - rb * a.Y) / det, (rb * a.X - ra * b.X) / det));
+                }
+            }
+            proposals[i] = xy;
+        });
+
+        // Pass 2, serial: the first-come 4u dedupe, in origin order.
+        var seen = new HashSet<(int, int)>(origins.Select(o => ((int)MathF.Round(o.X / 4f), (int)MathF.Round(o.Y / 4f))));
+        var accepted = new List<(Vector3 BaseFeet, Vector2 Xy)>();
+        for (var i = 0; i < origins.Count; i++)
+        {
+            var baseFeet = origins[i];
+            foreach (var xy in proposals[i])
+            {
+                if (Vector2.Distance(xy, new Vector2(baseFeet.X, baseFeet.Y)) > WallProbeRange + PlayerHalfWidth ||
+                    !seen.Add(((int)MathF.Round(xy.X / 4f), (int)MathF.Round(xy.Y / 4f))))
+                {
+                    continue;
+                }
+                accepted.Add((baseFeet, xy));
+            }
+        }
+
+        // Pass 3, parallel: seat each accepted pin on the real floor and hold
+        // it to the same standable bar as every other origin.
+        var seated = new (Vector3 Feet, StandSpots.Stance Stance)?[accepted.Count];
+        Parallel.For(0, accepted.Count, Cpu.Bound, i =>
+        {
+            var (baseFeet, xy) = accepted[i];
             var snapped = SnapToGround(grid, collider, new Vector3(xy.X, xy.Y, baseFeet.Z));
             // The snap is voxel-driven and SnapToGround hands back the position
             // unchanged when its ray finds nothing, so a pin taken from a spot
@@ -364,18 +420,17 @@ public static partial class LineupSolver
             // went missing (de_dust2's A site is nothing but sloped ground).
             // The probe reaches further down than up because the failure mode
             // is feet left ABOVE the surface.
-            if (HullRestHeight(collider, snapped, grid.VoxelSize * 2, grid.VoxelSize) is not { } seated)
+            if (HullRestHeight(collider, snapped, grid.VoxelSize * 2, grid.VoxelSize) is not { } onFloor)
             {
                 return;
             }
-            snapped = seated;
             // A pin is placed 16u off ONE wall plane, which says nothing about
             // the rest of the geometry around it - a second wall, a railing or
             // clutter can leave the player hull with nowhere to be. Measured on
             // the live solver: every unstandable origin left in the output came
             // from here, none from the hull-derived set. Hold pins to the same
             // bar as everything else.
-            var stance = StandSpots.StanceAt(collider, snapped);
+            var stance = StandSpots.StanceAt(collider, onFloor);
             if (stance == StandSpots.Stance.None)
             {
                 return;
@@ -383,51 +438,26 @@ public static partial class LineupSolver
             // Sanity-check torso height, not ankle height: a floor plane lying
             // exactly on a voxel boundary marks BOTH neighboring cells solid,
             // so a probe half a voxel up would reject valid floor positions.
-            var (cx, cy, cz) = grid.CellOf(snapped + new Vector3(0, 0, grid.VoxelSize * 1.5f));
+            var (cx, cy, cz) = grid.CellOf(onFloor + new Vector3(0, 0, grid.VoxelSize * 1.5f));
             if (grid.InBounds(cx, cy, cz) && !grid.IsSolid(grid.Index(cx, cy, cz)))
             {
-                pinned.Add(snapped);
-                if (stance == StandSpots.Stance.Crouching)
+                seated[i] = (onFloor, stance);
+            }
+        });
+        foreach (var pin in seated)
+        {
+            if (pin is { } p)
+            {
+                origins.Add(p.Feet);
+                if (p.Stance == StandSpots.Stance.Crouching)
                 {
                     // A pin can wedge feet under a soffit or vent the lattice
                     // never reaches; the caller's crouch-only filter needs to
                     // know a standing release from here is not a real throw.
-                    crouchOnlyOut?.Add(snapped);
+                    crouchOnlyOut?.Add(p.Feet);
                 }
             }
         }
-
-        foreach (var feet in origins.ToArray())
-        {
-            var walls = NearbyWallPlanes(collider, feet, WallProbeRange);
-            foreach (var (n, d) in walls)
-            {
-                var feetXy = new Vector2(feet.X, feet.Y);
-                var dist = Vector2.Dot(n, feetXy) - d;
-                if (dist > PlayerHalfWidth + 0.5f)
-                {
-                    TryAdd(feet, feetXy - n * (dist - PlayerHalfWidth));
-                }
-            }
-            for (var i = 0; i < walls.Count; i++)
-            {
-                for (var j = i + 1; j < walls.Count; j++)
-                {
-                    var (a, da) = walls[i];
-                    var (b, db) = walls[j];
-                    // Solve for the point 16u off BOTH planes - the corner wedge.
-                    var det = a.X * b.Y - a.Y * b.X;
-                    if (MathF.Abs(Vector2.Dot(a, b)) > 0.5f || MathF.Abs(det) < 0.3f)
-                    {
-                        continue; // not corner-like
-                    }
-                    var ra = da + PlayerHalfWidth;
-                    var rb = db + PlayerHalfWidth;
-                    TryAdd(feet, new Vector2((ra * b.Y - rb * a.Y) / det, (rb * a.X - ra * b.X) / det));
-                }
-            }
-        }
-        origins.AddRange(pinned);
     }
 
     /// <summary>
