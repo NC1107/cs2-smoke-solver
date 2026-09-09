@@ -2119,3 +2119,19 @@ The dust2 A-site bench spot at (1235.96, 2460.91) solved to nothing from the hei
 | 4 | the 1-degree lattice for every kind still missing after the 2-degree pass, touched or not | fachwerk, partial: auto-1 spot 1 misses 5 -> 2, spot 3 4 -> 4, auto-3 spot 3 18 -> 18 (routes) | Exact-spot solve 2-4x: auto-1 spot 1 169 s -> 662 s, spot 2 -> 760 s, auto-2 spots 57-76 s -> 140-192 s | FALSIFIED on cost (a major regression of the Exact button for a few kinds); run stopped after 9 pairs | - |
 | 3 | a kind the 2-degree escalation landed and verification dropped gets the full 1-degree lattice (untouched kinds left alone) | 76 -> 67 (94.0%); no map worse: anubis 4->3, boulder 4->3, inferno 12->10, mirage 5->4, overpass 6->5, vertigo 8->5 | map-wide untouched (deep spot only); Exact-spot solve median 48 -> 53 s, mean 69 -> 75 s | KEPT | 41ec503 |
 | 2 | exact-spot solve escalates the kinds the sweep came back without to a 2-degree exact lattice (skipped when the full fallback flew) | 388 -> 76 (93.2%); no map worse: italy 15->3, ancient 45->5, anubis 8->4, boulder 37->4, cache 10->5, dust2 26->1, fachwerk 47->13, inferno 72->12, mirage 31->5, overpass 31->6, train 49->10, vertigo 17->8 | map-wide untouched by construction (deep spot only); Exact-spot solve per pair median 30 s -> 48 s, p90 39 -> 135 s, mean 32 -> 69 s | KEPT (Nick's call on the Exact-button cost stands open) | 628b055 |
+
+## Cold-solve loop (2026-09-08)
+
+Goal: cut the cold map-wide solve (170-370 s per target at the API's own query) without changing a single returned lineup.
+Instrument: `recall --mapwide` prints a phase split and a fingerprint (hash of the sorted lineup ids); a change is kept only if the fingerprint is identical, replay on all 15 maps is unchanged and the tests are green.
+`simbench --geo` gives raw simulator throughput with a rest-point checksum for the same reason.
+
+Baseline, de_dust2 near MidDoors (33,194 origins, 4,702 candidates, 4,423 lineups, fingerprint 4423/86ba173b6313): 373 s = pinned origins 30 s + sweep 203 s + verify 140 s + sightline 3.6 s + pins 1.6 s.
+Both big phases are pure simulator throughput: the sweep is 178M coarse sims at 1.0M/s, verify is 4,702 candidates x ~35 exact sims at 1,400/s.
+
+| iteration | change | de_dust2 MidDoors | fingerprint | verdict | commit |
+|---|---|---|---|---|---|
+| 1 | hull sweep skips triangles whose bounds the swept box misses (three of the thirteen SAT axes; exact) | 373 s -> 245 s (verify 135 -> 7 s); exact sims 1,377/s -> 15-27k/s; replay of every map unchanged | identical | KEPT | 55e0d58 |
+| 2 | pinned origins in three passes (parallel wall probes, serial first-come dedupe in origin order, parallel seating) | (measuring) | | | |
+
+Side effects of iteration 1 worth knowing: the Exact-spot escalation, the recall referee and `replay` all run on the same exact simulator, so the Exact button's cost from the recall loop shrinks by the same factor (to be measured on the bench), and a full 15-map replay now takes 10 s instead of 15 minutes.
