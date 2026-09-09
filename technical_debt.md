@@ -2137,7 +2137,9 @@ Both big phases are pure simulator throughput: the sweep is 178M coarse sims at 
 
 **Every number above, and every solve time in the recall loop, came from a Debug build.** The Dockerfile publishes Release, and Release is 4.3x faster on the coarse simulator (9 ns per tick against 40) and 2.5x on the exact one.
 Release, de_dust2 near MidDoors, same fingerprint: before this loop 56.6 s (sweep 28.0, verify 24.9, pinned origins 2.9), after iterations 1-2 about 31 s (sweep 28, verify 2.4, pins 0.4).
-So production's cold solve was never 373 s; it was ~57 s, and is now ~31 s. The recall loop's Exact-spot medians (30 -> 53 s) are Debug figures too; in Release the escalation's exact lattices run 2.5x faster, and the bounding-box reject of iteration 1 speeds them up again, so the Exact button in production is faster now than it was before the recall loop began.
+So production's cold solve was never 373 s; it was ~57 s, and is now ~32 s.
+Release, the loop's nine timing targets (dust2, mirage, nuke; 3 each), sum of medians: 249.1 s before -> 190.8 s after, every fingerprint identical.
+The recall loop's Exact-spot medians (30 -> 53 s) were Debug figures too. Measured in Release on cs_italy's 12 bench pairs, referees cached: before the recall loop 10.7 s per Exact solve with 47 missed kinds; now 5.0 s with 3 missed. The Exact button in production is twice as fast as it was before the recall loop began, and finds 97% of the kinds instead of 55%.
 Rule for the future: measure with `-c Release`; `simbench` and `recall --mapwide` both take whichever binary you point them at.
 
 What is left of the cold solve is the sweep, 178M coarse simulations at 9 ns a tick with perfect 16-core scaling: nothing result-identical is left to squeeze from it. The next step would change results (a coarser first lattice, a per-origin sweep table) and needs the recall bench and the fingerprint of the visible top 400 as its gates, plus Nick's say-so.
