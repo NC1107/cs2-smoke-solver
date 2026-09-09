@@ -60,7 +60,7 @@ check(difficultyWords(corner).word === "Easy", `a corner lob at 100u is Easy, go
 const jump = { ...corner, type: "JumpThrow" };
 check(difficultyWords(jump).word !== "Easy", "a jump throw is never Easy");
 const open = { pin: null, aimRef: { band: 0 }, feet: [0, 0, 0], rest: [1500, 0, 0], type: "Stand", scatter: 0 };
-check(difficultyWords(open).word === "Tricky", `open ground at 1500u is Tricky, got ${difficultyWords(open).word}`);
+check(difficultyWords(open).word === "Precise", `open ground at 1500u is Precise, got ${difficultyWords(open).word}`);
 
 if (failures) {
   process.exit(1);
