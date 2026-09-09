@@ -47,7 +47,8 @@ public sealed partial class TriangleCollider
                     var cell = (z * _ny + y) * _nx + x;
                     for (var i = _cellStart[cell]; i < _cellStart[cell + 1]; i++)
                     {
-                        if ((ignore == null || !ignore(_cellTris[i] / 3))
+                        if (BoundsTouch(_cellTris[i], lo, hi)
+                            && (ignore == null || !ignore(_cellTris[i] / 3))
                             && SweptBoxTriangle(from, direction, halfExtents, _cellTris[i]) is { } hit
                             && hit.T < bestT
                             && hit.Normal.Z >= minNormalZ)

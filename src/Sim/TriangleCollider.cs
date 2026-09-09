@@ -22,6 +22,13 @@ public sealed partial class TriangleCollider
     // List<int> objects scattered indices across the heap.
     readonly int[] _cellStart;
     readonly int[] _cellTris;
+    // Each triangle's axis-aligned bounds, six floats per triangle, so a
+    // sweep can skip the 13-axis test for every triangle whose box the swept
+    // hull's box does not touch. The box axes are three of the thirteen, so
+    // a triangle rejected here could never have reported a contact: the
+    // answer is identical, only the work changes (a 128u cell on de_dust2
+    // holds hundreds of triangles and a substep's hull sweeps ten units).
+    readonly float[] _triBounds;
     readonly Vector3 _origin;
     readonly float _cellSize;
     readonly int _nx;
@@ -90,6 +97,24 @@ public sealed partial class TriangleCollider
             }
             ForEachCoveredCell(t, index => _cellTris[_cellStart[index] + fill[index]++] = t);
         }
+        _triBounds = new float[_indices.Length / 3 * 6];
+        for (var t = 0; t < _indices.Length; t += 3)
+        {
+            var (a, b, c) = (Vertex(_indices[t]), Vertex(_indices[t + 1]), Vertex(_indices[t + 2]));
+            var lo = Vector3.Min(a, Vector3.Min(b, c));
+            var hi = Vector3.Max(a, Vector3.Max(b, c));
+            var o = t / 3 * 6;
+            _triBounds[o] = lo.X; _triBounds[o + 1] = lo.Y; _triBounds[o + 2] = lo.Z;
+            _triBounds[o + 3] = hi.X; _triBounds[o + 4] = hi.Y; _triBounds[o + 5] = hi.Z;
+        }
+    }
+
+    bool BoundsTouch(int triangleOffset, in Vector3 lo, in Vector3 hi)
+    {
+        var o = triangleOffset / 3 * 6;
+        return _triBounds[o + 3] >= lo.X && _triBounds[o] <= hi.X
+            && _triBounds[o + 4] >= lo.Y && _triBounds[o + 1] <= hi.Y
+            && _triBounds[o + 5] >= lo.Z && _triBounds[o + 2] <= hi.Z;
     }
 
     (int X, int Y, int Z) CellOf(Vector3 p) => (
