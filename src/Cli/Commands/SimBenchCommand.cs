@@ -52,12 +52,14 @@ public static class SimBenchCommand
         var repeats = int.Parse(options.GetValueOrDefault("repeats", "3"), CultureInfo.InvariantCulture);
         var threads = options.ContainsKey("serial") ? 1 : Environment.ProcessorCount;
 
-        // Warm the JIT past tiering before the clock starts.
-        Bench(grid, specs.Take(200).ToList(), k, 1, 1, out _, out _);
+        // Warm the JIT past tiering before the clock starts: tier-0 code is
+        // several times slower and the first rounds were measuring it.
+        Bench(grid, specs, k, threads, 8, out _, out _);
+        var rounds = int.Parse(options.GetValueOrDefault("rounds", "64"), CultureInfo.InvariantCulture);
         for (var r = 0; r < repeats; r++)
         {
-            var seconds = Bench(grid, specs, k, threads, 8, out var ticks, out var checksum);
-            Console.WriteLine($"voxel: {specs.Count * 8} sims in {seconds:F2}s on {threads} threads = {specs.Count * 8 / seconds / 1000:F1}k sims/s, {ticks / seconds / 1e6:F1}M ticks/s ({ticks / (double)(specs.Count * 8):F0} ticks/sim), checksum {checksum:X8}");
+            var seconds = Bench(grid, specs, k, threads, rounds, out var ticks, out var checksum);
+            Console.WriteLine($"voxel: {specs.Count * rounds} sims in {seconds:F2}s on {threads} threads = {specs.Count * rounds / seconds / 1000:F1}k sims/s, {ticks / seconds / 1e6:F1}M ticks/s ({ticks / (double)(specs.Count * rounds):F0} ticks/sim), checksum {checksum:X8}");
         }
 
         // Exact: one verification window (5x5 aims at 0.6 degrees) per 40 candidates.
@@ -82,12 +84,18 @@ public static class SimBenchCommand
     {
         var sw = System.Diagnostics.Stopwatch.StartNew();
         long tickSum = 0, sum = 0;
-        Parallel.For(0, specs.Count * rounds, new ParallelOptions { MaxDegreeOfParallelism = threads }, i =>
-        {
-            var res = GrenadeTrajectory.Simulate(grid, specs[i % specs.Count], k);
-            Interlocked.Add(ref tickSum, (long)MathF.Round(res.FlightTime * 64f));
-            Interlocked.Add(ref sum, (long)(res.RestPoint.X * 16) + (long)(res.RestPoint.Y * 16) * 7 + (long)(res.RestPoint.Z * 16) * 13 + res.Bounces);
-        });
+        // Per-worker partial sums: two interlocked adds per simulation on one
+        // shared cache line were most of what the first version measured.
+        Parallel.For(0, specs.Count * rounds, new ParallelOptions { MaxDegreeOfParallelism = threads },
+            () => (Ticks: 0L, Sum: 0L),
+            (i, _, acc) =>
+            {
+                var res = GrenadeTrajectory.Simulate(grid, specs[i % specs.Count], k);
+                acc.Ticks += (long)MathF.Round(res.FlightTime * 64f);
+                acc.Sum += (long)(res.RestPoint.X * 16) + (long)(res.RestPoint.Y * 16) * 7 + (long)(res.RestPoint.Z * 16) * 13 + res.Bounces;
+                return acc;
+            },
+            acc => { Interlocked.Add(ref tickSum, acc.Ticks); Interlocked.Add(ref sum, acc.Sum); });
         ticks = tickSum;
         checksum = sum;
         return sw.Elapsed.TotalSeconds;
