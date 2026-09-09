@@ -3,8 +3,8 @@
 // wired via wireCopyButtons on document.body). Setting a target and
 // selecting a lineup route through the callbacks main.js registers.
 
-import { state, filtered, clickShort, clickClass, esc, skyAngle, proMatched, scoreBreakdown, referenceBand, referenceFallback,
-  movementWords, clickWords, aimWords, difficultyWords, TARGET_SNAP_RADIUS, humanError } from "./state.js?v=116";
+import { state, filtered, clickShort, clickClass, esc, skyAngle, proMatched, scoreBreakdown, referenceBand, referenceFallback, humanErrorParts,
+  movementWords, clickWords, aimWords, difficultyWords, TARGET_SNAP_RADIUS, humanError } from "./state.js?v=117";
 
 const statusEl = state.statusEl;
 const PAGE_SIZE = 50;
@@ -577,7 +577,16 @@ function scoreRowsHtml(l) {
   const err = humanError(l);
   const why = l.pin === "corner" ? "corner places your feet" : l.pin === "wall" ? "wall places your feet" : "feet judged on open ground";
   const aim = aimWords(l);
+  // The estimate's own arithmetic, so "83u" reads as "39u of it is aiming
+  // over 2,200u" rather than as a verdict.
+  const p = humanErrorParts(l);
+  const terms = [
+    [`feet`, p.feet], [`aim over ${p.distance.toFixed(0)}u`, p.aim],
+    [l.type === "RunJumpThrow" ? "run-jump" : l.type.includes("Jump") ? "jump" : "", p.movement],
+    ["landing scatter", p.scatter], ["aim tolerance", p.stability],
+  ].filter(([label, v]) => label && v >= 0.5).map(([label, v]) => `${label} ${v.toFixed(0)}u`).join(" + ");
   return `<div class="score-rows"><div class="score-row score-repro"><span>a person lands this within about <b>${err.toFixed(0)}u</b> - ${why}${aim ? `, aim on ${aim}` : ""}</span></div>` +
+    `<div class="score-row score-repro"><span class="muted">${esc(terms)}</span></div>` +
     `<div class="score-row"><span>base</span><b>140</b></div>${rows}` +
     `<div class="score-row score-total"><span>Match score</span><b>${total}</b></div></div>`;
 }

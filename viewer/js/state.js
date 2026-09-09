@@ -305,18 +305,28 @@ export const referenceBand = l => l.aimRef?.band ?? (l.aimRef?.tier === "sky" ? 
 const POSITION_ERROR = { corner: 2, wall: 8 };
 const MOVEMENT_ERROR = { JumpThrow: 6, CrouchJumpThrow: 6, RunJumpThrow: 16 };
 const aimErrorDeg = band => band === 0 ? 0.5 : band <= 2 ? 1 : band === 3 ? 1.5 : band <= 5 ? 2.5 : 5;
+// The four things a person cannot control, each in units at the landing, so
+// the card can show where a number like "83u" comes from instead of a word.
+export function humanErrorParts(l) {
+  const dist = Math.hypot(l.rest[0] - l.feet[0], l.rest[1] - l.feet[1]);
+  const scatter = l.scatter ?? 0;
+  const stability = Math.min(1, Math.max(0, l.stability ?? 1));
+  return {
+    feet: POSITION_ERROR[l.pin] ?? 24,
+    aim: dist * Math.tan(aimErrorDeg(referenceBand(l)) * Math.PI / 180),
+    movement: MOVEMENT_ERROR[l.type] ?? 0,
+    scatter: scatter > 16 ? scatter : 0,
+    stability: (1 - stability) * 24,
+    distance: dist,
+  };
+}
+
 export function humanError(l) {
   if (typeof l.humanError === "number") {
     return l.humanError;
   }
-  const dist = Math.hypot(l.rest[0] - l.feet[0], l.rest[1] - l.feet[1]);
-  const scatter = l.scatter ?? 0;
-  const stability = Math.min(1, Math.max(0, l.stability ?? 1));
-  return (POSITION_ERROR[l.pin] ?? 24)
-    + dist * Math.tan(aimErrorDeg(referenceBand(l)) * Math.PI / 180)
-    + (MOVEMENT_ERROR[l.type] ?? 0)
-    + (scatter > 16 ? scatter : 0)
-    + (1 - stability) * 24;
+  const p = humanErrorParts(l);
+  return p.feet + p.aim + p.movement + p.scatter + p.stability;
 }
 
 // A lineup's stable identity across solves: the throw itself, quantised to
@@ -657,7 +667,11 @@ export const aimWords = l => {
 // player has a mental model for "219". Difficulty deliberately says nothing
 // about danger - being seen while throwing is a separate fact with a separate
 // tag, and folding it in here would hide it.
-const DIFFICULTY = ["Tricky", "Practice", "Reliable", "Easy"];
+// "Precise", not "Tricky": the bottom band is mostly long throws whose aim
+// band times distance dominates the estimate - a 2,200u jump throw from a
+// known spot is a fine lineup that needs a precise aim, not a bad one, and
+// the old word read as a verdict on the lineup.
+const DIFFICULTY = ["Precise", "Practice", "Reliable", "Easy"];
 
 // The best a throw of this kind can be called, whatever else is in its favour.
 // Leaving the ground is the dividing line: a jump adds a timing to hit while
@@ -684,7 +698,7 @@ export const difficultyWords = l => {
   rank = Math.min(rank, MOVEMENT_CEILING[l.type] ?? 3);
   const word = DIFFICULTY[Math.max(0, Math.min(DIFFICULTY.length - 1, rank))];
   return { word, cls: word === "Easy" ? "easy" : word === "Reliable" ? "reliable"
-    : word === "Tricky" ? "tricky" : "practice" };
+    : word === "Precise" ? "precise" : "practice" };
 };
 
 // Phones and other low-memory devices, where the full-resolution textured GLB

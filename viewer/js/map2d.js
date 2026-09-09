@@ -3,9 +3,9 @@
 // actions (set target, select, run query) go through callbacks that main.js
 // registers, so this module never imports the orchestrator.
 
-import { cacheBust } from "./api.js?v=116";
-import { isDrag, state, filtered, clickClass, SMOKE_BLOOM_RADIUS, PICK_RADIUS_PX, TOUCH_PICK_RADIUS_PX, HEAT_CELL } from "./state.js?v=116";
-import { markerTooltip, resolveTap, preferSpawnOverLineup, showTip, hideTip } from "./markers.js?v=116";
+import { cacheBust } from "./api.js?v=117";
+import { isDrag, state, filtered, clickClass, SMOKE_BLOOM_RADIUS, PICK_RADIUS_PX, TOUCH_PICK_RADIUS_PX, HEAT_CELL } from "./state.js?v=117";
+import { markerTooltip, resolveTap, preferSpawnOverLineup, showTip, hideTip } from "./markers.js?v=117";
 
 const canvas = state.canvas;
 const ctx = canvas.getContext("2d");

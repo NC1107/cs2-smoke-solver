@@ -13,7 +13,7 @@
 // over anything drawn near it; a spawn beats a lineup dot except while a
 // solved list is on screen and no position is being picked (then the answers,
 // the lineup dots, come first); the ground is last.
-import { state, clickWords, movementWords, clickClass, esc } from "./state.js?v=116";
+import { state, clickWords, movementWords, clickClass, esc } from "./state.js?v=117";
 
 export const MARKER_PRECEDENCE = ["named", "spawn", "lineup", "ground"];
 
