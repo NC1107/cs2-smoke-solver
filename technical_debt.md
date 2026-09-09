@@ -2132,6 +2132,14 @@ Both big phases are pure simulator throughput: the sweep is 178M coarse sims at 
 | iteration | change | de_dust2 MidDoors | fingerprint | verdict | commit |
 |---|---|---|---|---|---|
 | 1 | hull sweep skips triangles whose bounds the swept box misses (three of the thirteen SAT axes; exact) | 373 s -> 245 s (verify 135 -> 7 s); exact sims 1,377/s -> 15-27k/s; replay of every map unchanged | identical | KEPT | 55e0d58 |
-| 2 | pinned origins in three passes (parallel wall probes, serial first-come dedupe in origin order, parallel seating) | (measuring) | | | |
+| 2 | pinned origins in three passes (parallel wall probes, serial first-come dedupe in origin order, parallel seating) | 245 s -> 218 s (pinned origins 28.9 -> 1.9 s) | identical | KEPT | e5eab17 |
+| 3 | hand-inlined cell test in the tick loop, then a 4x4x4 "any solid" block map to skip the cell map in open air | Debug build: +40% sims/s; Release build: 9.1-9.3M sims/s before, 9.7/4.5M and 8.5/4.2M after (noise, no gain) | identical | FALSIFIED, reverted: the Release JIT already does this | - |
+
+**Every number above, and every solve time in the recall loop, came from a Debug build.** The Dockerfile publishes Release, and Release is 4.3x faster on the coarse simulator (9 ns per tick against 40) and 2.5x on the exact one.
+Release, de_dust2 near MidDoors, same fingerprint: before this loop 56.6 s (sweep 28.0, verify 24.9, pinned origins 2.9), after iterations 1-2 about 31 s (sweep 28, verify 2.4, pins 0.4).
+So production's cold solve was never 373 s; it was ~57 s, and is now ~31 s. The recall loop's Exact-spot medians (30 -> 53 s) are Debug figures too; in Release the escalation's exact lattices run 2.5x faster, and the bounding-box reject of iteration 1 speeds them up again, so the Exact button in production is faster now than it was before the recall loop began.
+Rule for the future: measure with `-c Release`; `simbench` and `recall --mapwide` both take whichever binary you point them at.
+
+What is left of the cold solve is the sweep, 178M coarse simulations at 9 ns a tick with perfect 16-core scaling: nothing result-identical is left to squeeze from it. The next step would change results (a coarser first lattice, a per-origin sweep table) and needs the recall bench and the fingerprint of the visible top 400 as its gates, plus Nick's say-so.
 
 Side effects of iteration 1 worth knowing: the Exact-spot escalation, the recall referee and `replay` all run on the same exact simulator, so the Exact button's cost from the recall loop shrinks by the same factor (to be measured on the bench), and a full 15-map replay now takes 10 s instead of 15 minutes.
