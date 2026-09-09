@@ -2101,7 +2101,9 @@ That is 3-6x the 60-102 s the July notes quote, and it is the number a first cli
 Baseline 579 missed of 1,111 landable kinds (47.9% recall) -> 67 (94.0%), plus 3 in-game misses among the 82 newly surfaced throws the rig threw (6.3% all told); every map improved and none regressed; map-wide solve time identical to baseline; replay unchanged; 352 tests green.
 The Exact-spot solve pays for it: median 30 s -> 53 s, p90 39 s -> 155 s (the 2-degree lattice for the kinds the sweep came back without, then the 1-degree lattice for the ones it touched and lost).
 The remaining 6% are kinds the coarse lattice never touches; reaching them costs 2-4x the Exact button (iteration 4), so the loop stops here at Nick's "great improvement, no major regressions" bar rather than the 5% line.
-Bench defect to fix before the next loop: the dust2 A-site bench spots 3, 4, 6, 7, 8, 9 sit at the wrong height (nearest stand spot on a crate, or the misread "z 54/22/21" eye heights) and show nothing landable; the map-wide cold solve at 170-370 s per target is its own loop.
+Bench defect fixed 2026-09-08 (3b5e5dd): the dust2 A-site bench spots now take the nearest stand spot within 40u of the site floor; with all nine of Nick's spots live, dust2 measures 133 kinds found and 3 missed over 21 pairs (97.8%), every bench spot landing 10-12 kinds.
+The map-wide cold solve at 170-370 s per target is its own loop.
+Shipped 2026-09-08: the recall work, the filter pass-through for exact solves (QueryVersion 38), and the Precise wording with the estimate's terms on the card; prod cache cleared and the warm run restarted.
 
 ### Rig check after three kept iterations (2026-09-07)
 
