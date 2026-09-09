@@ -341,6 +341,13 @@ public static class RecallCommand
         return bench;
     }
 
+    static string Fingerprint(IEnumerable<Lineup> lineups)
+    {
+        var ids = lineups.Select(LineupIdentity.Id).OrderBy(id => id, StringComparer.Ordinal).ToList();
+        var bytes = System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(string.Join("\n", ids)));
+        return $"{ids.Count}/{Convert.ToHexString(bytes)[..12].ToLowerInvariant()}";
+    }
+
     // The speed gate: cold map-wide solves of the bench targets, so a recall
     // change can be charged for the time it costs the map-wide sweep.
     static int RunMapWideTiming(Dictionary<string, string> options, string dataDir, IReadOnlyList<string> maps, int targetCap, float tolerance)
@@ -368,21 +375,40 @@ public static class RecallCommand
             {
                 var times = new List<double>();
                 var count = 0;
+                var phases = new List<string>();
+                var fingerprint = "";
                 for (var r = 0; r < repeats; r++)
                 {
                     var sw = System.Diagnostics.Stopwatch.StartNew();
+                    var lastPhase = "start";
+                    var lastAt = 0.0;
+                    var split = new List<string>();
+                    Action<string, int> onPhase = (phase, n) =>
+                    {
+                        var now = sw.Elapsed.TotalSeconds;
+                        split.Add($"{lastPhase} {now - lastAt:F1}s");
+                        lastPhase = $"{phase}({n})";
+                        lastAt = now;
+                    };
                     // The API's map-wide query: every stand spot within 3100u
                     // and the 80u default tolerance, so the time is the one a
                     // user waits for on a cold target.
-                    var solve = SolveForTarget(mesh, attributeFilter, navAreas, t.Pos, hasTargetZ: true, null, 3100f, 80f, constants,
+                    var solve = SolveForTarget(mesh, attributeFilter, navAreas, t.Pos, hasTargetZ: true, null, 3100f, 80f, constants, onPhase,
                         standSpots: standSpots, spawnFronts: spawnFronts);
+                    split.Add($"{lastPhase} {sw.Elapsed.TotalSeconds - lastAt:F1}s");
                     times.Add(sw.Elapsed.TotalSeconds);
                     count = solve.Lineups.Count;
+                    phases = split;
+                    // The result's identity: a speed change that returns the
+                    // same lineups leaves this unchanged, and one that does not
+                    // is a solver change, whatever the clock says.
+                    fingerprint = Fingerprint(solve.Lineups);
                 }
                 times.Sort();
                 var median = times[times.Count / 2];
                 total += median;
-                Console.WriteLine($"{map,-12} {t.Name,-24} lineups {count,4}  median {median,6:F1}s  ({string.Join(" ", times.Select(x => x.ToString("F1", CultureInfo.InvariantCulture)))})");
+                Console.WriteLine($"{map,-12} {t.Name,-24} lineups {count,4}  median {median,6:F1}s  ({string.Join(" ", times.Select(x => x.ToString("F1", CultureInfo.InvariantCulture)))})  id {fingerprint}");
+                Console.WriteLine($"             phases: {string.Join(", ", phases.Skip(1))}");
             }
         }
         Console.WriteLine($"{"TOTAL",-12} {"sum of medians",-24} {total,6:F1}s");

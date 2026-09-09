@@ -180,6 +180,7 @@ public static class TargetSolver
             // like de_vertigo.
             MathF.Min(meshMax.Z + 64, target.Z + 900));
         var grid = VoxelGrid.Build(mesh, voxelSize, min, max, attributeFilter);
+        onPhase?.Invoke("colliders", 0);
 
         // Built before the origins, not after: they are snapped onto its triangles
         // so that the spot a lineup names is the spot the player actually stands on.
@@ -234,6 +235,7 @@ public static class TargetSolver
         // railings and ledges are exactly what pins feet in game, and they are
         // invisible to the grenade collider by design.
         var playerCollider = BuildPlayerCollider(mesh, min, max);
+        onPhase?.Invoke("origins", 0);
 
         // Nowhere for a smoke to come to rest means no throw can possibly
         // qualify, so sweeping every origin would burn a full solve - minutes of
@@ -352,7 +354,9 @@ public static class TargetSolver
             // Walking into a wall is still the most reproducible way to place
             // feet exactly, and the lattice never lands on those spots.
             var before = origins.Count;
+            onPhase?.Invoke("pinned-origins", origins.Count);
             LineupSolver.AddPinnedOriginsTo(grid, playerCollider, origins, crouchOnlyExtras);
+            onPhase?.Invoke("after-pins", origins.Count);
             foreach (var o in origins.Skip(before))
             {
                 pinnedOrigins.Add(((int)MathF.Round(o.X * 4f), (int)MathF.Round(o.Y * 4f)));
@@ -581,6 +585,7 @@ public static class TargetSolver
         // floor from almost any angle, which flagged even a spot 80u away as
         // concealed. The lifted endpoint is both the mutual-visibility line
         // ("can someone holding this see me") and free of that self-occlusion.
+        onPhase?.Invoke("sightline", verified.Count);
         var sightline = new TriangleRaycaster(mesh, min, max, attributeFilter);
         var lineups = verified.ToArray();
         Parallel.For(0, lineups.Length, Cpu.Bound, i =>
@@ -594,6 +599,7 @@ public static class TargetSolver
         // Pin class for every evaluated origin, so the viewer's stand-spot heat
         // view can rank corner wedges and wall presses above open ground. Eight
         // short raycasts per origin - trivial next to the sweep that just ran.
+        onPhase?.Invoke("pins", origins.Count);
         var originPins = new System.Collections.Concurrent.ConcurrentDictionary<(int X, int Y), int>();
         Parallel.ForEach(origins, Cpu.Bound, o =>
             originPins.GetOrAdd(((int)MathF.Round(o.X), (int)MathF.Round(o.Y)), _ => LineupSolver.PositionPin(playerCollider, o)));

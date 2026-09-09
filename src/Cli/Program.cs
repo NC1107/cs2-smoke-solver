@@ -36,6 +36,7 @@ var commands = new Dictionary<string, Func<Dictionary<string, string>, int>>
     ["reindex"] = _ => { ValidateCommand.RebuildValidationIndex(); return 0; },
     ["probe"] = ProbeCommand.Run,
     ["recall"] = RecallCommand.Run,
+    ["simbench"] = SimBenchCommand.Run,
 };
 
 if (args.Length == 0 || !commands.TryGetValue(args[0], out var command))
@@ -67,6 +68,7 @@ if (args.Length == 0 || !commands.TryGetValue(args[0], out var command))
           reindex    (rebuild data/validation/index.json from the reports on disk)
           probe      --geo <file.s2geo> [--distance 160] [--speed 600] (fire one synthetic grenade through every breakable on the rig, record pass/bounce)
           recall     [--maps a,b] [--targets 3] [--spots 4] [--seed 1] [--tolerance 32] [--list] [--json out.json] | --mapwide [--repeats 3] (recall bench: what the exhaustive exact search lands that the solve path misses; --mapwide times cold map-wide solves)
+          simbench   --geo <file.s2geo> [--from x,y,z] [--to x,y,z] [--repeats 3] [--serial] (raw voxel and exact simulator throughput with a result checksum)
         """);
     return 1;
 }
