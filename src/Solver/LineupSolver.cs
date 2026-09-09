@@ -42,6 +42,54 @@ public sealed record Lineup(
     Vector3? RestIfBroken = null);
 
 /// <summary>
+/// Where the sweep's simulations go, per throw kind: how many, how many
+/// ticks, how many never settled. Off unless a bench turns it on; the cost
+/// of the check is one static read per simulation.
+/// </summary>
+public static class SweepStats
+{
+    public static volatile bool Enabled;
+    static readonly long[] Sims = new long[5 * 3];
+    static readonly long[] Ticks = new long[5 * 3];
+    static readonly long[] Unsettled = new long[5 * 3];
+    static readonly long[] Hits = new long[5 * 3];
+
+    static int Slot(ThrowType type, float strength) => (int)type * 3 + (strength >= 0.99f ? 0 : strength >= 0.49f ? 1 : 2);
+
+    public static void Record(ThrowType type, float strength, TrajectoryResult r)
+    {
+        var slot = Slot(type, strength);
+        Interlocked.Increment(ref Sims[slot]);
+        Interlocked.Add(ref Ticks[slot], (long)MathF.Round(r.FlightTime * 64f));
+        if (r.Lost || r.FlightTime >= GrenadeTrajectory.MaxFlightSeconds - 0.01f)
+        {
+            Interlocked.Increment(ref Unsettled[slot]);
+        }
+    }
+
+    public static void RecordHit(ThrowType type, float strength) => Interlocked.Increment(ref Hits[Slot(type, strength)]);
+
+    public static void Reset()
+    {
+        Array.Clear(Sims); Array.Clear(Ticks); Array.Clear(Unsettled); Array.Clear(Hits);
+    }
+
+    public static IEnumerable<string> Report()
+    {
+        var names = new[] { "Stand", "Crouch", "JumpThrow", "CrouchJumpThrow", "RunJumpThrow" };
+        var clicks = new[] { "1", "0.5", "0" };
+        var total = Sims.Sum();
+        var totalTicks = Ticks.Sum();
+        for (var i = 0; i < Sims.Length; i++)
+        {
+            if (Sims[i] == 0) { continue; }
+            yield return $"{names[i / 3],-16}/{clicks[i % 3],-3} sims {Sims[i],11:N0} ({Sims[i] * 100.0 / total,4:F1}%)  ticks {Ticks[i] * 100.0 / Math.Max(1, totalTicks),4:F1}%  avg ticks {Ticks[i] / (double)Sims[i],5:F0}  unsettled {Unsettled[i] * 100.0 / Sims[i],4:F1}%  hits {Hits[i],7:N0}";
+        }
+        yield return $"total sims {total:N0}, ticks {totalTicks:N0}";
+    }
+}
+
+/// <summary>
 /// Stage 2 of the inverse solver: sweep standable origins and view angles, keep
 /// throws whose grenade comes to rest inside the stage 1 landing zone.
 /// Fewer bounces rank higher: bounce-free lineups tolerate constant error best.
@@ -316,6 +364,10 @@ public static partial class LineupSolver
             float Evaluate(Vector3 eye, float yaw, float pitch, ThrowType type, float strength, float runOffset)
             {
                 var result = GrenadeTrajectory.Simulate(grid, new ThrowSpec(eye, yaw, pitch, type, strength, runOffset), constants);
+                if (SweepStats.Enabled)
+                {
+                    SweepStats.Record(type, strength, result);
+                }
                 if (!Settled(result))
                 {
                     return float.MaxValue;
@@ -326,6 +378,10 @@ public static partial class LineupSolver
                     return Vector3.DistanceSquared(result.RestPoint, zoneCentroid);
                 }
                 hits++;
+                if (SweepStats.Enabled)
+                {
+                    SweepStats.RecordHit(type, strength);
+                }
                 var lineup = new Lineup(feet, Normalize(yaw), pitch, type, result.RestPoint, result.Bounces, result.FlightTime, crossings, Strength: strength, RunYawOffsetDeg: runOffset);
                 var kind = keepEveryKind || (keepEveryKindAt?.Invoke(feet) ?? false)
                     ? (int)type * 1000 + (int)MathF.Round(strength * 10f) * 10 + (int)MathF.Round(runOffset / 45f) + 2

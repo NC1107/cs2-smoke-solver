@@ -2145,3 +2145,38 @@ Rule for the future: measure with `-c Release`; `simbench` and `recall --mapwide
 What is left of the cold solve is the sweep, 178M coarse simulations at 9 ns a tick with perfect 16-core scaling: nothing result-identical is left to squeeze from it. The next step would change results (a coarser first lattice, a per-origin sweep table) and needs the recall bench and the fingerprint of the visible top 400 as its gates, plus Nick's say-so.
 
 Side effects of iteration 1 worth knowing: the Exact-spot escalation, the recall referee and `replay` all run on the same exact simulator, so the Exact button's cost from the recall loop shrinks by the same factor (to be measured on the bench), and a full 15-map replay now takes 10 s instead of 15 minutes.
+
+## Sweep loop (2026-09-09)
+
+Goal: cut the map-wide sweep (28 of the ~32 s Release cold solve on de_dust2 MidDoors) without changing what the user sees.
+Gate: the visible list (`LineupApi.Ranked(...).Take(400)`) must match the baseline as closely as two baseline runs match each other, plus the cold-solve clock, tests and replay.
+Instrument, committed with this section: `recall --mapwide --stats` prints sims, ticks, unsettled share and hits per throw kind; `--ids dir` writes the visible ids in rank order and the sorted id set of every lineup per target, and the fingerprint line now carries a second hash of the visible 400.
+
+Variance floor, two baseline runs of the nine timing targets (Release; sum of medians 197, 194 and 206 s across three baseline runs, so the clock's own noise is about 6%): the visible set overlaps 400/400 on every target, the same id sits at the same rank on 341-377 of the 400 (the rank order jitters), and the full lineup sets are identical except de_dust2 UpperTunnel (1353 against 1355).
+The jitter is `best.AddOrUpdate` picking a different representative for the same bucket depending on which parallel origin gets there first; the set is stable, the tie-break is not.
+
+Where the 185M sims of de_dust2 MidDoors go: RunJumpThrow at full click 51.8% of sims and 55.0% of ticks (avg 367 ticks, 4.0% never settle), RunJumpThrow at half click 12.2%, Jump and CrouchJump 8.9% each, Stand and Crouch 5.7% each.
+Refinement (the quarter-step lattice around the eight best near misses per kind) is 23.9M sims, 13% of the total; 1.96M of those re-fly a yaw/pitch pair already flown, 1% of the total.
+
+| iteration | hypothesis | visible-400 overlap (floor 400/400) | full set | nine-target clock | verdict |
+|---|---|---|---|---|---|
+| 1 | four refinement seeds per kind instead of eight, map-wide only | 357-390 of 400 on dust2 and mirage, 302/335 nuke Squeaky, 273/277 Control | MidDoors 3674/4423 | 197 -> 227 s (a concurrent Rust build loaded the machine to 40; not a clean clock) | FALSIFIED: 3-10% of the visible list changes |
+| 2 | per-pitch yaw window for lateral run-jumps (skip lattice columns outside shift(pitch) +- 30, same lattice points) | 393-400 of 400 on dust2 and mirage, 328/335 Squeaky, 276/277 Control | UpperTunnel 1324/1354, Scaffolding 1331/1371 | 197 -> 192 s | FALSIFIED: the columns it skips are bounce routes whose yaw sits outside the estimate, 1-2% of lineups lost for 2.5% |
+| 3 | skip refinement sims whose yaw/pitch pair was already flown (exact by construction) | not run | not run | at most 1% of sims | FALSIFIED by the count above |
+
+Both knobs together: 356-386 of 400 visible, 195.8 s.
+The knob code is not kept; only the instrument is.
+
+### Do not retry (sweep loop)
+
+- Fewer refinement seeds map-wide: 3-10% of the visible 400 change, and the nuke targets lose 10% of their lineups outright.
+- Per-pitch yaw windows for run-jumps: every column skipped was carrying a bounce route somewhere; 1-2% of lineups for 2.5% of time.
+- Deduplicating refinement sims: 1% of sims are duplicates.
+- Tick-loop micro-optimisation and block maps: see the cold-solve loop, the Release JIT already does it.
+
+### Loop closed 2026-09-09
+
+Three hypotheses falsified in a row.
+Every simulation the sweep flies feeds a candidate or a refinement seed, so any cut in sims changes the answer, and the simulator itself is at memory bandwidth (9 ns a tick, 9M sims/s across 16 cores).
+Result-changing options remain, each needing Nick's call and the recall bench as the gate: a coarser first lattice with a denser refinement, a per-origin sweep table, or simply fewer lateral run-jump offsets (the four run offsets at full click are half of every cold solve for lineups that rank last).
+The rank jitter is a separate, cheap fix: a deterministic tie-break in `Better` (origin x/y, then yaw) would make two runs of the same solve list the same lineup at the same rank.

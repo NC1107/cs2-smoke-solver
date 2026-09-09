@@ -359,6 +359,12 @@ public static class RecallCommand
     static int RunMapWideTimingCore(Dictionary<string, string> options, string dataDir, IReadOnlyList<string> maps, int targetCap)
     {
         var repeats = int.Parse(options.GetValueOrDefault("repeats", "3"), CultureInfo.InvariantCulture);
+        SweepStats.Enabled = options.ContainsKey("stats");
+        // --ids <dir>: the visible list's ids per target, one file each, so two
+        // runs can be compared by overlap rather than by a hash that flips on
+        // a single tie-break.
+        var idsDir = options.GetValueOrDefault("ids", "");
+        if (idsDir.Length > 0) { Directory.CreateDirectory(idsDir); }
         double total = 0;
         foreach (var map in maps)
         {
@@ -402,13 +408,28 @@ public static class RecallCommand
                     // The result's identity: a speed change that returns the
                     // same lineups leaves this unchanged, and one that does not
                     // is a solver change, whatever the clock says.
-                    fingerprint = Fingerprint(solve.Lineups);
+                    // Two identities: everything the solve returned, and the 400 the
+                    // API shows in its rank order. A sweep change that leaves the second
+                    // alone is invisible to a user of the map-wide page even when the
+                    // first moves.
+                    var visible = LineupApi.Ranked(solve).Take(400).ToList();
+                    fingerprint = $"{Fingerprint(solve.Lineups)} visible {Fingerprint(visible)}";
+                    if (idsDir.Length > 0)
+                    {
+                        File.WriteAllLines(Path.Combine(idsDir, $"{map}-{t.Name.Replace(' ', '_')}.txt"), visible.Select(LineupIdentity.Id));
+                        File.WriteAllLines(Path.Combine(idsDir, $"{map}-{t.Name.Replace(' ', '_')}.all.txt"), solve.Lineups.Select(LineupIdentity.Id).OrderBy(id => id, StringComparer.Ordinal));
+                    }
                 }
                 times.Sort();
                 var median = times[times.Count / 2];
                 total += median;
                 Console.WriteLine($"{map,-12} {t.Name,-24} lineups {count,4}  median {median,6:F1}s  ({string.Join(" ", times.Select(x => x.ToString("F1", CultureInfo.InvariantCulture)))})  id {fingerprint}");
                 Console.WriteLine($"             phases: {string.Join(", ", phases.Skip(1))}");
+                if (SweepStats.Enabled)
+                {
+                    foreach (var line in SweepStats.Report()) { Console.WriteLine($"             {line}"); }
+                    SweepStats.Reset();
+                }
             }
         }
         Console.WriteLine($"{"TOTAL",-12} {"sum of medians",-24} {total,6:F1}s");
