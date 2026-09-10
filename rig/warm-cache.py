@@ -85,6 +85,14 @@ def solve(map_name, target):
                 raise
             delay = float(e.headers.get("Retry-After") or 0) or min(30, 2 ** attempt)
             time.sleep(delay)
+        except urllib.error.URLError:
+            # The container is replaced under this script whenever a push
+            # reaches the registry, and a warm run is long enough that this
+            # happens mid-list. The new container mounts the same cache, so
+            # the right move is to wait for it and carry on.
+            if attempt == 7:
+                raise
+            time.sleep(min(30, 2 ** attempt))
     return time.time() - t0, lineups
 
 
