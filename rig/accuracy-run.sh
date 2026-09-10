@@ -14,7 +14,9 @@ RIG_ENV="$(dirname "$(readlink -f "$0")")/rig.env"
 set -a; source "$RIG_ENV"; set +a
 REPO="$SMOKESOLVER_REPO"
 DOTNET="${DOTNET_ROOT:-$HOME/.dotnet}/dotnet"
-CLI="$REPO/src/Cli/bin/Debug/net10.0/SmokeSolver.Cli.dll"
+# Release, not Debug: the solver is 4x faster with the JIT optimiser on, and a
+# campaign is solve-bound once the throws are prefetched.
+CLI="$REPO/src/Cli/bin/Release/net10.0/SmokeSolver.Cli.dll"
 DEPLOY_HOST="npc@10.0.0.100"
 DEPLOY_DATA="/home/npc/docker-server/npc_projects/cs2-smoke-solver/data"
 
@@ -30,8 +32,8 @@ while [[ $# -gt 0 ]]; do
 done
 
 if [[ ! -f "$CLI" ]]; then
-  echo "==> building the CLI (no Debug binary found)"
-  "$DOTNET" build "$REPO/src/Cli" -v q
+  echo "==> building the CLI (no Release binary found)"
+  "$DOTNET" build "$REPO/src/Cli" -c Release -v q
 fi
 
 # Default map pool: everything extracted WITH nav data. flatgrass is the

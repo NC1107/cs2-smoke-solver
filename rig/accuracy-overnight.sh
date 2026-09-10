@@ -10,7 +10,7 @@ RIG_ENV="$(dirname "$(readlink -f "$0")")/rig.env"
 set -a; source "$RIG_ENV"; set +a
 REPO="$SMOKESOLVER_REPO"
 DOTNET="${DOTNET_ROOT:-$HOME/.dotnet}/dotnet"
-CLI="$REPO/src/Cli/bin/Debug/net10.0/SmokeSolver.Cli.dll"
+CLI="$REPO/src/Cli/bin/Release/net10.0/SmokeSolver.Cli.dll"
 DEPLOY_HOST="npc@10.0.0.100"
 DEPLOY_DATA="/home/npc/docker-server/npc_projects/cs2-smoke-solver/data"
 

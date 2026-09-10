@@ -47,7 +47,18 @@ public static class ValidateCommand
 
         if (RigServerBuild() is { } serverBuild && serverBuild != mesh.GameBuildId)
         {
-            Console.Error.WriteLine($"WARNING: the rig server is on CS2 build {serverBuild} but {mesh.MapName}.s2geo was extracted from build {mesh.GameBuildId}; throws will be graded against a different map. Update the server (steamcmd app_update 730) or re-extract.");
+            // A build number differing is not by itself a problem: most CS2
+            // updates ship no map at all, and the dedicated-server branch runs
+            // ahead of the client's. What would silently misgrade every throw
+            // is the server playing a DIFFERENT map file than the one the mesh
+            // came from, so compare the archives, not the version stamps.
+            var archives = MapArchiveMatch(mesh.MapName);
+            Console.Error.WriteLine(archives switch
+            {
+                true => $"note: the rig server is on CS2 build {serverBuild}, {mesh.MapName}.s2geo came from {mesh.GameBuildId}, but {mesh.MapName}.vpk is byte-identical in both installs, so the mesh still matches what the server plays.",
+                false => $"WARNING: the rig server is on CS2 build {serverBuild} but {mesh.MapName}.s2geo was extracted from build {mesh.GameBuildId}, AND the two installs ship different {mesh.MapName}.vpk files; throws will be graded against a different map. Re-extract the mesh.",
+                null => $"WARNING: the rig server is on CS2 build {serverBuild} but {mesh.MapName}.s2geo was extracted from build {mesh.GameBuildId}, and the map archives could not be compared; throws may be graded against a different map. Update the server (steamcmd app_update 730 -beta public) or re-extract.",
+            });
         }
 
         Vector3 target;
@@ -709,6 +720,35 @@ public static class ValidateCommand
     /// directory rig.env names; ~/cs2-rig by default), or null when no server
     /// install is present on this machine.
     /// </summary>
+    /// <summary>
+    /// True when the rig server and the client install ship the same file for
+    /// this map, false when they differ, null when either cannot be found.
+    /// </summary>
+    static bool? MapArchiveMatch(string mapName)
+    {
+        var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        var rigDir = Environment.GetEnvironmentVariable("CS2_RIG_DIR") ?? Path.Combine(home, "cs2-rig");
+        var gameDir = Environment.GetEnvironmentVariable("CS2_GAME_DIR")
+            ?? Path.Combine(home, ".local", "share", "Steam", "steamapps", "common", "Counter-Strike Global Offensive");
+        var server = new FileInfo(Path.Combine(rigDir, "server", "game", "csgo", "maps", mapName + ".vpk"));
+        var client = new FileInfo(Path.Combine(gameDir, "game", "csgo", "maps", mapName + ".vpk"));
+        if (!server.Exists || !client.Exists)
+        {
+            return null;
+        }
+        if (server.Length != client.Length)
+        {
+            return false;
+        }
+        return Hash(server) == Hash(client);
+
+        static string Hash(FileInfo file)
+        {
+            using var stream = file.OpenRead();
+            return Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(stream));
+        }
+    }
+
     public static string? RigServerBuild()
     {
         var rigDir = Environment.GetEnvironmentVariable("CS2_RIG_DIR")

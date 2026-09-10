@@ -2180,3 +2180,32 @@ Three hypotheses falsified in a row.
 Every simulation the sweep flies feeds a candidate or a refinement seed, so any cut in sims changes the answer, and the simulator itself is at memory bandwidth (9 ns a tick, 9M sims/s across 16 cores).
 Result-changing options remain, each needing Nick's call and the recall bench as the gate: a coarser first lattice with a denser refinement, a per-origin sweep table, or simply fewer lateral run-jump offsets (the four run offsets at full click are half of every cold solve for lineups that rank last).
 The rank jitter is a separate, cheap fix: a deterministic tie-break in `Better` (origin x/y, then yaw) would make two runs of the same solve list the same lineup at the same rank.
+
+## Validation campaign on CS2 build 2000908 (2026-09-09)
+
+The last full campaign (2026-09-04/05) predated the recall loop, so every map's published accuracy described a solver that no longer ships.
+Meanwhile the Steam client moved to 2000905 on 09-08 and the rig server was still pinned at 2000899.
+
+What the update actually changed: `libserver.so`, `libclient.so`, `libengine2.so` and `libtier0.so`, and no map archive at all.
+Every map `.vpk` is byte-identical between the updated dedicated server (2000908, ahead of the client as its branch always is) and the client install, and untouched since 9 July, so the extracted meshes stayed valid and nothing needed re-extracting.
+The rig server was updated with `-beta public`; this time the update left the metamod search path in `gameinfo.gi` intact and the plugin loaded first try.
+
+Control first: de_dust2's eight marker targets on the new build came back 97-100% within 3u, so the new server binary did not move grenade physics. Only then did the other fourteen maps run.
+
+| | graded | within 3u | within 8u | median error |
+|---|---|---|---|---|
+| 2026-09-04/05 campaign | 4,568 | 93.0% | - | - |
+| this campaign | 2,915 | 98.2% | 98.9% | 0.03-0.06u |
+
+Every map improved, none regressed: cs_shelter +12.3, cs_office +10.0, de_boulder +9.1, de_overpass +7.5, de_ancient +5.7, de_anubis +5.4, cs_italy +5.1, de_fachwerk +4.4, de_inferno +4.4, de_cache +3.5, de_dust2 +3.2, de_train +3.2, de_nuke +3.0, de_vertigo +2.4, de_mirage +1.9.
+The recall loop's escalation and the exact-hull fix are what moved these numbers; nothing about the campaign method changed.
+
+52 of 2,915 throws (1.8%) missed by more than 3u, and 5 of those were over 500u.
+Half (26) are bounce-count disagreements between sim and reality, the known chaotic-route failure: de_vertigo (10) and de_train (9) hold a third of them between them, which is the same pair that trailed the field in July.
+Nothing failed to detonate anywhere, and no throw wedged or was culled except five on cs_office.
+
+Two fixes made while running it:
+- `accuracy-run.sh` and `accuracy-overnight.sh` ran the Debug CLI, so every campaign solve took four times longer than it needed to. Both use Release now.
+- The build-mismatch warning compared version stamps, so it fired on every target of this campaign even though the map files matched exactly. It now compares the server's and the client's `.vpk` for the map: identical archives print a note, genuinely different ones still warn, and an archive it cannot find warns as before.
+
+Method note for the next campaign: pass `--limit 60`. Without it `batchvalidate` throws every lineup the solver returns, which on de_dust2 mid_door alone is 1,778 throws, and the historical per-target runs are all 60.
