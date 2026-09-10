@@ -69,10 +69,22 @@ def solve(map_name, target):
     req = urllib.request.Request(BASE + "/api/lineup", body, {"Content-Type": "application/json", "X-Solve-Priority": "low"})
     t0 = time.time()
     lineups = 0
-    for raw in urllib.request.urlopen(req, timeout=300):
-        line = raw.decode().strip()
-        if line.startswith('{"result"'):
-            lineups = len(json.loads(line)["result"].get("lineups", []))
+    # A target the cache already holds answers immediately, so a re-warm walks
+    # the token bucket far faster than a cold run ever does and the server
+    # starts refusing. Being told to slow down is not a failure: wait and ask
+    # again, and only give up once the server has said so for a solid minute.
+    for attempt in range(8):
+        try:
+            for raw in urllib.request.urlopen(req, timeout=300):
+                line = raw.decode().strip()
+                if line.startswith('{"result"'):
+                    lineups = len(json.loads(line)["result"].get("lineups", []))
+            break
+        except urllib.error.HTTPError as e:
+            if e.code != 429 or attempt == 7:
+                raise
+            delay = float(e.headers.get("Retry-After") or 0) or min(30, 2 ** attempt)
+            time.sleep(delay)
     return time.time() - t0, lineups
 
 
