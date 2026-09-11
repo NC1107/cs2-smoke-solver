@@ -2209,3 +2209,33 @@ Two fixes made while running it:
 - The build-mismatch warning compared version stamps, so it fired on every target of this campaign even though the map files matched exactly. It now compares the server's and the client's `.vpk` for the map: identical archives print a note, genuinely different ones still warn, and an archive it cannot find warns as before.
 
 Method note for the next campaign: pass `--limit 60`. Without it `batchvalidate` throws every lineup the solver returns, which on de_dust2 mid_door alone is 1,778 throws, and the historical per-target runs are all 60.
+
+## Reproducible solve output (2026-09-11)
+
+Two runs of the same solve returned the same lineups in a different order: the visible top 400 matched as a set on every target, but only 341-377 of the 400 sat at the same rank.
+The sweep loop measured this as its variance floor and worked around it; it is a defect, not a floor.
+
+Two causes, both "a tie is broken by whichever thread got there first":
+- The sweep's per-bucket comparator ran out of tiebreaks at flight time, which is quantized to ticks and therefore ties often. `ConcurrentDictionary.AddOrUpdate` then kept the first candidate to arrive.
+- `LineupApi.Rank` bands every key it sorts on (human error in 8u steps, distance in 32u steps), so ties are the rule, and LINQ's stable sort preserved the order the parallel sweep produced.
+
+Both now end in the same last resort: order on the throw itself (origin, then aim, then click and run offset), which no thread schedule can change.
+Measured over the nine timing targets, two runs each: 3,013 of 3,013 lineups at identical ranks, and every full lineup set identical, where before one target's set differed as well (1,353 against 1,355).
+Cold solve unchanged at 192 s for the nine targets. Tests green. Replay is untouched by construction: the change is confined to the ranking and the bucket comparator, and `ReplayCommand` calls neither.
+
+This makes a solve's output comparable run to run, which is what any future search experiment needs as its gate - the sweep loop had to settle for set overlap because rank comparison was meaningless.
+
+### Lateral run-jumps: half the sweep for 5.5% of what anyone sees
+
+Measured on the nine timing targets against the live site, cache warm, so this is exactly what users get.
+
+| | share |
+|---|---|
+| run-jump lineups among the 2,833 shown | 5.9% |
+| lateral run-jumps (run offset not zero) | 5.5% |
+| of those, ranked in the top 50 | 1 lineup, across all nine targets |
+| of those, ranked in the top 100 | 6 lineups |
+
+The sweep flies five run offsets (0, +/-45, +/-90), so four of the five exist only for lateral throws, and RunJumpThrow is 64.8% of all sweep simulations.
+Dropping the lateral offsets from the map-wide sweep alone would cut roughly half the cold solve, at the cost of 5.5% of the listed lineups, nearly all of them below rank 100; a spot or Exact solve would keep them.
+This changes results, so it is Nick's call, not the loop's.

@@ -940,7 +940,19 @@ public static partial class LineupSolver
         {
             return a.RestCrossings > b.RestCrossings;
         }
-        return a.FlightTime < b.FlightTime;
+        if (a.FlightTime != b.FlightTime)
+        {
+            return a.FlightTime < b.FlightTime;
+        }
+        // Everything above here can tie - flight time is quantized to ticks -
+        // and the bucket would then keep whichever candidate the parallel
+        // sweep happened to reach first, so two runs of the same solve
+        // returned the same lineups in a different order. Order on the throw
+        // itself, which no thread schedule can change.
+        return Ordinal(a).CompareTo(Ordinal(b)) < 0;
+
+        static (int, float, float, float, float, float, float, float) Ordinal(Lineup l) =>
+            ((int)l.Type, l.Feet.X, l.Feet.Y, l.Feet.Z, l.YawDeg, l.PitchDeg, l.Strength, l.RunYawOffsetDeg);
     }
 
     static float Normalize(float yaw)

@@ -713,11 +713,20 @@ public static class LineupApi
             .OrderBy(l => StateDependent(l) ? 1 : 0)
             .ThenBy(Reproducibility)
             .ThenBy(l => l.DirectLos ? 1 : 0);
+        // Every key above bands its input, so ties are the rule rather than
+        // the exception, and a stable sort then falls back to the order the
+        // parallel sweep happened to produce: the same solve listed the same
+        // lineups in a different order on a second run. Ordering the last tie
+        // on the throw itself makes a solve's output reproducible.
         return (originClick is { } click
                 ? bySky.ThenBy(l => (int)(Vector2.Distance(new Vector2(l.Feet.X, l.Feet.Y), click) / 32f)).ThenByDescending(pin).ThenBy(l => (int)l.Type)
                 : bySky.ThenByDescending(pin).ThenBy(l => (int)l.Type))
+            .ThenBy(Ordinal)
             .ToList();
     }
+
+    static (float, float, float, float, float, float, float) Ordinal(Lineup l) =>
+        (l.Feet.X, l.Feet.Y, l.Feet.Z, l.YawDeg, l.PitchDeg, l.Strength, l.RunYawOffsetDeg);
 
     /// <summary>
     /// A lineup whose landing depends on glass being intact: it breaks a pane
