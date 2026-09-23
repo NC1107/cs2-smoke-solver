@@ -2,19 +2,19 @@
 // import the feature modules; they call back into the orchestrators defined
 // here (setTarget, select, runQuery) via the init*/set*Callbacks hooks.
 
-import { state, filtered, esc, lowMemoryDevice, loadFavorites, setFavorite, isFavorite, DEFAULT_EYE_HEIGHT, EYE_HEIGHT_BY_TYPE, TARGET_SNAP_RADIUS, favoriteHooks, loadSavedLocal, persistSavedLocal, isExecuteSaved, setExecuteSaved} from "./state.js?v=117";
-import { loadMapList, loadMapData, runQuery as postLineupQuery, fetchTrajectory, fetchLineupOne, fetchSlack, fetchSpawns, fetchProSmokes, fetchMeshDiff, meshDiffExists, fetchLevels, fetchSmokeCoverage, runExecute, findExecuteSpots, fetchTargets, fetchMe, signOut, fetchSavedLineups, putSavedLineups, fetchVotes, castVote} from "./api.js?v=117";
-import { loadRadar, readColors, recolorRadar, draw, scheduleDraw, resize, resetView, initMap2d, screenOf } from "./map2d.js?v=117";
-import { ensure3d, resetEnsure3d, teardown3d, current3d, sync3d, syncProgress3d, syncMeshDiff3d, set3dCallbacks, applyTheme3d, verticalFovFromDesired } from "./view3d.js?v=117";
-import { initAdmin, renderAdmin, syncAdminMode } from "./admin.js?v=117";
-import { resetEnsureTexturedScene } from "./textured-scene.js?v=117";
-import { capturePreview } from "./preview.js?v=117";
+import { state, filtered, esc, lowMemoryDevice, loadFavorites, setFavorite, isFavorite, DEFAULT_EYE_HEIGHT, EYE_HEIGHT_BY_TYPE, TARGET_SNAP_RADIUS, favoriteHooks, loadSavedLocal, persistSavedLocal, isExecuteSaved, setExecuteSaved} from "./state.js?v=118";
+import { loadMapList, loadMapData, runQuery as postLineupQuery, fetchTrajectory, fetchLineupOne, fetchSlack, fetchSpawns, fetchProSmokes, fetchMeshDiff, meshDiffExists, fetchLevels, fetchStandSpot, fetchSmokeCoverage, runExecute, findExecuteSpots, fetchTargets, fetchMe, signOut, fetchSavedLineups, putSavedLineups, fetchVotes, castVote} from "./api.js?v=118";
+import { loadRadar, readColors, recolorRadar, draw, scheduleDraw, resize, resetView, initMap2d, screenOf } from "./map2d.js?v=118";
+import { ensure3d, resetEnsure3d, teardown3d, current3d, sync3d, syncProgress3d, syncMeshDiff3d, set3dCallbacks, applyTheme3d, verticalFovFromDesired } from "./view3d.js?v=118";
+import { initAdmin, renderAdmin, syncAdminMode } from "./admin.js?v=118";
+import { resetEnsureTexturedScene } from "./textured-scene.js?v=118";
+import { capturePreview } from "./preview.js?v=118";
 // Every local import across viewer/js carries the SAME ?v= token, bumped
 // together on any change. The HTML is served no-cache, so a fresh load pulls
 // main.js?v=N, which pulls every module at ?v=N - the whole graph refreshes as
 // one consistent set past Cloudflare's 4h JS cache, with no duplicate module
 // instances (which a partial versioning would cause). Bump the token everywhere.
-import { renderLineups, initPanel, revealSelected, resultStatusText } from "./panel.js?v=117";
+import { renderLineups, initPanel, revealSelected, resultStatusText } from "./panel.js?v=118";
 
 (async () => {
   // Map switching means a failed load is no longer necessarily terminal (the
@@ -305,48 +305,73 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
   loadSavedLocal();
   loadAccount();
 
+  // A tooltip pinned to the right of the sidebar: vertically level with what
+  // it explains, clamped so a long one never runs off the bottom of the
+  // screen. Pinned tips (tapped open on touch, which has no hover) survive
+  // the pointer leaving until something else is tapped.
+  const sideTip = document.getElementById("side-tip");
+  let sideTipPinned = false;
+  function showSideTip(anchorEl, text, pin = false) {
+    if (!text || (sideTipPinned && !pin)) {
+      return;
+    }
+    sideTipPinned = pin;
+    sideTip.textContent = text;
+    sideTip.hidden = false;
+    const panel = document.getElementById("controls").getBoundingClientRect();
+    const a = anchorEl.getBoundingClientRect();
+    const h = sideTip.offsetHeight;
+    sideTip.style.left = `${panel.right + 8}px`;
+    sideTip.style.top = `${Math.max(8, Math.min(a.top, window.innerHeight - h - 8))}px`;
+  }
+  function hideSideTip(force = false) {
+    if (sideTipPinned && !force) {
+      return;
+    }
+    sideTipPinned = false;
+    sideTip.hidden = true;
+  }
+
   // The live state, reachable from devtools. Nothing here is secret - it is
   // what the page is already showing - and being able to inspect it is how
   // "the chip is not rendering" gets diagnosed in a minute instead of an hour.
   window.smokeState = state;
   window.smokeRenderAdmin = () => { syncAdminMode(); renderLineups(); };
 
-  // Hover help: the sidebar's controls explain themselves in the status line
-  // the moment the pointer is over them. The browser's own tooltip is the
-  // same text, a second later and only if the pointer stays still; nobody
-  // waited for it, so the tiles read as unexplained.
+  // Hover help: one tooltip for every control in the sidebar, parked just
+  // outside its right edge. It used to be written into the toolbar status
+  // line, which put a sentence about a tile across the top of the map and
+  // fought with real status messages. A bubble inside the sidebar is not an
+  // option either - that container scrolls, so it clips its own popups; this
+  // one is fixed-position and lives outside it.
+  // The browser's own tooltip is the same text a second later, so the titles
+  // move to data-tip and leave aria-label to carry the meaning.
   {
     const controls = document.getElementById("controls");
-    let held = null;
-    controls.addEventListener("mouseover", e => {
-      const el = e.target.closest("[title]");
-      if (!el || !controls.contains(el) || !el.title) {
-        return;
+    for (const el of controls.querySelectorAll("[title]")) {
+      if (!el.getAttribute("aria-label")) {
+        el.setAttribute("aria-label", el.title);
       }
-      // Capture what the status said unless it is currently showing a hint
-      // (moving between two controls); a control that re-rendered itself
-      // out from under the pointer never sent its mouseout, and holding on
-      // to that stale text would restore it later over a real message.
-      if (held === null || !statusIsAHint()) {
-        held = statusEl.textContent;
-      }
-      statusEl.textContent = el.title;
+      el.dataset.tip = el.title;
+      el.removeAttribute("title");
+    }
+    controls.addEventListener("pointerover", e => {
+      const el = e.target instanceof Element ? e.target.closest("[data-tip]") : null;
+      if (el) { showSideTip(el, el.dataset.tip); }
     });
-    const statusIsAHint = () => [...controls.querySelectorAll("[title]")].some(c => c.title === statusEl.textContent);
-    controls.addEventListener("mouseout", e => {
-      const el = e.target.closest("[title]");
-      const to = e.relatedTarget instanceof Element ? e.relatedTarget.closest("[title]") : null;
-      if (!el || to === el || held === null) {
-        return;
-      }
-      // Whatever the status said before the hover, unless something else
-      // wrote it in the meantime (a solve finishing).
-      if (statusEl.textContent === el.title) {
-        statusEl.textContent = held;
-      }
-      held = null;
+    controls.addEventListener("pointerout", e => {
+      const el = e.target instanceof Element ? e.target.closest("[data-tip]") : null;
+      const to = e.relatedTarget instanceof Element ? e.relatedTarget.closest("[data-tip]") : null;
+      if (el && to !== el) { hideSideTip(); }
     });
+    controls.addEventListener("focusin", e => {
+      const el = e.target instanceof Element ? e.target.closest("[data-tip]") : null;
+      if (el) { showSideTip(el, el.dataset.tip); }
+    });
+    controls.addEventListener("focusout", () => hideSideTip());
+    controls.addEventListener("scroll", () => hideSideTip(), true);
   }
+
 
   // ---- votes ----
 
@@ -1250,43 +1275,33 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
   // keyboard focus, and a click pins it open (touch has no hover). One delegated
   // set of handlers serves every context (sidebar, intro, advanced card).
   const descOf = el => el.closest(".filter-row")?.querySelector(".filter-desc");
-  // Only ever one explanation open at a time - stacking them (as happened on
-  // touch, where tapping several labels pinned several popups) was unreadable.
-  // Visibility rides the .open class so it can fade+slide in via CSS rather than
-  // snapping on. A pinned one (tapped open) survives the pointer leaving.
-  const closeAllDescs = except => {
-    for (const d of document.querySelectorAll(".filter-desc.open")) {
-      if (d !== except) { d.classList.remove("open", "pinned"); }
-    }
-  };
-  const showDesc = el => { const d = descOf(el); if (d) { closeAllDescs(d); d.classList.add("open"); } };
-  const hideDesc = el => { const d = descOf(el); if (d && !d.classList.contains("pinned")) { d.classList.remove("open"); } };
+  const descText = el => descOf(el)?.textContent ?? "";
   document.addEventListener("pointerover", e => {
-    if (e.target instanceof Element && e.target.classList.contains("filter-info")) { showDesc(e.target); }
+    if (e.target instanceof Element && e.target.classList.contains("filter-info")) {
+      showSideTip(e.target, descText(e.target));
+    }
   });
   document.addEventListener("pointerout", e => {
-    if (e.target instanceof Element && e.target.classList.contains("filter-info")) { hideDesc(e.target); }
+    if (e.target instanceof Element && e.target.classList.contains("filter-info")) { hideSideTip(); }
   });
   document.addEventListener("focusin", e => {
-    if (e.target instanceof Element && e.target.classList.contains("filter-info")) { showDesc(e.target); }
+    if (e.target instanceof Element && e.target.classList.contains("filter-info")) {
+      showSideTip(e.target, descText(e.target));
+    }
   });
   document.addEventListener("focusout", e => {
-    if (e.target instanceof Element && e.target.classList.contains("filter-info")) { hideDesc(e.target); }
+    if (e.target instanceof Element && e.target.classList.contains("filter-info")) { hideSideTip(); }
   });
+  // Touch has no hover: a tap pins the explanation open, and a tap anywhere
+  // else dismisses it.
   document.addEventListener("click", e => {
     if (!(e.target instanceof Element) || !e.target.classList.contains("filter-info")) {
-      // A tap anywhere else dismisses a pinned explanation.
-      closeAllDescs(null);
+      hideSideTip(true);
       return;
     }
     e.preventDefault();
-    const desc = descOf(e.target);
-    if (desc) {
-      const pin = !desc.classList.contains("pinned");
-      closeAllDescs(desc);
-      desc.classList.toggle("pinned", pin);
-      desc.classList.toggle("open", pin);
-    }
+    hideSideTip(true);
+    showSideTip(e.target, descText(e.target), true);
   });
   filterBody.innerHTML = filterRowsHtml();
   const slotFor = (container, f) => container.querySelector(`.filter-row[data-for="${f.id}"] .filter-slot`);
@@ -2021,6 +2036,19 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
         origin = [origin[0], origin[1], levels[levels.length - 1].z];
       }
     }
+    // Geometry is not the same as somewhere to stand: a 3D click resolves
+    // onto roofs, ledges and wall tops, and a throw position there is one no
+    // solve can use. Snap onto the nearest real stand spot - the same set the
+    // solver searches, which knows about crates the nav mesh omits - and
+    // refuse the click when there is none.
+    const near = await fetchStandSpot(state.currentMap, origin[0], origin[1], origin[2]);
+    if (near.known && !near.spot) {
+      statusEl.textContent = "nobody can stand there - pick a spot on the floor, a crate or a ledge";
+      return;
+    }
+    if (near.spot) {
+      origin = near.spot;
+    }
     state.pendingOrigin = origin;
     statusEl.textContent = state.target
       ? "throw spot set - Exact searches from that exact spot, Spot searches around it"
@@ -2107,7 +2135,7 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
     sync3d();
   });
   try {
-    state.targetsOn = localStorage.getItem("smokesolver.targetsOn") !== "0";
+    state.targetsOn = localStorage.getItem("smokesolver.targetsOn") === "1";
   } catch {
     // Default stands.
   }

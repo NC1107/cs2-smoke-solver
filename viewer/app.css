@@ -345,12 +345,12 @@
   #controls .filter-head b { min-width: 0; }
   #controls .filter-slot { flex-basis: 100%; }
   #controls .filter-desc { margin-left: 0; }
-  /* Each title is its own explain-me affordance: a dotted underline that reveals
-     the description as a hover/focus popup (click pins it - touch has no hover),
-     replacing the old per-row "?" chip. */
+  /* Each title is its own explain-me affordance: an underline that reveals the
+     description on hover or focus (a tap pins it - touch has no hover). The
+     bubble renders in #side-tip, outside this scrolling container. */
   .filter-row { position: relative; }
   .filter-info {
-    text-decoration: underline dotted;
+    text-decoration: underline solid;
     text-decoration-thickness: 1px;
     text-underline-offset: 3px;
     cursor: help;
@@ -358,6 +358,7 @@
   }
   .filter-info:hover, .filter-info:focus-visible { text-decoration-color: var(--accent); color: var(--accent); outline: none; }
   .filter-desc {
+    display: none;
     position: absolute;
     top: 100%;
     left: 0;
@@ -1753,6 +1754,28 @@
      same corner by hand rather than floated inside a header row. */
   #card-view { position: relative; }
   .corner-reset { position: absolute; top: 6px; right: 6px; float: none; z-index: 1; }
+  /* The view reset acts on the map, so it sits on the map: top-right of the
+     stage, clear of the sidebar and of the results panel's header. It used to
+     sit in the target-position card, where it read as resetting the target. */
+  .map-reset {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    z-index: 4;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    padding: 0;
+    color: var(--ink);
+    background: var(--glass-heavy);
+    border: var(--border);
+    border-radius: var(--btn-radius);
+    cursor: pointer;
+  }
+  .map-reset svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; }
+  .map-reset:hover { color: var(--accent); border-color: var(--accent); }
   .card-reset svg { width: 13px; height: 13px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; }
   .card-reset:hover { color: var(--accent); }
   .advanced-reset-btn { display: flex; align-items: center; gap: 5px; }
@@ -1773,3 +1796,26 @@
   #controls::-webkit-scrollbar-track { background: transparent; }
   #controls::-webkit-scrollbar-thumb { background: var(--line); border-radius: 3px; }
   #controls::-webkit-scrollbar-thumb:hover { background: var(--muted); }
+
+  /* The one tooltip for everything in the sidebar: fixed to the viewport so
+     the sidebar's own scrolling cannot clip it, and placed just outside the
+     sidebar's right edge by main.js. */
+  #side-tip {
+    position: fixed;
+    z-index: 60;
+    max-width: 300px;
+    padding: 7px 10px;
+    background: var(--glass-heavy);
+    border: var(--border);
+    border-radius: 5px;
+    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.35);
+    color: var(--ink);
+    font-size: 11px;
+    line-height: 1.45;
+    pointer-events: none;
+  }
+  #side-tip[hidden] { display: none; }
+  @media (max-width: 760px) {
+    /* No room beside the sidebar on a phone; the tooltip would sit off-screen. */
+    #side-tip { display: none; }
+  }

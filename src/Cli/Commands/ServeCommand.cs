@@ -37,6 +37,12 @@ public static class ServeCommand
     // concurrency but not arrival rate, so without this an attacker's queue
     // grows without limit and every waiter holds a connection and a solved
     // request's worth of state. Past this, say so with a 429 instead.
+    // How far a clicked throw position may be moved onto a real stand spot:
+    // about a hull's width in plan, and a step's worth of height, so a click
+    // on a roof does not snap to the street underneath it.
+    const float StandSpotSnapRadius = 48f;
+    const float StandSpotSnapRise = 40f;
+
     const int MaxQueuedSolves = 16;
     static int queuedSolves;
 
@@ -496,6 +502,59 @@ public static class ServeCommand
             return spawns is { } s
                 ? Results.Json(new { t = s.T, ct = s.Ct })
                 : ApiError(StatusCodes.Status500InternalServerError, "spawn data unreadable - re-extract the map's entities");
+        });
+
+        // Where a player can actually stand near a clicked point. The viewer
+        // asks before it accepts a throw position: the 3D click resolves to a
+        // point on geometry, and geometry includes roofs, window ledges and
+        // the tops of walls, none of which anyone can throw from. The stand
+        // spots are the same hull-checked set the solver searches, so a spot
+        // this returns is one a solve can really use.
+        app.MapGet("/api/standspot", (string? map, float x, float y, float? z) =>
+        {
+            if (map == null || !maps.TryGetValue(map, out var entry))
+            {
+                return ApiError(StatusCodes.Status404NotFound, UnknownMapError);
+            }
+            if (!float.IsFinite(x) || !float.IsFinite(y) || (z is { } zz && !float.IsFinite(zz)))
+            {
+                return ApiError(StatusCodes.Status400BadRequest, "non-finite coordinate");
+            }
+            if (entry.StandSpots is not { Count: > 0 })
+            {
+                // No precomputed spots for this map: say so rather than claim
+                // the point is unstandable, so the viewer can let the click
+                // through instead of refusing every throw position.
+                return Results.Json(new { spot = (float[]?)null, known = false });
+            }
+            var at = new Vector2(x, y);
+            StandSpotOrigin? best = null;
+            var bestScore = float.MaxValue;
+            foreach (var s in entry.StandSpots)
+            {
+                var flat = Vector2.Distance(new Vector2(s.Feet.X, s.Feet.Y), at);
+                if (flat > StandSpotSnapRadius)
+                {
+                    continue;
+                }
+                // A click carries the floor it landed on, so height decides
+                // between the street and the roof above it; without one, the
+                // nearest spot in plan wins.
+                var rise = z is { } zv ? MathF.Abs(s.Feet.Z - zv) : 0f;
+                if (rise > StandSpotSnapRise)
+                {
+                    continue;
+                }
+                var score = flat + rise;
+                if (score < bestScore)
+                {
+                    bestScore = score;
+                    best = s;
+                }
+            }
+            return Results.Json(best is { } b
+                ? new { spot = new[] { b.Feet.X, b.Feet.Y, b.Feet.Z }, known = true }
+                : new { spot = (float[]?)null, known = true });
         });
 
         // The map's own callout names with the position of each place volume.

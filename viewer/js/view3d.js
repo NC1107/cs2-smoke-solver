@@ -3,11 +3,11 @@
 // wraps init/sync. Raycast picks route through callbacks that main.js
 // registers, so this module never imports the orchestrator.
 
-import { state, filtered, clickClass, lowMemoryDevice, SMOKE_BLOOM_RADIUS, EYE_HEIGHT_BY_TYPE, DEFAULT_EYE_HEIGHT } from "./state.js?v=117";
-import { fetchMesh } from "./api.js?v=117";
-import { createFlyCamera } from "./flycam.js?v=117";
-import { markerTooltip, resolveTap, showTip, hideTip } from "./markers.js?v=117";
-import { loadScript, ensureTexturedScene, currentTexturedScene, disposeSceneContents, disposeTexturedScene } from "./textured-scene.js?v=117";
+import { state, filtered, clickClass, lowMemoryDevice, SMOKE_BLOOM_RADIUS, EYE_HEIGHT_BY_TYPE, DEFAULT_EYE_HEIGHT } from "./state.js?v=118";
+import { fetchMesh } from "./api.js?v=118";
+import { createFlyCamera } from "./flycam.js?v=118";
+import { clickIntentHtml, markerTooltip, resolveTap, showTip, hideTip } from "./markers.js?v=118";
+import { loadScript, ensureTexturedScene, currentTexturedScene, disposeSceneContents, disposeTexturedScene } from "./textured-scene.js?v=118";
 
 const stage3d = state.stage3d;
 // Warning tint for phantom blockers (grenade-clips, physics-clips, glass) - a
@@ -561,7 +561,6 @@ async function init3d() {
       if (ghost.visible) { ghost.visible = false; dirty = true; }
       return;
     }
-    hideTip(tip);
     renderer.domElement.style.cursor = "";
     const now = performance.now();
     if (now - ghostAt < 80) {
@@ -570,14 +569,21 @@ async function init3d() {
     ghostAt = now;
     const s = settledPointAt(e.clientX, e.clientY);
     if (!s) {
+      hideTip(tip);
       if (ghost.visible) { ghost.visible = false; dirty = true; }
       return;
     }
+    // Say what a click here would do. The same left click sets a target, sets
+    // a throw position or does nothing depending on state nobody can see, so
+    // the ghost gets a caption rather than leaving people to guess.
+    showTip(tip, clickIntentHtml(s.kind), e.clientX, e.clientY);
     ghost.position.set(s.point[0], s.point[1], s.point[2] + 0.5);
     ghostMat.color.set(GHOST_COLOR[s.kind]);
     ghost.visible = true;
     dirty = true;
   });
+
+
   renderer.domElement.addEventListener("pointerleave", () => {
     hideTip(document.getElementById("tip"));
     renderer.domElement.style.cursor = "";
@@ -609,10 +615,20 @@ async function init3d() {
       if (!hit) { return; }
       // A tap during a live solve must not dispatch a second one (spawns and
       // ground both solve); selecting a pin or a dot is always fine.
+      // Ground taps take the SETTLED point, not the raw ray hit: clicking a
+      // wall face hit the wall itself, so a throw position landed inside it
+      // and a bootstrapped target sat forty units up a crate. settledPointAt
+      // steps off the wall and drops to the floor, and reports "void" where
+      // there is no floor to stand on at all.
+      const settled = hit.named || hit.markerIdx !== undefined || hit.spawnOrigin
+        ? null
+        : settledPointAt(x, y);
       const marker = hit.named ? { kind: "named", target: hit.named }
         : hit.markerIdx !== undefined ? { kind: "lineup", idx: hit.markerIdx }
         : hit.spawnOrigin ? { kind: "spawn", origin: hit.spawnOrigin, team: hit.spawnTeam }
-        : { kind: "ground", point: [hit.point.x, hit.point.y, hit.point.z] };
+        : settled && settled.kind !== "void" ? { kind: "ground", point: settled.point }
+        : null;
+      if (!marker) { return; }
       if (marker.kind === "spawn" && state.busy) { return; }
       if (marker.kind === "spawn" && state.target && state.heatOn) { return; }
       resolveTap(marker, callbacks, g => {

@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Smoke Solver</title>
 <link rel="icon" href="viewer/favicon.svg" type="image/svg+xml">
-<link rel="stylesheet" href="viewer/app.css?v=117">
+<link rel="stylesheet" href="viewer/app.css?v=118">
 </head>
 <body>
 
@@ -29,10 +29,6 @@
     <details class="card" id="card-view" open>
       <summary>actions</summary>
       <div class="card-body">
-        <!-- This card has no visible header to hang it off, so the reset sits
-             in the corner the other cards put theirs in. -->
-        <button type="button" class="card-reset corner-reset" id="reset-view" title="Recenter and re-fit the map (double-click does this too)" aria-label="Reset view">
-          <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M15.5 7.5a6 6 0 1 0 .8 4"/><path d="M15.9 3.4v4.3h-4.3"/></svg></button>
         <!-- The two positions a solve is made of, each said the same way:
              paste one from the game console, or click it on the map. The map
              takes them in order - first left click is the target, the second
@@ -70,6 +66,10 @@
           </div>
         </div>
 
+        <div class="action-group action-utility">
+          <button id="clear" title="Clear the target, the throw position and the results, and start again" class="btn" hidden>Clear target &amp; results</button>
+        </div>
+
         <!-- Three rows, three jobs: which view you are in (one at a time),
              what is painted on top of it (any combination), and what the
              aiming overlay shows. Square tiles rather than word buttons: at
@@ -85,7 +85,7 @@
 
           <span class="action-label key-subhead">overlays</span>
           <div class="tile-row" id="overlay-seg" role="group" aria-label="Overlays">
-            <button class="tile active" data-overlay="targets" aria-pressed="true" title="The spots pros smoke on this map, with names. Click one to make it your target; clicks near one snap to it. Switch off for a clean map, or to place a target right beside one"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 17.5s-5.5-5.2-5.5-9a5.5 5.5 0 0 1 11 0c0 3.8-5.5 9-5.5 9z"/><circle cx="10" cy="8.5" r="2"/></svg><span class="tile-label">Targets</span></button>
+            <button class="tile" data-overlay="targets" aria-pressed="false" title="The spots pros smoke on this map, with names. Click one to make it your target; clicks near one snap to it. Switch off for a clean map, or to place a target right beside one"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 17.5s-5.5-5.2-5.5-9a5.5 5.5 0 0 1 11 0c0 3.8-5.5 9-5.5 9z"/><circle cx="10" cy="8.5" r="2"/></svg><span class="tile-label">Targets</span></button>
             <button class="tile" data-overlay="spawns" hidden title="T/CT spawn positions - click one to throw from it"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M6 3v14"/><path d="M6 3h9l-2.4 3L15 9H6z"/></svg><span class="tile-label">Spawns</span></button>
             <button class="tile" data-overlay="collision" title="Collision: paint the invisible walls (grenade clips, glass) that stop a smoke in magenta, so you can see why a throw bounces off nothing. 3D only"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 2.6l6.4 3.4v7.4L10 17.4 3.6 13.4V6z"/><path d="M6.6 8v4.2L10 14"/></svg><span class="tile-label">Collision</span></button>
             <button class="tile" data-overlay="topdown" title="Top-down: look straight down at the whole map from above. 3D only"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 2.5v7M7 6.5l3 3 3-3"/><rect x="4" y="12" width="12" height="5" rx="1"/></svg><span class="tile-label">Top-down</span></button>
@@ -101,9 +101,6 @@
           </div>
         </div>
 
-        <div class="action-group action-utility">
-          <button id="clear" title="Clear the target and results" class="btn" hidden>Clear</button>
-        </div>
       </div>
     </details>
     <details class="card" id="card-filters">
@@ -285,6 +282,8 @@ give weapon_smokegrenade<button data-copy="cmd-setup" class="btn">copy</button><
   </div>
   <canvas id="map" aria-label="Top-down map; click to set a smoke target and throw origins"></canvas>
   <div id="stage3d" style="position:absolute; inset:0; display:none"></div>
+  <button type="button" class="map-reset" id="reset-view" title="Recenter and re-fit the map (double-click does this too)" aria-label="Reset view">
+    <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M15.5 7.5a6 6 0 1 0 .8 4"/><path d="M15.9 3.4v4.3h-4.3"/></svg></button>
   <div id="lineup-ruler" class="lineup-ruler" hidden aria-hidden="true"></div>
   <div id="tip"></div>
   <!-- Only appears when a click lands on stacked floors, which is the one case
@@ -451,6 +450,7 @@ give weapon_smokegrenade<button data-copy="cmd-setup" class="btn">copy</button><
      4h, so bumping ?v= here is what busts that cache. Bump on any change to a
      directly-referenced asset. (The permanent cure is CF Browser Cache TTL ->
      "Respect Existing Headers", after which this is belt-and-suspenders.) -->
-<script type="module" src="viewer/js/main.js?v=117"></script>
+<script type="module" src="viewer/js/main.js?v=118"></script>
+<div id="side-tip" role="tooltip" hidden></div>
 </body>
 </html>

@@ -116,7 +116,7 @@ export const state = {
   // Whether they are drawn (and clickable). On by default: they are the
   // front door to the map. Off for a clean radar, or when a click near one
   // must NOT snap to it.
-  targetsOn: true,
+  targetsOn: false,
   // The named target the current click snapped to, if any.
   targetName: null,
   // Places that can throw every smoke in the list, from /api/execute/spots.

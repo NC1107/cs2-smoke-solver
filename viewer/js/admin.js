@@ -4,8 +4,8 @@
 //
 // A separate module because the rest of the viewer never edits map data, and
 // the one card that does should not be mixed into the code that reads it.
-import { state } from "./state.js?v=117";
-import { putTargets } from "./api.js?v=117";
+import { state } from "./state.js?v=118";
+import { putTargets } from "./api.js?v=118";
 
 let callbacks = {
   onSetTarget: () => {},

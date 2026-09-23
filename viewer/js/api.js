@@ -1,6 +1,6 @@
 // Fetch wrappers. No DOM access here; callers own status text and overlays.
 
-import { state } from "./state.js?v=117";
+import { state } from "./state.js?v=118";
 
 // Cache-bust a data URL with the map build: re-processed radars/GLBs change
 // content without changing name, and the query string gets a fresh copy past
@@ -86,6 +86,21 @@ export async function fetchLevels(map, x, y) {
     return res.ok ? (await res.json()).levels ?? [] : [];
   } catch {
     return [];
+  }
+}
+
+// Where a player can really stand near a clicked point, or null when nobody
+// can. `known` is false for a map with no precomputed spots, and then the
+// caller has to take the click at face value.
+export async function fetchStandSpot(map, x, y, z) {
+  const q = `map=${encodeURIComponent(map)}&x=${x}&y=${y}` + (Number.isFinite(z) ? `&z=${z}` : "");
+  try {
+    const res = await fetch(`/api/standspot?${q}`);
+    if (!res.ok) { return { spot: null, known: false }; }
+    return await res.json();
+  } catch {
+    // Offline or blocked: never refuse a click over a failed lookup.
+    return { spot: null, known: false };
   }
 }
 
