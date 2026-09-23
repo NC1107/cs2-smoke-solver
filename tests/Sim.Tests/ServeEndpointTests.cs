@@ -329,6 +329,30 @@ public class ServeEndpointTests(ServeFixture server) : IClassFixture<ServeFixtur
         var doc = JsonDocument.Parse(text.TrimStart());
         Assert.Equal(2, doc.RootElement.GetProperty("smokes").GetArrayLength());
     }
+
+    [Fact]
+    public async Task ARepeatedExecuteIsAnsweredFromTheCache()
+    {
+        // Every smoke of an execute used to be re-solved on every request and
+        // never written back.
+        const string body = "{\"map\":\"arena\",\"origin\":[320,220],\"targets\":[[520,310,0],[610,340,0]]}";
+        var cacheDir = Path.Combine(server.Root, "data", "cache");
+
+        var first = await server.Client.SendAsync(Request(HttpMethod.Post, "/api/execute", null, body));
+        var firstText = (await first.Content.ReadAsStringAsync()).TrimStart();
+        var written = Directory.Exists(cacheDir) ? Directory.GetFiles(cacheDir, "*.json").ToHashSet() : [];
+
+        var second = await server.Client.SendAsync(Request(HttpMethod.Post, "/api/execute", null, body));
+        var secondRaw = await second.Content.ReadAsStringAsync();
+
+        Assert.Equal(HttpStatusCode.OK, second.StatusCode);
+        Assert.Equal(firstText, secondRaw.TrimStart());
+        // Answered without a solve: the keepalive that pads a solving request
+        // is absent, and nothing new is written.
+        Assert.StartsWith("{", secondRaw);
+        Assert.True(written.Count >= 2, "each smoke of the execute should be cached");
+        Assert.Equal(written, Directory.GetFiles(cacheDir, "*.json").ToHashSet());
+    }
 }
 
 // One hull-checked stand spot on the arena floor at (200, 200).

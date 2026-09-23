@@ -126,4 +126,59 @@ public class VoteStoreTests : IDisposable
             VoteStore.TargetKey(new Vector3(-1269, 2257, 6), [], 64f),
             VoteStore.TargetKey(new Vector3(-1263, 2251, 6), [], 64f));
     }
+
+    static string Id(int n) => n.ToString("x16");
+
+    [Fact]
+    public async Task OneAccountCannotVoteOnUnlimitedLineupsAtASpot()
+    {
+        // Lineup ids are not checked against a solve, so without a cap one
+        // account could write rows without end under a popular target.
+        for (var i = 0; i < VoteStore.MaxVotesPerSpot; i++)
+        {
+            Assert.True(await store.CastAsync(Map, Spot, Id(i), Alice, 1, default));
+        }
+
+        Assert.False(await store.CastAsync(Map, Spot, Id(VoteStore.MaxVotesPerSpot), Alice, 1, default));
+        // Changing a vote already cast is not a new row, so it is still allowed.
+        Assert.True(await store.CastAsync(Map, Spot, Id(0), Alice, -1, default));
+        // Withdrawing one frees a place.
+        Assert.True(await store.CastAsync(Map, Spot, Id(1), Alice, 0, default));
+        Assert.True(await store.CastAsync(Map, Spot, Id(VoteStore.MaxVotesPerSpot), Alice, 1, default));
+        // Another account and another spot are unaffected.
+        Assert.True(await store.CastAsync(Map, Spot, Id(VoteStore.MaxVotesPerSpot + 1), Bob, 1, default));
+        Assert.True(await store.CastAsync(Map, "target:other", Id(VoteStore.MaxVotesPerSpot + 1), Alice, 1, default));
+    }
+
+    [Fact]
+    public async Task ASpotsReadIsBoundedAndMostVotedFirst()
+    {
+        // Six accounts at their cap put 600 distinct lineups under one spot.
+        for (var account = 0; account < 6; account++)
+        {
+            var voter = (76561198000000100L + account).ToString();
+            for (var i = 0; i < VoteStore.MaxVotesPerSpot; i++)
+            {
+                await store.CastAsync(Map, Spot, Id(account * 1000 + i), voter, 1, default);
+            }
+        }
+        // One lineup everybody agrees on.
+        await store.CastAsync(Map, Spot, Lineup, Alice, 1, default);
+        await store.CastAsync(Map, Spot, Lineup, Bob, 1, default);
+
+        var (tallies, _) = await store.AtSpotAsync(Map, Spot, null, default);
+
+        Assert.Equal(VoteStore.MaxTalliesPerSpot, tallies.Count);
+        Assert.Equal(2, tallies[Lineup].Up);
+    }
+
+    [Fact]
+    public async Task MyVotesComeBackEvenPastTheReadCap()
+    {
+        await store.CastAsync(Map, Spot, Lineup, Alice, -1, default);
+
+        var (_, mine) = await store.AtSpotAsync(Map, Spot, Alice, default);
+
+        Assert.Equal(-1, mine[Lineup]);
+    }
 }

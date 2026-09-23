@@ -997,7 +997,11 @@ public static class ServeCommand
                 }
                 var target = new Vector3(tEl[0].GetSingle(), tEl[1].GetSingle(), tEl.GetArrayLength() > 2 ? tEl[2].GetSingle() : 0f);
                 var key = VoteStore.TargetKey(target, NamedTargets(root, entry.Mesh.MapName), VoteSnapRadius);
-                await votes.CastAsync(entry.Mesh.MapName, key, lineupId, steamId, vote, context.RequestAborted);
+                if (!await votes.CastAsync(entry.Mesh.MapName, key, lineupId, steamId, vote, context.RequestAborted))
+                {
+                    return ApiError(StatusCodes.Status429TooManyRequests,
+                        $"you have voted on {VoteStore.MaxVotesPerSpot} lineups at this spot - withdraw one to vote on another");
+                }
                 var (tallies, mine) = await votes.AtSpotAsync(entry.Mesh.MapName, key, steamId, context.RequestAborted);
                 return Results.Json(new
                 {
@@ -1582,21 +1586,21 @@ public static class ServeCommand
             }
             using (body)
             {
-                var root = body.RootElement;
-                if (root.ValueKind != JsonValueKind.Object ||
-                    !root.TryGetProperty("map", out var mapEl) || mapEl.ValueKind != JsonValueKind.String ||
+                var request = body.RootElement;
+                if (request.ValueKind != JsonValueKind.Object ||
+                    !request.TryGetProperty("map", out var mapEl) || mapEl.ValueKind != JsonValueKind.String ||
                     !maps.TryGetValue(mapEl.GetString() ?? "", out var entry) || entry.NavAreas == null)
                 {
                     await WriteApiError(context, StatusCodes.Status404NotFound, UnknownMapError);
                     return;
                 }
-                if (!root.TryGetProperty("origin", out var originEl) || originEl.ValueKind != JsonValueKind.Array ||
+                if (!request.TryGetProperty("origin", out var originEl) || originEl.ValueKind != JsonValueKind.Array ||
                     originEl.GetArrayLength() < 2)
                 {
                     await WriteApiError(context, StatusCodes.Status400BadRequest, "an execute needs an origin - the one spot every smoke is thrown from");
                     return;
                 }
-                if (!root.TryGetProperty("targets", out var targetsEl) || targetsEl.ValueKind != JsonValueKind.Array ||
+                if (!request.TryGetProperty("targets", out var targetsEl) || targetsEl.ValueKind != JsonValueKind.Array ||
                     targetsEl.GetArrayLength() == 0)
                 {
                     await WriteApiError(context, StatusCodes.Status400BadRequest, "targets must be a non-empty array of [x,y] or [x,y,z]");
@@ -1617,12 +1621,12 @@ public static class ServeCommand
                 var shared = new List<string>();
                 foreach (var key in new[] { "originReach", "tolerance", "minStability", "fineScan", "types", "strengths", "broken" })
                 {
-                    if (root.TryGetProperty(key, out var el))
+                    if (request.TryGetProperty(key, out var el))
                     {
                         shared.Add($"\"{key}\":{JsonSerializer.Serialize(el)}");
                     }
                 }
-                if (!root.TryGetProperty("originReach", out _))
+                if (!request.TryGetProperty("originReach", out _))
                 {
                     shared.Add($"\"originReach\":{DefaultExecuteReach.ToString(CultureInfo.InvariantCulture)}");
                 }
@@ -1646,6 +1650,27 @@ public static class ServeCommand
                     queries.Add(q);
                 }
 
+                // Each smoke of an execute is an ordinary origin-scoped query, so
+                // it shares the disk cache with /api/lineup and /api/execute/spots:
+                // an execute re-opened, re-solved after a tweak, or built from
+                // targets already searched from this spot answers from disk. It
+                // used to re-solve every smoke every time and never wrote back.
+                var smokes = new string?[queries.Count];
+                var cachePaths = new string[queries.Count];
+                for (var i = 0; i < queries.Count; i++)
+                {
+                    using var doc = JsonDocument.Parse(queries[i]);
+                    cachePaths[i] = SolveCachePath(root, SolveCacheKey(entry, entry.Constants, doc.RootElement, attrs));
+                    smokes[i] = await ReadSolveCacheAsync(cachePaths[i], context.RequestAborted);
+                }
+                if (smokes.All(sm => sm is not null))
+                {
+                    await context.Response.WriteAsync(
+                        $"{{\"origin\":{originJson},\"smokes\":[{string.Join(",", smokes.Select(sm => TrimToBest(sm!, MaxExecuteLineupsPerSmoke)))}]}}",
+                        context.RequestAborted);
+                    return;
+                }
+
                 using var clientLease = TryLeaseClientSolve(context);
                 if (clientLease is null)
                 {
@@ -1662,9 +1687,12 @@ public static class ServeCommand
                     await WriteApiError(context, StatusCodes.Status429TooManyRequests, "too many solves queued - try again in a moment");
                     return;
                 }
-                var smokes = new List<string>();
                 async Task SolveAll()
                 {
+                    // A person is waiting on this, so the cache warmer yields to
+                    // it exactly as it does to a search.
+                    Interlocked.Increment(ref interactiveQueued);
+                    lastInteractiveAt = DateTimeOffset.UtcNow;
                     try
                     {
                         await SolveGate.WaitAsync(context.RequestAborted);
@@ -1672,22 +1700,37 @@ public static class ServeCommand
                     finally
                     {
                         Interlocked.Decrement(ref queuedSolves);
+                        Interlocked.Decrement(ref interactiveQueued);
                     }
+                    Interlocked.Increment(ref interactiveRunning);
                     try
                     {
-                        foreach (var q in queries)
+                        for (var i = 0; i < queries.Count; i++)
                         {
+                            if (smokes[i] is not null)
+                            {
+                                continue;
+                            }
                             context.RequestAborted.ThrowIfCancellationRequested();
-                            using var doc = JsonDocument.Parse(q);
+                            using var doc = JsonDocument.Parse(queries[i]);
+                            // The same arguments /api/lineup solves with: an answer
+                            // shared through the cache has to be the answer either
+                            // route would have computed.
                             var solved = await Task.Run(() => RunTargetQuery(
                                 entry.Mesh, entry.AttributeFilter, entry.NavAreas!, doc.RootElement, entry.Constants,
-                                standSpots: entry.StandSpots, ct: context.RequestAborted), context.RequestAborted);
-                            smokes.Add(TrimToBest(solved, MaxExecuteLineupsPerSmoke));
+                                standSpots: entry.StandSpots,
+                                spawnFronts: SpawnFronts(root, entry.Mesh.MapName),
+                                spawnPoints: SpawnPoints(root, entry.Mesh.MapName),
+                                ct: context.RequestAborted), context.RequestAborted);
+                            await WriteSolveCacheAsync(root, cachePaths[i], solved);
+                            smokes[i] = solved;
                         }
                     }
                     finally
                     {
                         SolveGate.Release();
+                        Interlocked.Decrement(ref interactiveRunning);
+                        lastInteractiveAt = DateTimeOffset.UtcNow;
                     }
                 }
                 try
@@ -1707,7 +1750,7 @@ public static class ServeCommand
                     return;
                 }
                 await context.Response.WriteAsync(
-                    $"{{\"origin\":{originJson},\"smokes\":[{string.Join(",", smokes)}]}}",
+                    $"{{\"origin\":{originJson},\"smokes\":[{string.Join(",", smokes.Select(sm => TrimToBest(sm!, MaxExecuteLineupsPerSmoke)))}]}}",
                     context.RequestAborted);
             }
         }).RequireRateLimiting(SolvePolicy);

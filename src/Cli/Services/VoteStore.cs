@@ -78,12 +78,40 @@ public sealed class VoteStore : IDisposable
             : string.Create(CultureInfo.InvariantCulture, $"cell:{MathF.Round(target.X / 16f):F0},{MathF.Round(target.Y / 16f):F0}");
     }
 
-    /// <summary>Casts, changes, or (vote 0) withdraws one account's vote.</summary>
-    public async Task CastAsync(string map, string targetKey, string lineupId, string steamId, int vote, CancellationToken ct)
+    // How many different lineups one account may vote on at one spot. Lineup
+    // ids are not checked against anything a solve returned (any 16 hex digits
+    // pass), so one account could otherwise write rows without end under a
+    // popular target, growing the file and every visitor's download of that
+    // spot's tallies. A person voting honestly on what a search showed them
+    // stays far below this.
+    public const int MaxVotesPerSpot = 100;
+
+    // How many lineups' tallies a spot's read returns, most-voted first. The
+    // viewer lists at most 400 and colours only the ones it shows.
+    public const int MaxTalliesPerSpot = 500;
+
+    /// <summary>
+    /// Casts, changes, or (vote 0) withdraws one account's vote. False when it
+    /// would be the account's vote on more than MaxVotesPerSpot lineups here.
+    /// </summary>
+    public async Task<bool> CastAsync(string map, string targetKey, string lineupId, string steamId, int vote, CancellationToken ct)
     {
         await _gate.WaitAsync(ct);
         try
         {
+            if (vote != 0)
+            {
+                using var count = _db.CreateCommand();
+                count.CommandText = "SELECT COUNT(*) FROM votes WHERE map=$m AND target=$t AND steam_id=$s AND lineup_id<>$l";
+                count.Parameters.AddWithValue("$m", map);
+                count.Parameters.AddWithValue("$t", targetKey);
+                count.Parameters.AddWithValue("$s", steamId);
+                count.Parameters.AddWithValue("$l", lineupId);
+                if (Convert.ToInt64(await count.ExecuteScalarAsync(ct)) >= MaxVotesPerSpot)
+                {
+                    return false;
+                }
+            }
             using var cmd = _db.CreateCommand();
             if (vote == 0)
             {
@@ -104,6 +132,7 @@ public sealed class VoteStore : IDisposable
             cmd.Parameters.AddWithValue("$l", lineupId);
             cmd.Parameters.AddWithValue("$s", steamId);
             await cmd.ExecuteNonQueryAsync(ct);
+            return true;
         }
         finally
         {
@@ -125,21 +154,37 @@ public sealed class VoteStore : IDisposable
         {
             var tallies = new Dictionary<string, Tally>(StringComparer.Ordinal);
             var mine = new Dictionary<string, int>(StringComparer.Ordinal);
-            using var cmd = _db.CreateCommand();
-            cmd.CommandText = "SELECT lineup_id, steam_id, vote FROM votes WHERE map=$m AND target=$t";
-            cmd.Parameters.AddWithValue("$m", map);
-            cmd.Parameters.AddWithValue("$t", targetKey);
-            using var reader = await cmd.ExecuteReaderAsync(ct);
-            while (await reader.ReadAsync(ct))
+            // Counted in SQL and capped: the read used to fetch every row at the
+            // spot and ship every lineup it had ever seen a vote on.
+            using (var cmd = _db.CreateCommand())
             {
-                var lineup = reader.GetString(0);
-                var voter = reader.GetString(1);
-                var vote = reader.GetInt32(2);
-                var t = tallies.GetValueOrDefault(lineup, new Tally(0, 0));
-                tallies[lineup] = vote > 0 ? t with { Up = t.Up + 1 } : t with { Down = t.Down + 1 };
-                if (steamId is not null && voter == steamId)
+                cmd.CommandText = """
+                    SELECT lineup_id, SUM(vote > 0), SUM(vote < 0) FROM votes
+                    WHERE map=$m AND target=$t
+                    GROUP BY lineup_id
+                    ORDER BY COUNT(*) DESC, lineup_id
+                    LIMIT $n
+                    """;
+                cmd.Parameters.AddWithValue("$m", map);
+                cmd.Parameters.AddWithValue("$t", targetKey);
+                cmd.Parameters.AddWithValue("$n", MaxTalliesPerSpot);
+                using var reader = await cmd.ExecuteReaderAsync(ct);
+                while (await reader.ReadAsync(ct))
                 {
-                    mine[lineup] = vote;
+                    tallies[reader.GetString(0)] = new Tally(reader.GetInt32(1), reader.GetInt32(2));
+                }
+            }
+            if (steamId is not null)
+            {
+                using var cmd = _db.CreateCommand();
+                cmd.CommandText = "SELECT lineup_id, vote FROM votes WHERE map=$m AND target=$t AND steam_id=$s";
+                cmd.Parameters.AddWithValue("$m", map);
+                cmd.Parameters.AddWithValue("$t", targetKey);
+                cmd.Parameters.AddWithValue("$s", steamId);
+                using var reader = await cmd.ExecuteReaderAsync(ct);
+                while (await reader.ReadAsync(ct))
+                {
+                    mine[reader.GetString(0)] = reader.GetInt32(1);
                 }
             }
             return (tallies, mine);
