@@ -64,7 +64,14 @@ services:
       - "traefik.http.routers.smokesolver.rule=Host(`${SMOKESOLVER_DOMAIN:?set SMOKESOLVER_DOMAIN in .env}`)"
       - "traefik.http.routers.smokesolver.entrypoints=websecure"
       - "traefik.http.routers.smokesolver.tls.certresolver=cloudflare"
-      - "traefik.http.routers.smokesolver.middlewares=secureHeaders@file"
+      # Only Cloudflare may connect (plus the LAN). The app rate-limits by the
+      # CF-Connecting-IP header, and anything reaching the origin address
+      # directly could set that header itself and get a fresh bucket per
+      # request - every limit bypassed. With no ipStrategy the allowlist checks
+      # the TCP peer, which for proxied traffic is a Cloudflare edge. Ranges
+      # from https://www.cloudflare.com/ips-v4 and ips-v6 (2026-09-23).
+      - "traefik.http.middlewares.smokesolver-cloudflare.ipallowlist.sourcerange=173.245.48.0/20,103.21.244.0/22,103.22.200.0/22,103.31.4.0/22,141.101.64.0/18,108.162.192.0/18,190.93.240.0/20,188.114.96.0/20,197.234.240.0/22,198.41.128.0/17,162.158.0.0/15,104.16.0.0/13,104.24.0.0/14,172.64.0.0/13,131.0.72.0/22,2400:cb00::/32,2606:4700::/32,2803:f800::/32,2405:b500::/32,2405:8100::/32,2a06:98c0::/29,2c0f:f248::/32,10.0.0.0/24"
+      - "traefik.http.routers.smokesolver.middlewares=smokesolver-cloudflare,secureHeaders@file"
       - "traefik.http.services.smokesolver.loadbalancer.server.port=8137"
       - "traefik.docker.network=traefik_proxy"
       - "com.docker.compose.project=cs2-smoke-solver"
