@@ -4,7 +4,7 @@
 // selecting a lineup route through the callbacks main.js registers.
 
 import { state, filtered, clickShort, clickClass, esc, skyAngle, proMatched, scoreBreakdown, referenceBand, referenceFallback, humanErrorParts,
-  movementWords, clickWords, aimWords, difficultyWords, TARGET_SNAP_RADIUS, humanError } from "./state.js?v=120";
+  movementWords, clickWords, aimWords, difficultyWords, TARGET_SNAP_RADIUS, humanError } from "./state.js?v=121";
 
 const statusEl = state.statusEl;
 const PAGE_SIZE = 50;
@@ -588,6 +588,7 @@ function scoreRowsHtml(l) {
     [`feet`, p.feet], [`aim over ${p.distance.toFixed(0)}u`, p.aim],
     [l.type === "RunJumpThrow" ? "run-jump" : l.type.includes("Jump") ? "jump" : "", p.movement],
     ["landing scatter", p.scatter], ["aim tolerance", p.stability],
+    [`${l.Bounces} bounces`, p.bounces],
   ].filter(([label, v]) => label && v >= 0.5).map(([label, v]) => `${label} ${v.toFixed(0)}u`).join(" + ");
   return `<div class="score-rows"><div class="score-row score-repro"><span>a person lands this within about <b>${err.toFixed(0)}u</b> - ${why}${aim ? `, aim on ${aim}` : ""}</span></div>` +
     `<div class="score-row score-repro"><span class="muted">${esc(terms)}</span></div>` +

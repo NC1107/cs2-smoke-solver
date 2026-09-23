@@ -197,3 +197,32 @@ public class ThrowTypeParsingTests
         Assert.Equal(expected, type);
     }
 }
+
+public class BounceErrorTests
+{
+    // Calibrated 2026-09-23 on 18,353 rig throws: the simulator agrees with
+    // the game to within a unit or so up to seven bounces, and not from eight.
+    [Fact]
+    public void FlatToSevenBounces()
+    {
+        Assert.Equal(0f, HumanError.BounceError(4));
+        Assert.True(HumanError.BounceError(7) <= 1f);
+    }
+
+    [Fact]
+    public void ACliffFromEightBounces()
+    {
+        Assert.True(HumanError.BounceError(8) >= 8f, "eight bounces should cost at least one 8u ranking band");
+        Assert.True(HumanError.BounceError(9) > HumanError.BounceError(8));
+        Assert.Equal(HumanError.BounceError(9), HumanError.BounceError(20));
+    }
+
+    [Fact]
+    public void ALineupsBouncesReachItsEstimate()
+    {
+        var calm = new Lineup(new Vector3(0, 0, 0), 0f, -30f, ThrowType.Stand, new Vector3(400, 0, 0), 4, 2f, 1, Stability: 1f);
+        var chaotic = calm with { Bounces = 9 };
+
+        Assert.Equal(HumanError.BounceError(9), HumanError.Estimate(chaotic, 2, 0) - HumanError.Estimate(calm, 2, 0), 3);
+    }
+}

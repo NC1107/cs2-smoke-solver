@@ -19,6 +19,7 @@ namespace SmokeSolver.Cli;
 ///   replay --geo data/de_dust2.s2geo [--reports data/validation] [--worst 20] [--moved 8]
 ///          [--nonsolid passbullets] [--nonsolid-groups 2] [--no-edge-tip]
 ///          [--rollout]   (where the real rest lies relative to the sim stop, by tangential speed)
+///          [--csv out.csv]   (one line per throw: report, row, simulated bounces, error; appends)
 ///
 /// Experiments already run through it and falsified (2026-09-04, do not
 /// retry without new evidence): a sphere hull instead of the box, preferring
@@ -117,6 +118,7 @@ public static class ReplayCommand
         var errors = new float[rows.Count];
         var rests = new Vector3[rows.Count];
         var lastBounce = new BounceRecord?[rows.Count];
+        var simBounces = new int[rows.Count];
         var glassCorrected = new bool[rows.Count];
         var glassThrows = 0;
         var rollout = options.ContainsKey("rollout");
@@ -125,6 +127,7 @@ public static class ReplayCommand
             var bounceTrace = new List<BounceRecord>();
             var result = GrenadeTrajectory.SimulateExactRaw(collider, rows[i].Pos, rows[i].Vel, constants, bounceTrace: bounceTrace);
             rests[i] = result.RestPoint;
+            simBounces[i] = result.Bounces;
             errors[i] = Vector3.Distance(result.RestPoint, rows[i].Real);
             if (result.GlassBreaks > 0 && glassGone is not null && rows[i].GlassState != "intact")
             {
@@ -143,6 +146,25 @@ public static class ReplayCommand
                 lastBounce[i] = bounceTrace[^1];
             }
         });
+        // One line per throw, for analysis outside this command: which report
+        // and row it came from (to join back to the throw's kind), how many
+        // times the current simulator has it bounce, and how far the real
+        // grenade landed from where that simulator says. Appends, so one file
+        // can collect every map.
+        if (options.TryGetValue("csv", out var csvPath))
+        {
+            var fresh = !File.Exists(csvPath);
+            using var csv = new StreamWriter(csvPath, append: true);
+            if (fresh)
+            {
+                csv.WriteLine("map,report,index,sim_bounces,err");
+            }
+            for (var i = 0; i < rows.Count; i++)
+            {
+                csv.WriteLine(string.Create(CultureInfo.InvariantCulture,
+                    $"{mesh.MapName},{rows[i].Report},{rows[i].Index},{simBounces[i]},{errors[i]:F3}"));
+            }
+        }
         if (rollout)
         {
             // EXPERIMENT: where does the real rest lie relative to the sim's

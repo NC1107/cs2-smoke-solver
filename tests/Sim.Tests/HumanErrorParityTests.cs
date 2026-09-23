@@ -27,11 +27,14 @@ public class HumanErrorParityTests
                         {
                             foreach (var stability in new[] { 1f, 0.4f })
                             {
-                                cases.Add(new
+                                foreach (var bounces in new[] { 4, 6, 7, 8, 11 })
                                 {
-                                    pin, band, distance, type = type.ToString(), scatter, stability,
-                                    expected = HumanError.Estimate(pin, band, distance, type, scatter, stability),
-                                });
+                                    cases.Add(new
+                                    {
+                                        pin, band, distance, type = type.ToString(), scatter, stability, bounces,
+                                        expected = HumanError.Estimate(pin, band, distance, type, scatter, stability, bounces),
+                                    });
+                                }
                             }
                         }
                     }

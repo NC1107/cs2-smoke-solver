@@ -58,14 +58,36 @@ public static class HumanError
     // a beam edge, and the model had no term that could see it.
     public const float FragilityError = 24f;
 
+    // What the simulator's own disagreement with the game costs, by how many
+    // times the grenade bounces. Measured 2026-09-23 on all 18,353 rig throws
+    // re-graded by the current simulator (replay --csv): the expected miss,
+    // capped at a smoke's 144u radius because past that the smoke has failed
+    // whatever the distance, less the 4-bounce baseline most throws sit at.
+    //   bounces      4     5     6     7     8     9+
+    //   miss       0.42  0.86  0.93  1.58  10.5  24.7   (n 8937 ... 40)
+    // Flat to seven, then a cliff: from eight on, a tiny early difference
+    // compounds into a smoke somewhere else. An earlier audit's "6+ bounces
+    // miss over 8u 11% of the time" predates the 2026-09-04 physics fix and
+    // no longer holds (1.5% at six). This is the model's error only; how much
+    // the thrower's own feet move the landing is RestScatter, per lineup.
+    public static float BounceError(int bounces) => bounces switch
+    {
+        <= 4 => 0f,
+        5 or 6 => 0.5f,
+        7 => 1f,
+        8 => 10f,
+        _ => 24f,
+    };
+
     /// <summary>Expected landing miss, in units, for a person throwing this lineup.</summary>
-    public static float Estimate(int pin, int band, float horizontalDistance, ThrowType type, float restScatter, float stability = 1f) =>
+    public static float Estimate(int pin, int band, float horizontalDistance, ThrowType type, float restScatter, float stability = 1f, int bounces = 4) =>
         PositionError(pin)
         + horizontalDistance * MathF.Tan(AimErrorDeg(band) * MathF.PI / 180f)
         + MovementError(type)
         + (restScatter > ChaosScatter ? restScatter : 0f)
-        + (1f - Math.Clamp(stability, 0f, 1f)) * FragilityError;
+        + (1f - Math.Clamp(stability, 0f, 1f)) * FragilityError
+        + BounceError(bounces);
 
     public static float Estimate(Lineup l, int pin, int band) =>
-        Estimate(pin, band, Vector2.Distance(new Vector2(l.Feet.X, l.Feet.Y), new Vector2(l.RestPoint.X, l.RestPoint.Y)), l.Type, l.RestScatter, l.Stability);
+        Estimate(pin, band, Vector2.Distance(new Vector2(l.Feet.X, l.Feet.Y), new Vector2(l.RestPoint.X, l.RestPoint.Y)), l.Type, l.RestScatter, l.Stability, l.Bounces);
 }

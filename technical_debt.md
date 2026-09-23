@@ -2299,3 +2299,23 @@ Each fix below now has a test that was confirmed to fail with the fix reverted, 
 - "Pinpoint" (an aim reference) read as a synonym of the difficulty word "Precise"; it is now "Clear aim". Long movement names truncate instead of pushing the difficulty tag off the row.
 - "preparing voxel grid" stayed on screen through the whole sweep; the grid takes 0.1 s. The status now says what is running.
 - The execute card is now a planner opened from under Clear, beside the sidebar and not modal, since adding a smoke means clicking the map.
+
+### Bounce-count term calibrated (2026-09-23, same day)
+
+The open item above rested on the 2026-09-03 audit's "5 bounces 8%, 6+ 11% over 8u", which predates the 2026-09-04 physics fix.
+Re-graded against the current simulator (`replay --csv`, all 18,353 rig throws), the expected miss capped at a smoke's 144u radius is:
+
+| bounces | 4 | 5 | 6 | 7 | 8 | 9+ |
+|---|---|---|---|---|---|---|
+| throws | 8,937 | 6,044 | 1,992 | 762 | 160 | 40 |
+| expected miss | 0.42u | 0.86u | 0.93u | 1.58u | 10.5u | 24.7u |
+| over 8u | 0.4% | 1.0% | 1.5% | 2.0% | 14.4% | 22.5% |
+
+Flat to seven bounces, a cliff from eight, and the same shape within every throw type.
+HumanError.BounceError adds the excess over the 4-bounce baseline: 0 to four, 0.5u at five and six, 1u at seven, 10u at eight, 24u from nine.
+It is the model's error only; how the thrower's own feet move the landing is RestScatter, already per lineup.
+
+Effect: on de_dust2 mid doors, de_mirage CT spawn and de_nuke squeaky no lineup with eight or more bounces reached the list before or after, so nothing moves there.
+On the de_nuke target at (449, -1436, -608), where 14 of the 09-09 campaign's top 60 had eight or more bounces, 92 of 265 shown lineups do; eight-plus in the top 60 goes 16 -> 11, behind six- and seven-bounce alternatives, still listed.
+Viewer copy and parity fixture updated together (3,780 parity cases); QueryVersion 40 -> 41.
+The parity test caught the change before the fixture was regenerated, which is the first time it has been able to.

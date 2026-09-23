@@ -305,6 +305,8 @@ export const referenceBand = l => l.aimRef?.band ?? (l.aimRef?.tier === "sky" ? 
 const POSITION_ERROR = { corner: 2, wall: 8 };
 const MOVEMENT_ERROR = { JumpThrow: 6, CrouchJumpThrow: 6, RunJumpThrow: 16 };
 const aimErrorDeg = band => band === 0 ? 0.5 : band <= 2 ? 1 : band === 3 ? 1.5 : band <= 5 ? 2.5 : 5;
+// HumanError.BounceError: flat to seven bounces, a cliff from eight.
+const bounceError = b => b == null || b <= 4 ? 0 : b <= 6 ? 0.5 : b === 7 ? 1 : b === 8 ? 10 : 24;
 // The four things a person cannot control, each in units at the landing, so
 // the card can show where a number like "83u" comes from instead of a word.
 export function humanErrorParts(l) {
@@ -317,6 +319,7 @@ export function humanErrorParts(l) {
     movement: MOVEMENT_ERROR[l.type] ?? 0,
     scatter: scatter > 16 ? scatter : 0,
     stability: (1 - stability) * 24,
+    bounces: bounceError(l.Bounces),
     distance: dist,
   };
 }
@@ -326,7 +329,7 @@ export function humanError(l) {
     return l.humanError;
   }
   const p = humanErrorParts(l);
-  return p.feet + p.aim + p.movement + p.scatter + p.stability;
+  return p.feet + p.aim + p.movement + p.scatter + p.stability + p.bounces;
 }
 
 // A lineup's stable identity across solves: the throw itself, quantised to
