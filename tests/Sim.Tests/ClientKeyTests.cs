@@ -57,6 +57,27 @@ public class ClientKeyTests
     }
 
     [Fact]
+    public void TwoAddressesInOneIpv6SubscriberBlockShareABucket()
+    {
+        // Anyone on IPv6 owns a /64; per-address buckets were one per request.
+        var a = ClientKey(Request(("CF-Connecting-IP", "2001:db8:1234:5678::1")));
+        var b = ClientKey(Request(("CF-Connecting-IP", "2001:db8:1234:5678:ffff:ffff:ffff:ffff")));
+
+        Assert.Equal(a, b);
+        Assert.Equal("2001:db8:1234:5678::/64", a);
+    }
+
+    [Fact]
+    public void DifferentIpv6SubscriberBlocksStayApart() =>
+        Assert.NotEqual(
+            ClientKey(Request(("CF-Connecting-IP", "2001:db8:1234:5678::1"))),
+            ClientKey(Request(("CF-Connecting-IP", "2001:db8:1234:5679::1"))));
+
+    [Fact]
+    public void AnIpv4MappedAddressIsTheIpv4ClientItNames() =>
+        Assert.Equal("203.0.113.5", ClientKey(Request(("CF-Connecting-IP", "::ffff:203.0.113.5"))));
+
+    [Fact]
     public void WithNoProxyHeadersTheSocketAddressIsUsed() =>
         // Over-limits (everyone behind one proxy shares a bucket) rather than
         // under-limits, which is the right way round for a fallback.

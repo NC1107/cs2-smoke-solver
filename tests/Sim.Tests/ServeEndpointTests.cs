@@ -19,7 +19,7 @@ namespace SmokeSolver.Sim.Tests;
 // header not set, a solve that was queued in silence until the edge gave up -
 // sat between the unit-tested helpers and the browser, and was found by a
 // person clicking. This is the layer that finds them first.
-public sealed class ServeFixture : IDisposable
+public class ServeFixture : IDisposable
 {
     public string Root { get; }
     public string Map => "arena";
@@ -59,6 +59,7 @@ public sealed class ServeFixture : IDisposable
         File.WriteAllText(Path.Combine(data, $"{Map}.navareas.json"),
             "[{\"Id\":1,\"Corners\":[[16,16,0],[1008,16,0],[1008,480,0],[16,480,0]]}]");
         File.WriteAllText(Path.Combine(data, "admins.txt"), AdminId + "\n");
+        WriteExtraData(data);
 
         app = ServeCommand.Build(new Dictionary<string, string>
         {
@@ -72,11 +73,16 @@ public sealed class ServeFixture : IDisposable
         Secret = Convert.FromHexString(File.ReadAllText(Path.Combine(data, "session.secret")).Trim());
     }
 
+    // For a fixture that needs map data the shared one must not have (it would
+    // change what every other endpoint test solves from).
+    protected virtual void WriteExtraData(string data) { }
+
     public string CookieFor(string steamId) =>
         $"{SteamAuth.CookieName}={SteamAuth.MintSession(Secret, steamId, DateTimeOffset.UtcNow)}";
 
     public void Dispose()
     {
+        GC.SuppressFinalize(this);
         Client.Dispose();
         app.StopAsync().GetAwaiter().GetResult();
         app.DisposeAsync().AsTask().GetAwaiter().GetResult();
@@ -322,5 +328,74 @@ public class ServeEndpointTests(ServeFixture server) : IClassFixture<ServeFixtur
         // Leading blank lines are the keepalive; what follows parses as one document.
         var doc = JsonDocument.Parse(text.TrimStart());
         Assert.Equal(2, doc.RootElement.GetProperty("smokes").GetArrayLength());
+    }
+}
+
+// One hull-checked stand spot on the arena floor at (200, 200).
+public sealed class StandSpotServeFixture : ServeFixture
+{
+    protected override void WriteExtraData(string data) =>
+        File.WriteAllText(Path.Combine(data, $"{Map}.standspots.json"),
+            """{"Map":"arena","Step":16,"Spots":[{"Feet":[200,200,0],"Stance":"Standing","Nav":true}]}""");
+}
+
+// /api/standspot decides whether a clicked throw position is accepted: a
+// regression either lets a throw position sit on a roof or refuses a real one.
+public class StandSpotEndpointTests(StandSpotServeFixture server) : IClassFixture<StandSpotServeFixture>
+{
+    async Task<JsonElement> Ask(string query)
+    {
+        var res = await server.Client.GetAsync($"/api/standspot?map={server.Map}&{query}");
+        res.EnsureSuccessStatusCode();
+        return await res.Content.ReadFromJsonAsync<JsonElement>();
+    }
+
+    [Fact]
+    public async Task AClickBesideAStandSpotSnapsOntoIt()
+    {
+        var r = await Ask("x=210&y=205&z=0");
+
+        Assert.True(r.GetProperty("known").GetBoolean());
+        Assert.Equal([200f, 200f, 0f], r.GetProperty("spot").EnumerateArray().Select(e => e.GetSingle()));
+    }
+
+    [Fact]
+    public async Task AClickWithoutAHeightSnapsByPlanDistance() =>
+        Assert.Equal(JsonValueKind.Array, (await Ask("x=205&y=200")).GetProperty("spot").ValueKind);
+
+    [Fact]
+    public async Task NobodyStandsFarFromEverySpot()
+    {
+        var r = await Ask("x=600&y=600&z=0");
+
+        Assert.True(r.GetProperty("known").GetBoolean());
+        Assert.Equal(JsonValueKind.Null, r.GetProperty("spot").ValueKind);
+    }
+
+    [Fact]
+    public async Task ARoofAboveAStandSpotIsNotThatSpot() =>
+        // Same plan position, 200u up: the street's spot must not be offered
+        // for a click that landed on the roof over it.
+        Assert.Equal(JsonValueKind.Null, (await Ask("x=200&y=200&z=200")).GetProperty("spot").ValueKind);
+
+    [Fact]
+    public async Task AnUnknownMapIsNotFound() =>
+        Assert.Equal(HttpStatusCode.NotFound, (await server.Client.GetAsync("/api/standspot?map=nowhere&x=1&y=1")).StatusCode);
+
+    [Fact]
+    public async Task ANonFiniteCoordinateIsRejected() =>
+        Assert.Equal(HttpStatusCode.BadRequest, (await server.Client.GetAsync($"/api/standspot?map={server.Map}&x=NaN&y=1")).StatusCode);
+}
+
+public class StandSpotUnknownTests(ServeFixture server) : IClassFixture<ServeFixture>
+{
+    [Fact]
+    public async Task AMapWithoutStandSpotsSaysItCannotTell()
+    {
+        // The viewer lets the click through on known=false rather than refusing
+        // every throw position on a map that was never through that step.
+        var r = await server.Client.GetFromJsonAsync<JsonElement>($"/api/standspot?map={server.Map}&x=100&y=100");
+
+        Assert.False(r.GetProperty("known").GetBoolean());
     }
 }

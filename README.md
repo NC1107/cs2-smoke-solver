@@ -12,7 +12,8 @@ See `DESIGN.md` for the architecture and `physics-sim.md` for the simulation.
 
 - Works end to end through the viewer on every supported map: pick a target, get lineups, open one in 3D.
 - The physics is calibrated from real in-game throws, not placeholders. Bounce elasticity is 0.45, matching the cs2 `grenade` surfaceprop, and the launch model was measured off per-tick server telemetry.
-- Every lineup the solver produces gets thrown on a real cs2 server and the landing compared to where it predicted. Across the automated runs the median error is around half a unit and pretty much everything lands within a couple units. The Accuracy page in the viewer shows the runs.
+- Every lineup the solver produces gets thrown on a real cs2 server and the landing compared to where it predicted. On the last full run (15 maps, around 2,900 throws) about 98% landed within 3 units and the median miss was well under a unit. The Accuracy page in the viewer shows the runs.
+- One thing to keep in mind, the rig spawns the grenade with the exact position and speed a lineup calls for, so it's really checking the physics, not your jump or run timing. A lineup with a jump or a run in it will probably miss by more when a person throws it, and the ranking tries to account for that. The misses that do happen are mostly throws with a lot of bounces, where a tiny difference early on adds up.
 - Lineups are solved against a voxel model first, then re-checked against the exact collision triangles under small aim wiggles, and the agreement fraction ships as a per-lineup stability score. The exact check traces a point, so it can still snag on thin trim a real round rolls over, and for now it annotates a lineup rather than throwing it out.
 
 ## Requirements

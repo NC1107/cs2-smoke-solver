@@ -27,6 +27,10 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          # The QueryVersion guard diffs against the commit before this push,
+          # which a depth-1 checkout does not have.
+          fetch-depth: 0
 
       - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4.3.1
         with:
@@ -56,9 +60,23 @@ jobs:
       # forgets to bump it keeps serving answers computed by the old code. That
       # has happened seven times (see technical_debt.md A31-H3), each one caught
       # only incidentally by a later unrelated bump.
+      #
+      # It runs on pushes to master as well as on PRs: almost every change here
+      # goes straight to master, and publish-image below ships whatever passes,
+      # so a PR-only guard never ran on the pushes it exists to stop. The base
+      # is the tip before this push, so a batch of commits is judged as one.
+      # A change that genuinely cannot alter an answer says [no-cache-bump] in
+      # its commit message.
       - name: Solver changes must bump QueryVersion
-        if: github.event_name == 'pull_request'
-        run: bash rig/check-query-version.sh "origin/${{ github.base_ref }}"
+        if: github.event_name == 'pull_request' || !contains(github.event.head_commit.message, '[no-cache-bump]')
+        env:
+          BASE_REF: ${{ github.event_name == 'pull_request' && format('origin/{0}', github.base_ref) || github.event.before }}
+        run: |
+          if [ "$BASE_REF" = "0000000000000000000000000000000000000000" ]; then
+            echo "First push of this branch; nothing to compare against."
+            exit 0
+          fi
+          bash rig/check-query-version.sh "$BASE_REF"
 
   publish-image:
     needs: build-and-test

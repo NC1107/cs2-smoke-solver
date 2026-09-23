@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Net;
 using System.Globalization;
 using System.Numerics;
@@ -45,6 +46,55 @@ public static class ServeCommand
 
     const int MaxQueuedSolves = 16;
     static int queuedSolves;
+
+    // How many solves one client may have waiting or running at once. The
+    // queue behind the two solver slots is shared by every visitor, and the
+    // per-client rate limit (a burst of 20) was larger than the queue (16):
+    // one client opening a score of uncached searches at once filled it, and
+    // everyone else's search came back "too many solves queued" until those
+    // finished - minutes each, renewed by a few requests a minute. Two covers
+    // a person with a search running and one more asked for.
+    const int MaxSolvesPerClient = 2;
+    static readonly ConcurrentDictionary<string, int> SolvesByClient = new();
+
+    /// <summary>
+    /// One of the client's solve places, or null when it already holds all of
+    /// them. Disposing gives it back; the handler holds it for the whole solve.
+    /// </summary>
+    public static ClientSolveLease? TryLeaseClientSolve(HttpContext context)
+    {
+        var client = ClientKey(context);
+        while (true)
+        {
+            var held = SolvesByClient.GetOrAdd(client, 0);
+            if (held >= MaxSolvesPerClient)
+            {
+                return null;
+            }
+            if (SolvesByClient.TryUpdate(client, held + 1, held))
+            {
+                return new ClientSolveLease(client);
+            }
+        }
+    }
+
+    public sealed class ClientSolveLease(string client) : IDisposable
+    {
+        int released;
+
+        public void Dispose()
+        {
+            if (Interlocked.Exchange(ref released, 1) == 1)
+            {
+                return;
+            }
+            SolvesByClient.AddOrUpdate(client, 0, (_, n) => Math.Max(0, n - 1));
+            // Idle clients leave no entry behind; only removes a zero.
+            SolvesByClient.TryRemove(new KeyValuePair<string, int>(client, 0));
+        }
+    }
+
+    const string PerClientSolvesError = "you already have two searches running - wait for one to finish";
 
     // Lineup query bodies are a handful of numbers; anything bigger is abuse.
     const int MaxLineupBodyBytes = 4096;
@@ -200,6 +250,35 @@ public static class ServeCommand
 
     // A saved set is a few kilobytes; anything bigger is not a set of lineups.
     const int MaxSavedSetBytes = 256 * 1024;
+    // A vote is a map name, a coordinate, an id and a number.
+    const int MaxVoteBodyBytes = 4096;
+
+    /// <summary>
+    /// The request body, or null when it is longer than <paramref name="max"/>.
+    /// Content-Length is only a promise, and a chunked upload makes none, so
+    /// the cap is enforced while reading: parsing the stream straight into a
+    /// JsonDocument let one request hold Kestrel's 30 MB default in memory, and
+    /// a few dozen at once is the container's whole 2 GB.
+    /// </summary>
+    static async Task<ReadOnlyMemory<byte>?> ReadBoundedBodyAsync(HttpRequest request, int max, CancellationToken ct)
+    {
+        if (request.ContentLength is { } declared && declared > max)
+        {
+            return null;
+        }
+        var buffer = new byte[max + 1];
+        var read = 0;
+        int n;
+        while ((n = await request.Body.ReadAsync(buffer.AsMemory(read), ct)) > 0)
+        {
+            read += n;
+            if (read > max)
+            {
+                return null;
+            }
+        }
+        return buffer.AsMemory(0, read);
+    }
     // Fewer flooded cells than this is not a smoke, it is a pocket: a full
     // bloom at 16u voxels is over a thousand.
     const int MinPlausibleBloomCells = 48;
@@ -224,10 +303,51 @@ public static class ServeCommand
     // With no Cloudflare in front (local runs, direct traefik), this falls back
     // to the socket address, which over-limits rather than under-limits - the
     // right way round for a fallback.
-    public static string ClientKey(HttpContext context) =>
-        context.Request.Headers["CF-Connecting-IP"].ToString() is { Length: > 0 } cloudflare
+    /// <summary>
+    /// The disk-cache key for a solve on this map. Keyed on CacheVersion - the
+    /// mesh build AND a hash of the stand spots, nav areas and entities the
+    /// solve reads - so regenerating any of them retires the answers computed
+    /// from the old ones. The 2026-09-05 audit added that hash but both call
+    /// sites kept passing the mesh build alone, so for two weeks regenerated
+    /// stand spots kept serving answers from origins that no longer existed.
+    /// Every solve route goes through here so that cannot drift again.
+    /// </summary>
+    public static string SolveCacheKey(MapEntry entry, ThrowConstants constants, JsonElement query, string attrs) =>
+        QueryCacheKey(entry.Mesh, entry.CacheVersion, constants, query, attrs);
+
+    /// <summary>
+    /// A throw type named in a request. Enum.TryParse also accepts any integer
+    /// ("999", "-5") and hands back a value that is no throw at all, which the
+    /// simulator then flew; only the names are accepted.
+    /// </summary>
+    public static bool TryParseThrowType(string? name, out ThrowType type)
+    {
+        type = default;
+        return name is { Length: > 0 } && char.IsLetter(name[0])
+            && Enum.TryParse(name, ignoreCase: true, out type) && Enum.IsDefined(type);
+    }
+
+    public static string ClientKey(HttpContext context)
+    {
+        var raw = context.Request.Headers["CF-Connecting-IP"].ToString() is { Length: > 0 } cloudflare
             ? cloudflare.Trim()
-            : context.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+            : context.Connection.RemoteIpAddress?.ToString();
+        if (raw is null)
+        {
+            return "unknown";
+        }
+        // One subscriber owns a whole IPv6 /64 - two to the sixty-four
+        // addresses - so keying on the full address handed anyone on IPv6 a
+        // fresh rate-limit bucket per request. The /64 is the unit a person
+        // actually has; IPv4 stays per address.
+        if (IPAddress.TryParse(raw, out var ip) && ip.AddressFamily == System.Net.Sockets.AddressFamily.InterNetworkV6 && !ip.IsIPv4MappedToIPv6)
+        {
+            var bytes = ip.GetAddressBytes();
+            Array.Clear(bytes, 8, 8);
+            return new IPAddress(bytes) + "/64";
+        }
+        return ip is not null && ip.IsIPv4MappedToIPv6 ? ip.MapToIPv4().ToString() : raw;
+    }
 
     // Spawn lists parsed from data/<map>.entities.json, once per map for the
     // process lifetime. Null marks a file that exists but would not parse, so
@@ -393,6 +513,10 @@ public static class ServeCommand
             // Don't advertise the server software; it's noise that only helps a
             // scanner fingerprint the stack.
             kestrel.AddServerHeader = false;
+            // The largest body any route accepts is a saved set (256 KB). Each
+            // route caps its own read; this is the floor under all of them, so
+            // a route added later without a cap cannot take 30 MB per request.
+            kestrel.Limits.MaxRequestBodySize = 1024 * 1024;
             if (bind == "any")
             {
                 kestrel.ListenAnyIP(port);
@@ -553,9 +677,9 @@ public static class ServeCommand
                 }
             }
             return Results.Json(best is { } b
-                ? new { spot = new[] { b.Feet.X, b.Feet.Y, b.Feet.Z }, known = true }
+                ? new { spot = (float[]?)[b.Feet.X, b.Feet.Y, b.Feet.Z], known = true }
                 : new { spot = (float[]?)null, known = true });
-        });
+        }).RequireRateLimiting(PhysicsPolicy);
 
         // The map's own callout names with the position of each place volume.
         // Players think in callouts ("B site", "heaven"), not coordinates, so
@@ -822,10 +946,14 @@ public static class ServeCommand
             {
                 return ApiError(StatusCodes.Status415UnsupportedMediaType, "Content-Type must be application/json");
             }
+            if (await ReadBoundedBodyAsync(context.Request, MaxVoteBodyBytes, context.RequestAborted) is not { } voteBody)
+            {
+                return ApiError(StatusCodes.Status413PayloadTooLarge, "vote body too large");
+            }
             JsonDocument doc;
             try
             {
-                doc = await JsonDocument.ParseAsync(context.Request.Body, cancellationToken: context.RequestAborted);
+                doc = JsonDocument.Parse(voteBody);
             }
             catch (JsonException)
             {
@@ -840,7 +968,7 @@ public static class ServeCommand
                 {
                     return ApiError(StatusCodes.Status404NotFound, UnknownMapError);
                 }
-                if (!r.TryGetProperty("target", out var tEl) || tEl.ValueKind != JsonValueKind.Array || tEl.GetArrayLength() < 2 ||
+                if (!r.TryGetProperty("target", out var tEl) || tEl.ValueKind != JsonValueKind.Array || tEl.GetArrayLength() is < 2 or > 3 ||
                     tEl.EnumerateArray().Any(e => e.ValueKind != JsonValueKind.Number || !float.IsFinite(e.GetSingle())))
                 {
                     return ApiError(StatusCodes.Status400BadRequest, "target must be [x,y] or [x,y,z]");
@@ -900,14 +1028,14 @@ public static class ServeCommand
             {
                 return ApiError(StatusCodes.Status415UnsupportedMediaType, "Content-Type must be application/json");
             }
-            if (context.Request.ContentLength is > MaxSavedSetBytes)
+            if (await ReadBoundedBodyAsync(context.Request, MaxSavedSetBytes, context.RequestAborted) is not { } targetsBody)
             {
                 return ApiError(StatusCodes.Status413PayloadTooLarge, "targets list too large");
             }
             JsonDocument doc;
             try
             {
-                doc = await JsonDocument.ParseAsync(context.Request.Body, cancellationToken: context.RequestAborted);
+                doc = JsonDocument.Parse(targetsBody);
             }
             catch (JsonException)
             {
@@ -1038,7 +1166,7 @@ public static class ServeCommand
                     return new { z, name = best.Name };
                 }),
             });
-        });
+        }).RequireRateLimiting(PhysicsPolicy);
 
         app.MapGet("/api/mesh", (HttpContext context, string? map) =>
         {
@@ -1086,7 +1214,7 @@ public static class ServeCommand
             {
                 return ApiError(StatusCodes.Status404NotFound, UnknownMapError);
             }
-            if (!Enum.TryParse<ThrowType>(type, ignoreCase: true, out var throwType))
+            if (!TryParseThrowType(type, out var throwType))
             {
                 return ApiError(StatusCodes.Status400BadRequest, $"unknown throw type '{type}'");
             }
@@ -1128,7 +1256,7 @@ public static class ServeCommand
             {
                 return ApiError(StatusCodes.Status404NotFound, UnknownMapError);
             }
-            if (!Enum.TryParse<ThrowType>(type, ignoreCase: true, out var throwType))
+            if (!TryParseThrowType(type, out var throwType))
             {
                 return ApiError(StatusCodes.Status400BadRequest, $"unknown throw type '{type}'");
             }
@@ -1167,7 +1295,7 @@ public static class ServeCommand
             {
                 return ApiError(StatusCodes.Status404NotFound, UnknownMapError);
             }
-            if (!Enum.TryParse<ThrowType>(type, ignoreCase: true, out var throwType))
+            if (!TryParseThrowType(type, out var throwType))
             {
                 return ApiError(StatusCodes.Status400BadRequest, $"unknown throw type '{type}'");
             }
@@ -1309,6 +1437,12 @@ public static class ServeCommand
                     }
                     probes.Add(q);
                 }
+                using var clientLease = TryLeaseClientSolve(context);
+                if (clientLease is null)
+                {
+                    await WriteApiError(context, StatusCodes.Status429TooManyRequests, PerClientSolvesError);
+                    return;
+                }
                 if (Interlocked.Increment(ref queuedSolves) > MaxQueuedSolves)
                 {
                     Interlocked.Decrement(ref queuedSolves);
@@ -1331,7 +1465,7 @@ public static class ServeCommand
                             foreach (var q in probes)
                             {
                                 using var probe = JsonDocument.Parse(q);
-                                var key = QueryCacheKey(entry.Mesh, entry.BuildETag.Trim('"'), entry.Constants, probe.RootElement, attrs);
+                                var key = SolveCacheKey(entry, entry.Constants, probe.RootElement, attrs);
                                 var path = SolveCachePath(root, key);
                                 var json = await ReadSolveCacheAsync(path, context.RequestAborted);
                                 if (json is null)
@@ -1500,6 +1634,12 @@ public static class ServeCommand
                     queries.Add(q);
                 }
 
+                using var clientLease = TryLeaseClientSolve(context);
+                if (clientLease is null)
+                {
+                    await WriteApiError(context, StatusCodes.Status429TooManyRequests, PerClientSolvesError);
+                    return;
+                }
                 // One gate for the whole execute, not one per smoke: half a
                 // finished execute is not a useful answer, and letting the
                 // smokes queue separately would interleave them with other
@@ -1625,7 +1765,7 @@ public static class ServeCommand
                 // Repeat clicks are free: results are cached on disk keyed by build,
                 // constants, and the quantized query. A new game build or recalibration
                 // changes the key, so stale answers cannot leak through.
-                var cacheKey = QueryCacheKey(mesh, entry.BuildETag.Trim('"'), serveConstants, body.RootElement, attrs);
+                var cacheKey = SolveCacheKey(entry, serveConstants, body.RootElement, attrs);
                 // Rooted like every other data path: a relative "data" here would
                 // split the cache from the directory PruneCache sweeps whenever
                 // --root is not the working directory.
@@ -1678,7 +1818,14 @@ public static class ServeCommand
 
                 // Nothing has been written yet on this path (the cache hit above
                 // returns before here), so a refusal can still travel as a real
-                // status code rather than in-band.
+                // status code rather than in-band. A cached answer never takes a
+                // place: only a real solve is counted against the client.
+                using var clientLease = TryLeaseClientSolve(context);
+                if (clientLease is null)
+                {
+                    await WriteApiError(context, StatusCodes.Status429TooManyRequests, PerClientSolvesError);
+                    return;
+                }
                 if (Interlocked.Increment(ref queuedSolves) > MaxQueuedSolves)
                 {
                     Interlocked.Decrement(ref queuedSolves);

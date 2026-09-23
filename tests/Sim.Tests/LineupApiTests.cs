@@ -69,6 +69,7 @@ public class LineupApiTests
     [InlineData("""{"target":[100,100],"minStability":0.04}""", "minStability must be between 0.05 and 1")]
     [InlineData("""{"target":[100,100],"minStability":1.01}""", "minStability must be between 0.05 and 1")]
     [InlineData("""{"target":[100,100],"fineScan":"yes"}""", "fineScan must be a boolean")]
+    [InlineData("""{"target":[100,100],"allVariants":"yes"}""", "allVariants must be a boolean")]
     public void OutOfRangeKnobsAreRejected(string body, string expected) =>
         Assert.Equal(expected, Validate(body));
 
@@ -191,4 +192,32 @@ public class LineupApiTests
     [InlineData("""{"target":[100,100],"broken":["doors"]}""")]
     [InlineData("""{"target":[100,100],"broken":["glass","doors"]}""")]
     public void ValidBrokenStatesPass(string body) => Assert.Null(Validate(body));
+
+    // Enum.TryParse takes any integer, so "999" used to pass as a throw type
+    // that does not exist and got solved.
+    [Theory]
+    [InlineData("""{"target":[100,100],"types":["999"]}""")]
+    [InlineData("""{"target":[100,100],"types":["-5"]}""")]
+    [InlineData("""{"target":[100,100],"types":["1"]}""")]
+    public void NumericThrowTypesAreNotThrowTypes(string body) =>
+        Assert.Equal("types must be a non-empty array of throw type names", Validate(body));
+
+    [Fact]
+    public void ThrowTypeNamesStillPass() =>
+        Assert.Null(Validate("""{"target":[100,100],"types":["stand","RunJumpThrow"]}"""));
+
+    // Asking for every variant is a different answer, so it must not replay
+    // the collapsed one from the cache (or the other way round).
+    [Fact]
+    public void AskingForEveryVariantIsADifferentCachedAnswer()
+    {
+        Assert.NotEqual(Key("""{"target":[100,100]}"""), Key("""{"target":[100,100],"allVariants":true}"""));
+        Assert.Equal(Key("""{"target":[100,100]}"""), Key("""{"target":[100,100],"allVariants":false}"""));
+    }
+
+    // The cache is keyed on a version that includes the map's derived data, so
+    // regenerated stand spots retire the answers computed from the old ones.
+    [Fact]
+    public void ADifferentDataVersionIsADifferentCachedAnswer() =>
+        Assert.NotEqual(Key("""{"target":[100,100]}""", "build-1/data-a"), Key("""{"target":[100,100]}""", "build-1/data-b"));
 }

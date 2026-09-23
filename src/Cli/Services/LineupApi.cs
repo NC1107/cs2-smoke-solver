@@ -418,7 +418,7 @@ public static class LineupApi
         }
         if (query.TryGetProperty("types", out var typesEl) &&
             (typesEl.ValueKind != JsonValueKind.Array || typesEl.GetArrayLength() is 0 or > 5 ||
-             typesEl.EnumerateArray().Any(e => e.ValueKind != JsonValueKind.String || !Enum.TryParse<ThrowType>(e.GetString(), ignoreCase: true, out _))))
+             typesEl.EnumerateArray().Any(e => e.ValueKind != JsonValueKind.String || !ServeCommand.TryParseThrowType(e.GetString(), out _))))
         {
             return "types must be a non-empty array of throw type names";
         }
@@ -478,7 +478,7 @@ public static class LineupApi
             : "all";
         // Bump when solver or sim behavior changes: cached answers from older code
         // must never be replayed as current results.
-        const int QueryVersion = 39;
+        const int QueryVersion = 40;
         // meshVersion is the content-hashed mesh identity (not just the game
         // build), so re-extracting a map - e.g. dropping the Retake tape - forces
         // a re-solve instead of replaying results computed against the old mesh.
@@ -631,7 +631,7 @@ public static class LineupApi
         var allVariants = query.TryGetProperty("allVariants", out var allEl) && allEl.GetBoolean();
         var shown = allVariants
             ? ranked.Select(l => (Lineup: l, Similar: 0)).ToList()
-            : CollapseVariants(ranked);
+            : CollapseVariants(ranked, l => aimRefs[l].Band);
 
         return JsonSerializer.Serialize(new
         {
@@ -763,9 +763,11 @@ public static class LineupApi
 
     /// <summary>The API's order for a whole solve, computed from its colliders.</summary>
     // How far apart two throws of the same kind have to be before they are
-    // worth listing separately, and how much height tells two floors apart.
+    // worth listing separately, how much height tells two floors apart, and
+    // how close two landings have to be to count as the same smoke.
     const float SameSpotRadius = 32f;
     const float SameSpotRise = 40f;
+    const float SameLandingRadius = 24f;
 
     /// <summary>
     /// Collapse throws nobody could tell apart. A map-wide sweep finds the
@@ -775,7 +777,13 @@ public static class LineupApi
     /// dropping anything that repeats a kept throw keeps the best of each and
     /// counts the rest, so the list stays the same length in distinct ideas.
     /// </summary>
-    static List<(Lineup Lineup, int Similar)> CollapseVariants(IReadOnlyList<Lineup> ranked)
+    // "The same" has to mean the same to the person throwing it, not only the
+    // same feet and kind. Two throws from one corner can aim off different
+    // references, land a smoke-width apart, or differ in whether anyone
+    // holding the landing sees you throw - on de_dust2 mid doors 17% of the
+    // groups the first version formed mixed those, and the one kept was not
+    // always the one a person would pick. Each of those stays its own row.
+    public static List<(Lineup Lineup, int Similar)> CollapseVariants(IReadOnlyList<Lineup> ranked, Func<Lineup, int> aimBand)
     {
         var kept = new List<(Lineup Lineup, int Similar)>();
         foreach (var l in ranked)
@@ -783,13 +791,7 @@ public static class LineupApi
             var found = -1;
             for (var i = 0; i < kept.Count; i++)
             {
-                var k = kept[i].Lineup;
-                if (k.Type == l.Type
-                    && k.Strength == l.Strength
-                    && k.RunYawOffsetDeg == l.RunYawOffsetDeg
-                    && k.Bounces == l.Bounces
-                    && MathF.Abs(k.Feet.Z - l.Feet.Z) <= SameSpotRise
-                    && Vector2.Distance(new Vector2(k.Feet.X, k.Feet.Y), new Vector2(l.Feet.X, l.Feet.Y)) <= SameSpotRadius)
+                if (SameThrow(kept[i].Lineup, l, aimBand))
                 {
                     found = i;
                     break;
@@ -806,6 +808,18 @@ public static class LineupApi
         }
         return kept;
     }
+
+    static bool SameThrow(Lineup a, Lineup b, Func<Lineup, int> aimBand) =>
+        a.Type == b.Type
+        && a.Strength == b.Strength
+        && a.RunYawOffsetDeg == b.RunYawOffsetDeg
+        && a.Bounces == b.Bounces
+        && a.DirectLos == b.DirectLos
+        && StateDependent(a) == StateDependent(b)
+        && aimBand(a) == aimBand(b)
+        && MathF.Abs(a.Feet.Z - b.Feet.Z) <= SameSpotRise
+        && Vector2.Distance(new Vector2(a.Feet.X, a.Feet.Y), new Vector2(b.Feet.X, b.Feet.Y)) <= SameSpotRadius
+        && Vector3.Distance(a.RestPoint, b.RestPoint) <= SameLandingRadius;
 
     public static List<Lineup> Ranked(TargetSolve solve, Vector2? originClick = null)
     {

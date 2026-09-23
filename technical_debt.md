@@ -2239,3 +2239,63 @@ Measured on the nine timing targets against the live site, cache warm, so this i
 The sweep flies five run offsets (0, +/-45, +/-90), so four of the five exist only for lateral throws, and RunJumpThrow is 64.8% of all sweep simulations.
 Dropping the lateral offsets from the map-wide sweep alone would cut roughly half the cold solve, at the cost of 5.5% of the listed lineups, nearly all of them below rank 100; a spot or Exact solve would keep them.
 This changes results, so it is Nick's call, not the loop's.
+
+## Audit 2026-09-23 (eight passes: security, performance, architecture, tests, frontend, backend/API/database, devops, CS2 domain fidelity)
+
+Every finding below was checked against the code before it was acted on.
+
+### Correction to the 2026-09-05 audit
+
+Four fixes recorded as shipped in that audit (commit d8c1ef5 and the list above) were never in the code.
+That commit added the data hash (MapEntry.DataETag, CacheVersion) but changed only seven lines of ServeCommand.cs, none of them the ones described.
+
+- "The solve cache key now includes a hash of the map's stand spots, nav areas and entities": CacheVersion had no reader; both cache call sites still passed the mesh build alone, so regenerated stand spots kept serving answers from origins that no longer existed. Fixed now, through one SolveCacheKey both routes use.
+- "/api/vote body capped at 4 KB": the handler parsed the raw stream with no limit (Kestrel's 30 MB default). Fixed now.
+- "/api/levels rate-limited like its physics siblings": it was not. Fixed now, and /api/standspot with it.
+- "/api/execute holds a solve slot per target instead of for the whole loop": the code holds one gate for the whole execute, deliberately, with a comment arguing for it. The design is defensible; the log was wrong. Left as designed.
+
+Each fix below now has a test that was confirmed to fail with the fix reverted, so a recorded fix that is not in the code can no longer pass CI.
+
+### Fixed
+
+| finding | severity | fix | test |
+|---|---|---|---|
+| solve cache key ignored derived map data (see above) | critical | ServeCommand.SolveCacheKey keys on CacheVersion at every route | SolveCacheKeyTests |
+| QueryVersion guard only ran on pull requests; every change here is a direct push, so it had never run | critical | ci.yml runs it on push against the pre-push tip (fetch-depth 0); `[no-cache-bump]` opts out | local run against d838a10 |
+| HumanError parity test rewrote its fixture and asserted on what it wrote, so C#/JS drift could never fail | high | fails on drift; regenerate with UPDATE_FIXTURES=1 | the test itself |
+| one client could fill the shared 16-deep solve queue (per-IP burst 20 > queue 16) and lock every other visitor out | high | at most two solves in flight per client, across /api/lineup, /api/execute, /api/execute/spots | ClientSolveLeaseTests |
+| variant collapse merged throws that land a smoke-width apart, aim off different references, or differ in exposure (17% of groups on de_dust2 mid doors) | high | same throw now also needs the same landing (24u), aim band, exposure and glass state; QueryVersion 39 -> 40 | VariantCollapseTests |
+| rate limits keyed on the full IPv6 address; a /64 gives anyone a fresh bucket per request | medium | IPv6 keyed on its /64, IPv4-mapped unwrapped | ClientKeyTests |
+| vote and admin-targets bodies read unbounded | medium | one ReadBoundedBodyAsync; Kestrel MaxRequestBodySize 1 MB as the floor | - |
+| vote coordinate accepted any array length | low | 2 or 3 | - |
+| numeric throw types ("999", "-5") passed validation and were simulated | low | TryParseThrowType accepts names only, at all four sites | ThrowTypeParsingTests, LineupApiTests |
+| /api/standspot untested | high (tests) | own fixture with one stand spot | StandSpotEndpointTests |
+| ranking tie-break untested | high (tests) | reverse-order input ranks identically | SolveRankingDeterminismTests |
+| map reset button unreachable on phones; the advanced card's footer note permanently invisible | high / medium | see the viewer notes below | checked in the browser |
+| nullability warning in /api/standspot | low | fixed; the solution builds with no warnings | - |
+
+38 new tests; 390 in total, all passing.
+
+### Measured, not acted on
+
+- CollapseVariants is O(n x kept). On de_dust2 mid doors that is roughly 4,400 ranked lineups against at most a few thousand kept, most comparisons ending at the first field: an estimated tens of milliseconds against a 25 s solve. Not worth an index.
+- /api/standspot and TargetSolver.NearestStandSpot scan all stand spots (29,158 on de_dust2) linearly: under half a millisecond, once per click.
+
+### Open, needing a decision
+
+- **Cloudflare can be bypassed, and with it every rate limit.** Traefik trusts Cloudflare's ranges for X-Forwarded-* only; the app reads CF-Connecting-IP directly, the smoke router has no source allowlist, and 443 is published on all interfaces. Anyone reaching the origin address directly can set their own CF-Connecting-IP per request. An allowlist middleware of Cloudflare's ranges already exists on this proxy (homepageAccess); attaching an equivalent to the smoke router closes it. Shared proxy config, so the owner's call.
+- HumanError has no bounce-count term, although the 2026-09-03 audit measured 5 bounces at 8% and 6+ at 11% over 8u; a 6-bounce lineup can outrank a 4-bounce one with the same aim. Changes the ranking, so it needs calibrating and a decision.
+- The container still runs as root (needs the one-time chown of prod data/cache), has no stop_grace_period (a deploy kills in-flight solves after 10 s), and the image is never booted in CI before :latest moves. No image scanning, no NuGet lock files, no ghcr retention.
+- /api/execute is never cached and bypasses the warm-yield priority gate; two identical concurrent solves both run.
+- One signed-in account can write unbounded distinct vote rows under a popular target, and GET /api/votes returns them all.
+- MapArchiveMatch and the warm-cache retry loop have no tests.
+- The Accuracy page states the in-game figure without saying the rig spawns grenades with an exact release state rather than performing the jump or run. The README now says so; the page should too.
+
+### Viewer changes made alongside (owner's list, same day)
+
+- The click caption that followed the pointer is gone. A fixed hint along the bottom of the map says what each button does and changes only when that changes. Tooltips hide the moment a drag starts, so nothing floats while the camera turns.
+- The 3D ghost lagged because every pointer move cast twice against the whole collision mesh at 13.4 ms a cast. three-mesh-bvh 0.5.24 (vendored, the last line supporting three r147) brings that to 0.018 ms with identical hits (the five line-of-sight results recorded on 09-23 reproduce exactly), and the ghost now updates every frame.
+- The legend and pro-smokes bar sat under the sidebar; it now starts beside it, and its empty stretch no longer eats map clicks on phones.
+- "Pinpoint" (an aim reference) read as a synonym of the difficulty word "Precise"; it is now "Clear aim". Long movement names truncate instead of pushing the difficulty tag off the row.
+- "preparing voxel grid" stayed on screen through the whole sweep; the grid takes 0.1 s. The status now says what is running.
+- The execute card is now a planner opened from under Clear, beside the sidebar and not modal, since adding a smoke means clicking the map.

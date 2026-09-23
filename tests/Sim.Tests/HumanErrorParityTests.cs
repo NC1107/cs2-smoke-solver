@@ -4,8 +4,8 @@ using SmokeSolver.Solver;
 namespace SmokeSolver.Sim.Tests;
 
 /// <summary>
-/// Writes the C# HumanError's answers for a grid of inputs to a fixture the
-/// viewer's copy is checked against (rig/check-viewer-logic.mjs).
+/// Holds the C# HumanError's answers for a grid of inputs to the committed
+/// fixture the viewer's copy is checked against (rig/check-viewer-logic.mjs).
 /// </summary>
 // The viewer keeps its own humanError() because it must rank results the
 // server cached before the field existed. Two copies drift; this is the tie.
@@ -40,12 +40,22 @@ public class HumanErrorParityTests
         }
         var path = Path.Combine(FixtureDir(), "human-error.json");
         var json = JsonSerializer.Serialize(cases, new JsonSerializerOptions { WriteIndented = false });
-        // Rewritten only when it changed, so a clean tree stays clean.
-        if (!File.Exists(path) || File.ReadAllText(path) != json)
+        // The fixture is the viewer's copy's only check, so it must be the
+        // committed file that CI reads. This test used to rewrite it whenever
+        // the model changed and then assert on what it had just written, so a
+        // formula change that nobody regenerated passed here, passed the JS
+        // check against the stale fixture, and shipped two models that
+        // disagreed. Regenerate on purpose instead:
+        //   UPDATE_FIXTURES=1 dotnet test --filter HumanErrorParityTests
+        if (Environment.GetEnvironmentVariable("UPDATE_FIXTURES") == "1")
         {
             File.WriteAllText(path, json);
         }
-        Assert.Equal(cases.Count, JsonDocument.Parse(File.ReadAllText(path)).RootElement.GetArrayLength());
+        Assert.True(File.Exists(path), $"missing {path}; run with UPDATE_FIXTURES=1 to create it");
+        Assert.True(File.ReadAllText(path) == json,
+            "HumanError changed but tests/Sim.Tests/fixtures/human-error.json was not regenerated. " +
+            "Run `UPDATE_FIXTURES=1 dotnet test --filter HumanErrorParityTests`, then update the viewer's " +
+            "humanError() in viewer/js/state.js until rig/check-viewer-logic.mjs passes, and commit all three.");
     }
 
     static string FixtureDir()
