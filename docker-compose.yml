@@ -22,6 +22,12 @@ services:
     volumes:
       - ./data:/app/data
     restart: unless-stopped
+    # Longer than the app's 90 s shutdown drain (ServeCommand.ShutdownDrain),
+    # so a stop lets an in-flight solve finish instead of killing it after
+    # Docker's default 10 s. Watchtower has its own timeout for the same
+    # reason (WATCHTOWER_TIMEOUT on the watchtower container), which must be
+    # at least this long too.
+    stop_grace_period: 100s
     # Asks whether solves would return anything, not merely whether the port is
     # open. This server's signature failure is answering every request promptly
     # with zero lineups - an empty attribute filter, an unmounted data volume,

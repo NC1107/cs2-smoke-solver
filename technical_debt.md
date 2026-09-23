@@ -2319,3 +2319,9 @@ Effect: on de_dust2 mid doors, de_mirage CT spawn and de_nuke squeaky no lineup 
 On the de_nuke target at (449, -1436, -608), where 14 of the 09-09 campaign's top 60 had eight or more bounces, 92 of 265 shown lineups do; eight-plus in the top 60 goes 16 -> 11, behind six- and seven-bounce alternatives, still listed.
 Viewer copy and parity fixture updated together (3,780 parity cases); QueryVersion 40 -> 41.
 The parity test caught the change before the fixture was regenerated, which is the first time it has been able to.
+
+### Deploy hardening (2026-09-23, same day)
+
+- **Graceful stop.** ServeCommand.ShutdownDrain gives in-flight requests 90 s when the process is told to stop (ASP.NET's default window cut every cold solve off mid-flight). Solves from the cache warmer (X-Solve-Priority: low) are cancelled the moment stopping begins, since nobody is waiting on them and new visitors cannot reach the replacement container while this one drains; an idle server still stops at once. docker-compose.yml sets stop_grace_period 100s, applied to the prod compose file too.
+- **Still open: watchtower's own timeout.** Watchtower stops containers itself with WATCHTOWER_TIMEOUT (default 10 s) and has no per-container override, so an automatic deploy still kills an in-flight solve at 10 s; only a manual `compose up` drains. Watchtower is defined in the scw_server project and its timeout applies to every container it manages, so raising it to 100s there is the owner's call.
+- **The image boots in CI before it ships.** publish-image now builds the image locally, runs it with an empty data directory, and requires `/` and `/api/maps` to answer before building and pushing `:latest`. Checked locally against a real build first.

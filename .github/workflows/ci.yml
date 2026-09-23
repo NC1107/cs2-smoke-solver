@@ -96,6 +96,34 @@ jobs:
 
       - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
 
+      # Boot the image itself before anything is pushed. build-and-test runs
+      # the code on the bare runner, never in this image, and watchtower
+      # deploys :latest within minutes with no rollback, so an image that
+      # cannot start (a missing file, a native library, a bad argument) would
+      # otherwise go straight to prod. With no map data it serves the viewer
+      # and an empty map list, which is enough to prove it boots and answers.
+      - uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
+        with:
+          context: .
+          load: true
+          push: false
+          cache-from: type=gha
+          tags: smokesolver-ci:${{ github.sha }}
+
+      - name: The image boots and serves
+        run: |
+          mkdir -p ci-data
+          docker run -d --name smokesolver-ci -p 8137:8137 -v "$PWD/ci-data:/app/data" \
+            smokesolver-ci:${{ github.sha }} serve --bind any --attrs Default,default,EntitySolid
+          for i in $(seq 1 60); do
+            curl -fsS -o /dev/null http://127.0.0.1:8137/ && break
+            sleep 1
+          done
+          curl -fsS -o /dev/null http://127.0.0.1:8137/ || { docker logs smokesolver-ci; exit 1; }
+          curl -fsS http://127.0.0.1:8137/api/maps | python3 -c "import json,sys; assert isinstance(json.load(sys.stdin), list)" \
+            || { docker logs smokesolver-ci; exit 1; }
+          docker rm -f smokesolver-ci
+
       - uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
         with:
           context: .

@@ -1,6 +1,7 @@
 using System.Numerics;
 using System.Text.Json;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.DependencyInjection;
 using SmokeSolver.Cli;
 using SmokeSolver.Solver;
 using static SmokeSolver.Cli.ServeCommand;
@@ -224,5 +225,30 @@ public class BounceErrorTests
         var chaotic = calm with { Bounces = 9 };
 
         Assert.Equal(HumanError.BounceError(9), HumanError.Estimate(chaotic, 2, 0) - HumanError.Estimate(calm, 2, 0), 3);
+    }
+}
+
+public class ShutdownDrainTests
+{
+    [Fact]
+    public async Task AStoppingServerGivesInFlightSolvesTimeToFinish()
+    {
+        // A cold solve on the prod host takes 40-100 s; the default window cut
+        // them off mid-solve on every deploy.
+        var root = Path.Combine(Path.GetTempPath(), "smokesolver-drain-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(Path.Combine(root, "data"));
+        Directory.CreateDirectory(Path.Combine(root, "viewer"));
+        File.WriteAllText(Path.Combine(root, "viewer", "index.html"), "<!doctype html><title>t</title>");
+        try
+        {
+            await using var app = Build(new Dictionary<string, string> { ["root"] = root, ["port"] = "0", ["attrs"] = "default" });
+            var options = app.Services.GetRequiredService<Microsoft.Extensions.Options.IOptions<Microsoft.Extensions.Hosting.HostOptions>>().Value;
+
+            Assert.True(options.ShutdownTimeout >= TimeSpan.FromSeconds(90), $"shutdown drain is {options.ShutdownTimeout}");
+        }
+        finally
+        {
+            try { Directory.Delete(root, recursive: true); } catch (IOException) { }
+        }
     }
 }

@@ -44,6 +44,11 @@ public static class ServeCommand
     const float StandSpotSnapRadius = 48f;
     const float StandSpotSnapRise = 40f;
 
+    // How long a stopping server lets in-flight solves finish. The container's
+    // stop_grace_period and watchtower's WATCHTOWER_TIMEOUT must both be longer,
+    // or Docker kills the process before the drain ends.
+    static readonly TimeSpan ShutdownDrain = TimeSpan.FromSeconds(90);
+
     const int MaxQueuedSolves = 16;
     static int queuedSolves;
 
@@ -568,6 +573,13 @@ public static class ServeCommand
                     AutoReplenishment = true,
                 }));
         });
+        // A deploy stops this container, and ASP.NET gives in-flight requests
+        // only a short window before cutting them off. A cold solve on the prod
+        // host takes 40-100 s, so a push landing mid-solve threw the work away
+        // and left the person to click again. Long enough for a real solve to
+        // finish; the cache warmer's are cancelled at once (in /api/lineup), so
+        // an idle or warming server still stops straight away.
+        builder.Services.Configure<HostOptions>(o => o.ShutdownTimeout = ShutdownDrain);
         var app = builder.Build();
         app.UseRateLimiter();
 
@@ -1839,6 +1851,13 @@ public static class ServeCommand
                 // that. Without this the warm run took a slot and half the
                 // cores from whoever was actually using the site.
                 var lowPriority = context.Request.Headers["X-Solve-Priority"].ToString() == "low";
+                // Nobody is waiting on a warm solve, and while this process
+                // drains, new visitors cannot reach the one replacing it, so a
+                // stop cancels the warmer's work at once instead of spending the
+                // drain on it. The warmer retries against the new container.
+                using var stopCancelsWarm = lowPriority
+                    ? context.RequestServices.GetRequiredService<IHostApplicationLifetime>().ApplicationStopping.Register(solveCts.Cancel)
+                    : default;
                 if (!lowPriority)
                 {
                     Interlocked.Increment(ref interactiveQueued);
