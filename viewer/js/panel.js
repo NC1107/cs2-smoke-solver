@@ -4,7 +4,7 @@
 // selecting a lineup route through the callbacks main.js registers.
 
 import { state, filtered, clickShort, clickClass, esc, skyAngle, proMatched, scoreBreakdown, referenceBand, referenceFallback, humanErrorParts,
-  movementWords, clickWords, aimWords, difficultyWords, TARGET_SNAP_RADIUS, humanError } from "./state.js?v=119";
+  movementWords, clickWords, aimWords, difficultyWords, TARGET_SNAP_RADIUS, humanError } from "./state.js?v=120";
 
 const statusEl = state.statusEl;
 const PAGE_SIZE = 50;
@@ -192,7 +192,7 @@ function glassAltText(l) {
     // letting it borrow the visual weight of a lineup you can actually copy.
     referenceBand(l) >= 6 ? `<span class="ref nolandmark" title="Blind: nothing under the crosshair or the reticle arms to line this up against - the angle can only be set in practice mode, not eyeballed in a round">Blind</span>`
       : referenceBand(l) >= 4 ? `<span class="ref weakref" title="Rough: the only thing to line up against sits far out on the reticle arm. CS2's grenade-crosshair ticks are 10° apart, so this is over a tick off centre and hard to judge under pressure">Rough</span>`
-      : referenceBand(l) === 0 ? `<span class="ref tightref" title="Pinpoint: a silhouette sits within 1° of the crosshair - put the crosshair on it and the aim is set, with nothing to estimate">Pinpoint</span>` : "",
+      : referenceBand(l) === 0 ? `<span class="ref tightref" title="Clear aim: a silhouette sits within 1° of the crosshair - put the crosshair on it and the aim is set, with nothing to estimate. (How hard the whole throw is shows at the end of the row.)">Clear aim</span>` : "",
     detailed && l._spawn ? `<span class="ref spawn" title="Spawn: throwable from where the round starts you">Spawn</span>` : "",
     starTag && l._favorite ? `<span class="ref fav" title="saved">★</span>` : "",
   ].filter(Boolean).join("");

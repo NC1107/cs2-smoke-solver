@@ -3,11 +3,11 @@
 // wraps init/sync. Raycast picks route through callbacks that main.js
 // registers, so this module never imports the orchestrator.
 
-import { state, filtered, clickClass, lowMemoryDevice, SMOKE_BLOOM_RADIUS, EYE_HEIGHT_BY_TYPE, DEFAULT_EYE_HEIGHT } from "./state.js?v=119";
-import { fetchMesh } from "./api.js?v=119";
-import { createFlyCamera } from "./flycam.js?v=119";
-import { clickIntentHtml, markerTooltip, resolveTap, showTip, hideTip } from "./markers.js?v=119";
-import { loadScript, ensureTexturedScene, currentTexturedScene, disposeSceneContents, disposeTexturedScene } from "./textured-scene.js?v=119";
+import { state, filtered, clickClass, lowMemoryDevice, SMOKE_BLOOM_RADIUS, EYE_HEIGHT_BY_TYPE, DEFAULT_EYE_HEIGHT } from "./state.js?v=120";
+import { fetchMesh } from "./api.js?v=120";
+import { createFlyCamera } from "./flycam.js?v=120";
+import { markerTooltip, resolveTap, showTip, hideTip } from "./markers.js?v=120";
+import { loadScript, ensureTexturedScene, currentTexturedScene, disposeSceneContents, disposeTexturedScene } from "./textured-scene.js?v=120";
 
 const stage3d = state.stage3d;
 // Warning tint for phantom blockers (grenade-clips, physics-clips, glass) - a
@@ -141,6 +141,18 @@ async function init3d() {
   // three.js is opt-in, so keep its ~740 KB off the 2D-only load path.
   const gen = state.mapGeneration;
   await loadScript("viewer/lib/three.min.js");
+  // Every pick, hover, ghost and line-of-sight test casts against the whole
+  // collision mesh. Brute force that is 13 ms a cast on de_dust2 - most of a
+  // 60 fps frame - and a pointer move did two of them, which is why the ghost
+  // lagged the cursor. A bounding-volume tree makes the same cast a fraction
+  // of a millisecond, with identical hits.
+  await loadScript("viewer/lib/three-mesh-bvh.js");
+  if (!THREE.Mesh.prototype.raycast.bvhPatched) {
+    THREE.BufferGeometry.prototype.computeBoundsTree = MeshBVHLib.computeBoundsTree;
+    THREE.BufferGeometry.prototype.disposeBoundsTree = MeshBVHLib.disposeBoundsTree;
+    THREE.Mesh.prototype.raycast = MeshBVHLib.acceleratedRaycast;
+    THREE.Mesh.prototype.raycast.bvhPatched = true;
+  }
   const buf = await fetchMesh(state.currentMap);
   // The map may have switched while three.js and the mesh downloaded. Bail
   // BEFORE creating a renderer or touching module state: building here would
@@ -423,6 +435,7 @@ async function init3d() {
 
   const raycaster = new THREE.Raycaster();
   const meshObj = scene.children.find(o => o.isMesh);
+  meshObj.geometry.computeBoundsTree();
 
   // Ground height at a horizontal point, by dropping a ray onto the collision
   // mesh. Lets the target dot sit on the surface when it was picked in 2D (which
@@ -544,16 +557,44 @@ async function init3d() {
   ghost.renderOrder = 2;
   scene.add(ghost);
   const GHOST_COLOR = { floor: 0x37c46a, wall: 0xd9a441, void: 0xd94a4a };
-  let ghostAt = 0;
+  // The ghost follows the pointer once per rendered frame. It used to recast
+  // at most every 80 ms, which is 12 updates a second and reads as the dot
+  // dragging behind the cursor; coalescing moves into the next frame keeps
+  // the cost at one cast per frame however fast the mouse moves.
+  let ghostPending = null;
+  let ghostFrame = 0;
+  function updateGhost() {
+    ghostFrame = 0;
+    const at = ghostPending;
+    ghostPending = null;
+    if (!at) {
+      return;
+    }
+    const s = settledPointAt(at.x, at.y);
+    if (!s) {
+      if (ghost.visible) { ghost.visible = false; dirty = true; }
+      return;
+    }
+    ghost.position.set(s.point[0], s.point[1], s.point[2] + 0.5);
+    ghostMat.color.set(GHOST_COLOR[s.kind]);
+    ghost.visible = true;
+    dirty = true;
+  }
+  renderer.domElement.addEventListener("pointerdown", () => {
+    // A press starts a drag or a tap; either way a tooltip left where the
+    // pointer was is now describing nothing, and it would float there while
+    // the camera turned underneath it.
+    hideTip(document.getElementById("tip"));
+  });
   renderer.domElement.addEventListener("pointermove", e => {
     // Mouse only, and only while nothing is held: a drag is the camera's.
     if (e.pointerType !== "mouse" || e.buttons !== 0) {
       return;
     }
     // A marker under the pointer names itself, as on the 2D map, and the
-    // cursor says it is clickable. Markers are a few hundred objects, so this
-    // runs on every move; the ground ghost below casts against the whole map
-    // and is throttled.
+    // cursor says it is clickable. Open ground gets no floating caption: what
+    // a click does there is shown in the map's fixed hint, and the ghost's
+    // colour says whether the spot is somewhere a click can land.
     const tip = document.getElementById("tip");
     const marker = markerHitAt(e.clientX, e.clientY);
     if (marker) {
@@ -562,29 +603,13 @@ async function init3d() {
       if (ghost.visible) { ghost.visible = false; dirty = true; }
       return;
     }
+    hideTip(tip);
     renderer.domElement.style.cursor = "";
-    const now = performance.now();
-    if (now - ghostAt < 80) {
-      return;
+    ghostPending = { x: e.clientX, y: e.clientY };
+    if (!ghostFrame) {
+      ghostFrame = requestAnimationFrame(updateGhost);
     }
-    ghostAt = now;
-    const s = settledPointAt(e.clientX, e.clientY);
-    if (!s) {
-      hideTip(tip);
-      if (ghost.visible) { ghost.visible = false; dirty = true; }
-      return;
-    }
-    // Say what a click here would do. The same left click sets a target, sets
-    // a throw position or does nothing depending on state nobody can see, so
-    // the ghost gets a caption rather than leaving people to guess.
-    showTip(tip, clickIntentHtml(s.kind), e.clientX, e.clientY);
-    ghost.position.set(s.point[0], s.point[1], s.point[2] + 0.5);
-    ghostMat.color.set(GHOST_COLOR[s.kind]);
-    ghost.visible = true;
-    dirty = true;
   });
-
-
   renderer.domElement.addEventListener("pointerleave", () => {
     hideTip(document.getElementById("tip"));
     renderer.domElement.style.cursor = "";

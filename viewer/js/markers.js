@@ -13,7 +13,7 @@
 // over anything drawn near it; a spawn beats a lineup dot except while a
 // solved list is on screen and no position is being picked (then the answers,
 // the lineup dots, come first); the ground is last.
-import { state, clickWords, movementWords, clickClass, esc } from "./state.js?v=119";
+import { state, clickWords, movementWords, clickClass, esc } from "./state.js?v=120";
 
 export const MARKER_PRECEDENCE = ["named", "spawn", "lineup", "ground"];
 
@@ -25,28 +25,24 @@ export function preferSpawnOverLineup() {
 }
 
 // The tooltip for a marker, as HTML built only from escaped strings.
-// What the two mouse buttons would do on open ground under the pointer. The
-// same left click sets a target, sets a throw position or does nothing
-// depending on state that is not visible anywhere, so both views say it
-// outright rather than leaving people to discover it by clicking.
-//   kind: "floor" (fine), "wall" (the click will step down to the floor),
-//         "void" (nothing to stand on)
-export function clickIntentHtml(kind = "floor") {
-  if (kind === "void") {
-    return `nothing to stand a smoke on here<br><span class="cmd2">no floor under this point</span>`;
+// What the mouse buttons do on the map right now. The same left click sets a
+// target, sets a throw position or does nothing depending on state that is
+// not visible anywhere else, so the map says it in one fixed place. It
+// changes only when that state changes; a caption chasing the pointer was
+// noise, and it stayed floating where the pointer had been while dragging.
+export function clickIntentHtml(touch = false) {
+  const primary = touch ? "tap" : "left click";
+  const secondary = touch ? "long-press" : "right click";
+  if (state.busy) {
+    return `searching - clicks on the map wait until it finishes`;
   }
-  const wall = kind === "wall"
-    ? '<br><span class="cmd2">steps off the wall onto the floor below</span>'
-    : "";
-  // Before there is a target, both buttons do the one thing worth doing, and
-  // saying it twice reads as two different offers.
   if (state.picking || !state.target) {
-    return `<b class="left">click</b> sets the smoke target${wall}`;
+    return `<b class="left">${primary}</b> sets the smoke target`;
   }
-  const left = state.busy || state.heatOn
-    ? `<b class="left">left</b> <span class="cmd2">nothing while the map is busy</span>`
-    : `<b class="left">left</b> sets the throw position`;
-  return `${left}<br><b class="right">right</b> moves the target${wall}`;
+  if (state.heatOn) {
+    return `<b class="right">${secondary}</b> moves the target`;
+  }
+  return `<b class="left">${primary}</b> sets where you throw from · <b class="right">${secondary}</b> moves the target`;
 }
 
 export function markerTooltip(hit) {

@@ -3,9 +3,9 @@
 // actions (set target, select, run query) go through callbacks that main.js
 // registers, so this module never imports the orchestrator.
 
-import { cacheBust } from "./api.js?v=119";
-import { isDrag, state, filtered, clickClass, SMOKE_BLOOM_RADIUS, PICK_RADIUS_PX, TOUCH_PICK_RADIUS_PX, HEAT_CELL } from "./state.js?v=119";
-import { clickIntentHtml, markerTooltip, resolveTap, preferSpawnOverLineup, showTip, hideTip } from "./markers.js?v=119";
+import { cacheBust } from "./api.js?v=120";
+import { isDrag, state, filtered, clickClass, SMOKE_BLOOM_RADIUS, PICK_RADIUS_PX, TOUCH_PICK_RADIUS_PX, HEAT_CELL } from "./state.js?v=120";
+import { markerTooltip, resolveTap, preferSpawnOverLineup, showTip, hideTip } from "./markers.js?v=120";
 
 const canvas = state.canvas;
 const ctx = canvas.getContext("2d");
@@ -774,11 +774,6 @@ export function initMap2d(cb) {
       pinching = false;
     }
   });
-  // How long the pointer has to sit still before the map says what a click
-  // there would do: long enough not to chase a moving pointer, short enough
-  // to answer someone who has stopped to wonder.
-  const INTENT_DELAY_MS = 350;
-  let intentTimer = 0;
   canvas.addEventListener("pointermove", e => {
     const rect = canvas.getBoundingClientRect();
     if (e.pointerType === "touch" && touches.has(e.pointerId)) {
@@ -831,33 +826,12 @@ export function initMap2d(cb) {
     if (html) {
       showTip(tip, html, e.clientX, e.clientY);
       canvas.style.cursor = "pointer";
-    } else if (panning) {
-      // Dragging the map is not aiming at anything; a caption that follows
-      // the drag is just noise.
+    } else {
       hideTip(tip);
       canvas.style.cursor = "";
-      clearTimeout(intentTimer);
-    } else {
-      // The caption answers "what will this click do", which is a question
-      // people ask by pausing. Following every sweep of the pointer across an
-      // open map would be clutter, so it waits for the pointer to settle.
-      canvas.style.cursor = "";
-      clearTimeout(intentTimer);
-      if (tip.style.display === "block" && tip.dataset.intent === "1") {
-        showTip(tip, clickIntentHtml(), e.clientX, e.clientY);
-      } else {
-        hideTip(tip);
-        const [ix, iy] = [e.clientX, e.clientY];
-        intentTimer = setTimeout(() => {
-          tip.dataset.intent = "1";
-          showTip(tip, clickIntentHtml(), ix, iy);
-        }, INTENT_DELAY_MS);
-      }
     }
-    if (html) { tip.dataset.intent = "0"; }
   });
   canvas.addEventListener("pointerleave", () => {
-    clearTimeout(intentTimer);
     readout.textContent = "";
     hideTip(document.getElementById("tip"));
     if (state.hovered !== -1 || state.hoveredPin) { state.hovered = -1; state.hoveredPin = null; scheduleDraw(); }

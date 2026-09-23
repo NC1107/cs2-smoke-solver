@@ -2,19 +2,20 @@
 // import the feature modules; they call back into the orchestrators defined
 // here (setTarget, select, runQuery) via the init*/set*Callbacks hooks.
 
-import { state, filtered, esc, lowMemoryDevice, loadFavorites, setFavorite, isFavorite, DEFAULT_EYE_HEIGHT, EYE_HEIGHT_BY_TYPE, TARGET_SNAP_RADIUS, favoriteHooks, loadSavedLocal, persistSavedLocal, isExecuteSaved, setExecuteSaved} from "./state.js?v=119";
-import { loadMapList, loadMapData, runQuery as postLineupQuery, fetchTrajectory, fetchLineupOne, fetchSlack, fetchSpawns, fetchProSmokes, fetchMeshDiff, meshDiffExists, fetchLevels, fetchStandSpot, fetchSmokeCoverage, runExecute, findExecuteSpots, fetchTargets, fetchMe, signOut, fetchSavedLineups, putSavedLineups, fetchVotes, castVote} from "./api.js?v=119";
-import { loadRadar, readColors, recolorRadar, draw, scheduleDraw, resize, resetView, initMap2d, screenOf } from "./map2d.js?v=119";
-import { ensure3d, resetEnsure3d, teardown3d, current3d, sync3d, syncProgress3d, syncMeshDiff3d, set3dCallbacks, applyTheme3d, verticalFovFromDesired } from "./view3d.js?v=119";
-import { initAdmin, renderAdmin, syncAdminMode } from "./admin.js?v=119";
-import { resetEnsureTexturedScene } from "./textured-scene.js?v=119";
-import { capturePreview } from "./preview.js?v=119";
+import { state, filtered, esc, lowMemoryDevice, loadFavorites, setFavorite, isFavorite, DEFAULT_EYE_HEIGHT, EYE_HEIGHT_BY_TYPE, TARGET_SNAP_RADIUS, favoriteHooks, loadSavedLocal, persistSavedLocal, isExecuteSaved, setExecuteSaved} from "./state.js?v=120";
+import { loadMapList, loadMapData, runQuery as postLineupQuery, fetchTrajectory, fetchLineupOne, fetchSlack, fetchSpawns, fetchProSmokes, fetchMeshDiff, meshDiffExists, fetchLevels, fetchStandSpot, fetchSmokeCoverage, runExecute, findExecuteSpots, fetchTargets, fetchMe, signOut, fetchSavedLineups, putSavedLineups, fetchVotes, castVote} from "./api.js?v=120";
+import { loadRadar, readColors, recolorRadar, draw, scheduleDraw, resize, resetView, initMap2d, screenOf } from "./map2d.js?v=120";
+import { ensure3d, resetEnsure3d, teardown3d, current3d, sync3d, syncProgress3d, syncMeshDiff3d, set3dCallbacks, applyTheme3d, verticalFovFromDesired } from "./view3d.js?v=120";
+import { initAdmin, renderAdmin, syncAdminMode } from "./admin.js?v=120";
+import { clickIntentHtml } from "./markers.js?v=120";
+import { resetEnsureTexturedScene } from "./textured-scene.js?v=120";
+import { capturePreview } from "./preview.js?v=120";
 // Every local import across viewer/js carries the SAME ?v= token, bumped
 // together on any change. The HTML is served no-cache, so a fresh load pulls
 // main.js?v=N, which pulls every module at ?v=N - the whole graph refreshes as
 // one consistent set past Cloudflare's 4h JS cache, with no duplicate module
 // instances (which a partial versioning would cause). Bump the token everywhere.
-import { renderLineups, initPanel, revealSelected, resultStatusText } from "./panel.js?v=119";
+import { renderLineups, initPanel, revealSelected, resultStatusText } from "./panel.js?v=120";
 
 (async () => {
   // Map switching means a failed load is no longer necessarily terminal (the
@@ -101,7 +102,43 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
   // syncControls, so it lives up here rather than in the temporal dead zone
   // of a `let` further down.
   let mapList = [];
-  const cardExecute = document.getElementById("card-execute");
+  // The execute planner floats beside the sidebar rather than living in it:
+  // as a card it was a sentence and a button at the bottom of a scroll, and
+  // the flow it hides - collect targets, then solve them together - was not
+  // discoverable. It is not modal, because adding a smoke means clicking the
+  // map behind it.
+  const executePanel = document.getElementById("execute-panel");
+  const executeOpen = document.getElementById("execute-open");
+  function placeExecutePanel() {
+    const side = document.getElementById("controls").getBoundingClientRect();
+    const at = executeOpen.getBoundingClientRect();
+    if (matchMedia("(max-width: 640px)").matches) {
+      executePanel.style.left = executePanel.style.top = "";
+      return;
+    }
+    executePanel.style.left = `${side.right + 8}px`;
+    executePanel.style.top = `${Math.max(8, Math.min(at.top, window.innerHeight - executePanel.offsetHeight - 8))}px`;
+  }
+  function setExecutePanel(open) {
+    executePanel.hidden = !open;
+    executeOpen.setAttribute("aria-expanded", String(open));
+    executeOpen.classList.toggle("active", open);
+    if (open) {
+      placeExecutePanel();
+    }
+  }
+  executeOpen.addEventListener("click", () => setExecutePanel(executePanel.hidden));
+  document.getElementById("execute-close").addEventListener("click", () => {
+    setExecutePanel(false);
+    executeOpen.focus();
+  });
+  executePanel.addEventListener("keydown", e => {
+    if (e.key === "Escape") {
+      setExecutePanel(false);
+      executeOpen.focus();
+    }
+  });
+  window.addEventListener("resize", () => { if (!executePanel.hidden) { placeExecutePanel(); } });
   const executeCount = document.getElementById("execute-count");
   const executeClear = document.getElementById("execute-clear");
   const executeHint = document.getElementById("execute-hint");
@@ -545,7 +582,7 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
     }
     state.executeTargets.push([...state.target]);
     state.executeSpots = null;
-    cardExecute.open = true;
+    setExecutePanel(true);
     statusEl.textContent = `${state.executeTargets.length} smoke${state.executeTargets.length === 1 ? "" : "s"} in this execute - pick the next target, or solve it`;
     syncControls();
     scheduleDraw();
@@ -812,7 +849,16 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
     el.setAttribute("aria-pressed", String(on));
   };
 
+  // The map's one fixed statement of what a click does. A coarse pointer is
+  // a finger: no right button, so the second action is a long-press.
+  const clickHint = document.getElementById("click-hint");
+  const coarsePointer = matchMedia("(pointer: coarse)");
+  function syncClickHint() {
+    clickHint.innerHTML = clickIntentHtml(coarsePointer.matches);
+  }
+
   function syncControls() {
+    syncClickHint();
     const hasTarget = !!state.target;
     const in3d = stage3d.style.display !== "none";
 
@@ -1406,10 +1452,14 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
         ? `waiting for a free solver slot - ${msg.count} solve${msg.count === 1 ? "" : "s"} ahead of you…`
         : "waiting for a free solver slot…";
     } else if (msg.phase === "prepare") {
-      statusEl.textContent = "preparing voxel grid…";
+      statusEl.textContent = "reading the map around your target…";
     } else if (msg.phase === "sweep") {
       p.phase = "sweep";
       p.total = msg.count;
+      // Say so now: the first batch of checked spots can be seconds away, and
+      // until then the previous line (about a step that took a tenth of a
+      // second) stayed up and read as the thing being slow.
+      statusEl.textContent = `trying throws from ${msg.count} stand spots in throw range…`;
     } else if (msg.phase === "exhaustive") {
       // The exact-spot solve's last resort: the real simulator over every
       // angle and every kind of throw from this one spot.
@@ -1578,6 +1628,7 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
     const gen = state.mapGeneration;
     const controller = new AbortController();
     state.busy = true;
+    syncClickHint();
     state.progress = { phase: "sweep", total: 0, candidates: 0, checked: [], verified: [] };
     const cost = advancedCostFactor();
     statusEl.textContent = cost >= 2 ? `solving… (advanced settings ≈ ${Math.round(cost)}x slower)` : "solving…";
@@ -1644,6 +1695,7 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
       // A superseded solve must not tear down the state its replacement owns.
       if (solveController === controller) {
         state.busy = false;
+        syncClickHint();
         state.progress = null;
         solveController = null;
         cancelBtn.hidden = true;

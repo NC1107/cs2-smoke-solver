@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Smoke Solver</title>
 <link rel="icon" href="viewer/favicon.svg" type="image/svg+xml">
-<link rel="stylesheet" href="viewer/app.css?v=119">
+<link rel="stylesheet" href="viewer/app.css?v=120">
 </head>
 <body>
 
@@ -68,6 +68,7 @@
 
         <div class="action-group action-utility">
           <button id="clear" title="Clear the target, the throw position and the results, and start again" class="btn" hidden>Clear target &amp; results</button>
+          <button id="execute-open" class="btn" aria-haspopup="dialog" aria-expanded="false" aria-controls="execute-panel" title="Several smokes thrown from one spot: collect the targets, then find where one player can throw them all">Plan an execute <span class="filter-count" id="execute-count"></span></button>
         </div>
 
         <!-- Three rows, three jobs: which view you are in (one at a time),
@@ -192,23 +193,6 @@
          block inside the actions card: it is a different activity from placing
          one target, has its own list, and grew large enough to push the view
          controls off the bottom of the card it was in. -->
-    <details class="card" id="card-execute">
-      <summary>execute <span class="filter-count" id="execute-count"></span><button type="button" class="card-reset" id="execute-clear" title="Clear every smoke from this execute" aria-label="Clear execute">
-        <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M15.5 7.5a6 6 0 1 0 .8 4"/><path d="M15.9 3.4v4.3h-4.3"/></svg></button></summary>
-      <div class="card-body">
-        <p class="exec-hint" id="execute-hint">Several smokes from one spot. Set a target, then add it here; repeat for each smoke.</p>
-        <ol id="execute-list" aria-label="Smokes in this execute"></ol>
-        <button id="execute-add" class="btn" title="Add the current target as the next smoke of this execute">Add current target</button>
-        <span class="action-label key-subhead" id="execute-solve-label" hidden>solve it</span>
-        <div class="tile-row" id="execute-seg" role="group" aria-label="Solve this execute" hidden>
-          <button class="tile" data-execute="here" title="Throw every smoke in the list from the throw position set in the actions card"><svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="14" r="2.2"/><path d="M10 12V4M7 7l3-3 3 3"/></svg><span class="tile-label">From here</span></button>
-          <button class="tile" data-execute="spots" title="Find every place on the map where one player can throw all of these without moving"><svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="6.5"/><path d="M10 3.5v3M10 13.5v3M3.5 10h3M13.5 10h3"/></svg><span class="tile-label">Find a spot</span></button>
-        </div>
-        <button id="execute-save" class="btn" hidden title="Keep this execute - the throw spot and the throw picked for each smoke - under Saved; opening it draws every arc at once">☆ Save this execute</button>
-        <span class="action-label key-subhead" id="execute-spots-label" hidden title="Ranked by the hardest smoke of the set: a spot is only as good as its worst aim">spots that throw all · hardest aim</span>
-        <ul id="execute-spots" hidden aria-label="Spots that can throw every smoke"></ul>
-      </div>
-    </details>
     <details class="card" id="card-advanced">
       <summary>advanced <span class="filter-count" id="advanced-count"></span><button type="button" class="card-reset" id="advanced-reset" title="Reset advanced settings to defaults" aria-label="Reset advanced settings">
         <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M15.5 7.5a6 6 0 1 0 .8 4"/><path d="M15.9 3.4v4.3h-4.3"/></svg></button></summary>
@@ -284,7 +268,7 @@ sv_infinite_ammo 1; sv_grenade_trajectory 1;
 sv_autobunnyhopping 1; sv_enablebunnyhopping 1;
 give weapon_smokegrenade<button data-copy="cmd-setup" class="btn">copy</button></div>
         </details>
-        <p class="filter-desc" id="advanced-note">These change how the solver searches - they apply to your next Search / spot click.</p>
+        <p class="card-note" id="advanced-note">These change how the solver searches - they apply to your next Search / spot click.</p>
       </div>
     </details>
   </div>
@@ -292,6 +276,7 @@ give weapon_smokegrenade<button data-copy="cmd-setup" class="btn">copy</button><
   <div id="stage3d" style="position:absolute; inset:0; display:none"></div>
   <button type="button" class="map-reset" id="reset-view" title="Recenter and re-fit the map (double-click does this too)" aria-label="Reset view">
     <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M15.5 7.5a6 6 0 1 0 .8 4"/><path d="M15.9 3.4v4.3h-4.3"/></svg></button>
+  <div id="click-hint" class="click-hint" aria-live="polite"></div>
   <div id="lineup-ruler" class="lineup-ruler" hidden aria-hidden="true"></div>
   <div id="tip"></div>
   <!-- Only appears when a click lands on stacked floors, which is the one case
@@ -458,7 +443,27 @@ give weapon_smokegrenade<button data-copy="cmd-setup" class="btn">copy</button><
      4h, so bumping ?v= here is what busts that cache. Bump on any change to a
      directly-referenced asset. (The permanent cure is CF Browser Cache TTL ->
      "Respect Existing Headers", after which this is belt-and-suspenders.) -->
-<script type="module" src="viewer/js/main.js?v=119"></script>
+<script type="module" src="viewer/js/main.js?v=120"></script>
+<section id="execute-panel" class="exec-panel" role="dialog" aria-labelledby="execute-title" hidden>
+  <div class="exec-panel-head">
+    <h2 id="execute-title">Plan an execute</h2>
+    <button type="button" class="card-reset" id="execute-clear" title="Clear every smoke from this execute" aria-label="Clear execute">
+      <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M15.5 7.5a6 6 0 1 0 .8 4"/><path d="M15.9 3.4v4.3h-4.3"/></svg></button>
+    <button type="button" class="card-reset" id="execute-close" title="Close the planner - the smokes you added are kept" aria-label="Close planner">
+      <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M5 5l10 10M15 5L5 15"/></svg></button>
+  </div>
+  <p class="exec-hint" id="execute-hint">Several smokes thrown from one spot. Set a target on the map and add it here, once for each smoke (up to five). Then throw them all from your throw position, or let it find a spot that can.</p>
+  <ol id="execute-list" aria-label="Smokes in this execute"></ol>
+  <button id="execute-add" class="btn" title="Add the current target as the next smoke of this execute">Add current target</button>
+  <span class="action-label key-subhead" id="execute-solve-label" hidden>solve it</span>
+  <div class="tile-row" id="execute-seg" role="group" aria-label="Solve this execute" hidden>
+    <button class="tile" data-execute="here" title="Throw every smoke in the list from the throw position set in the actions card"><svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="14" r="2.2"/><path d="M10 12V4M7 7l3-3 3 3"/></svg><span class="tile-label">From here</span></button>
+    <button class="tile" data-execute="spots" title="Find every place on the map where one player can throw all of these without moving"><svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="6.5"/><path d="M10 3.5v3M10 13.5v3M3.5 10h3M13.5 10h3"/></svg><span class="tile-label">Find a spot</span></button>
+  </div>
+  <button id="execute-save" class="btn" hidden title="Keep this execute - the throw spot and the throw picked for each smoke - under Saved; opening it draws every arc at once">☆ Save this execute</button>
+  <span class="action-label key-subhead" id="execute-spots-label" hidden title="Ranked by the hardest smoke of the set: a spot is only as good as its worst aim">spots that throw all · hardest aim</span>
+  <ul id="execute-spots" hidden aria-label="Spots that can throw every smoke"></ul>
+</section>
 <div id="side-tip" role="tooltip" hidden></div>
 </body>
 </html>
