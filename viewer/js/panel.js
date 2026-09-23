@@ -4,7 +4,7 @@
 // selecting a lineup route through the callbacks main.js registers.
 
 import { state, filtered, clickShort, clickClass, esc, skyAngle, proMatched, scoreBreakdown, referenceBand, referenceFallback, humanErrorParts,
-  movementWords, clickWords, aimWords, difficultyWords, TARGET_SNAP_RADIUS, humanError } from "./state.js?v=118";
+  movementWords, clickWords, aimWords, difficultyWords, TARGET_SNAP_RADIUS, humanError } from "./state.js?v=119";
 
 const statusEl = state.statusEl;
 const PAGE_SIZE = 50;
@@ -177,6 +177,10 @@ function glassAltText(l) {
     // hover with the rest of the execution detail, and a whole class of lineup
     // people hunt for became invisible.
     stanceTag(l),
+    // One row can stand for several near-identical throws around the same
+    // corner; say so, so the count is not mistaken for the only spot that
+    // works and the "every variant" setting is discoverable.
+    l.similar > 0 ? `<span class="ref variants" title="${l.similar} more stand spot${l.similar === 1 ? "" : "s"} within a stride of this one throw the same smoke the same way. This is the best of them; set Variants to &quot;every variant&quot; under advanced to list them all">+${l.similar} spot${l.similar === 1 ? "" : "s"}</span>` : "",
     proMatched(l) ? `<span class="ref pro" title="Pro: pros throw this exact smoke from this spot in real matches - same spot, and it lands where this one lands">Pro</span>` : "",
     l.exposed ? `<span class="ref exposed" title="Seen while throwing: a clear line of sight from this spot to where the smoke lands, so anyone holding that area sees you throw it">Exposed</span>` : "",
     // The landing shown assumes the window it flies through is still intact

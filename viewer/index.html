@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Smoke Solver</title>
 <link rel="icon" href="viewer/favicon.svg" type="image/svg+xml">
-<link rel="stylesheet" href="viewer/app.css?v=118">
+<link rel="stylesheet" href="viewer/app.css?v=119">
 </head>
 <body>
 
@@ -227,11 +227,11 @@
         <div class="filter-row">
           <label class="filter-head" for="a-reach"><b class="filter-info" tabindex="0" role="button" aria-label="What does Search radius do?">Search radius:</b><span class="filter-slot">
             <select id="a-reach" aria-label="Origin search radius around a clicked throw spot">
-              <option value="">300u (recommended)</option>
+              <option value="">150u (recommended)</option>
               <option value="exact">exact spot (deep search)</option>
               <option value="50">50u</option>
-              <option value="150">150u</option>
-              <option value="600">600u (wide)</option>
+              <option value="300">300u (wide)</option>
+              <option value="600">600u (widest)</option>
             </select></span></label>
           <p class="filter-desc" hidden>How far around a clicked throw spot to look for stand positions. "Exact spot" searches only where you clicked, with the fine angle scan and the verify gate opened up, so it finds a throw from that precise position even when it is an awkward one - use it when you know where you want to stand.</p>
         </div>
@@ -251,6 +251,14 @@
               <option value="fine">fine (slower)</option>
             </select></span></label>
           <p class="filter-desc" hidden>Halves the aim-angle step the sweep samples (0.5° near a click). Finds lineups whose working angle window the normal scan steps over. Roughly 3x solve time.</p>
+        </div>
+        <div class="filter-row">
+          <label class="filter-head" for="a-variants"><b class="filter-info" tabindex="0" role="button" aria-label="What does Variants do?">Variants:</b><span class="filter-slot">
+            <select id="a-variants" aria-label="Whether near-identical throws are listed separately">
+              <option value="">one row per throw (recommended)</option>
+              <option value="all">every variant</option>
+            </select></span></label>
+          <p class="filter-desc" hidden>A sweep finds the same throw from every stand spot around one corner, so one good lineup can fill the list with copies of itself a few units and a few degrees apart. By default each distinct throw is listed once and says how many near-identical ones it stands for. Ask for every variant when you are tuning a lineup you already know and want the exact spot that suits you.</p>
         </div>
         <div class="filter-row">
           <label class="filter-head" for="a-world"><b class="filter-info" tabindex="0" role="button" aria-label="What does World state do?">World state:</b><span class="filter-slot">
@@ -450,7 +458,7 @@ give weapon_smokegrenade<button data-copy="cmd-setup" class="btn">copy</button><
      4h, so bumping ?v= here is what busts that cache. Bump on any change to a
      directly-referenced asset. (The permanent cure is CF Browser Cache TTL ->
      "Respect Existing Headers", after which this is belt-and-suspenders.) -->
-<script type="module" src="viewer/js/main.js?v=118"></script>
+<script type="module" src="viewer/js/main.js?v=119"></script>
 <div id="side-tip" role="tooltip" hidden></div>
 </body>
 </html>

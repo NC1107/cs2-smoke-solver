@@ -357,8 +357,10 @@
     color: var(--ink);
   }
   .filter-info:hover, .filter-info:focus-visible { text-decoration-color: var(--accent); color: var(--accent); outline: none; }
+  /* Inside a row this element is only the text source for the tooltip beside
+     the sidebar; standalone notes (the advanced card's footer) still show. */
+  .filter-row > .filter-desc { display: none; }
   .filter-desc {
-    display: none;
     position: absolute;
     top: 100%;
     left: 0;
@@ -1635,6 +1637,9 @@
   }
   .panel-head .list-pager[hidden] { display: none; }
   .panel-head .pager-label { font-variant-numeric: tabular-nums; min-width: 26px; text-align: center; }
+  /* Near-identical throws folded into this row: a plain count, not a warning. */
+  .ref.variants { color: var(--muted); border: 1px solid var(--muted); }
+
   /* Pros throw from this spot: earns the accent, unlike the neutral badges. */
   .ref.pro {
     color: var(--accent);

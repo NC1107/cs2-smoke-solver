@@ -2,19 +2,19 @@
 // import the feature modules; they call back into the orchestrators defined
 // here (setTarget, select, runQuery) via the init*/set*Callbacks hooks.
 
-import { state, filtered, esc, lowMemoryDevice, loadFavorites, setFavorite, isFavorite, DEFAULT_EYE_HEIGHT, EYE_HEIGHT_BY_TYPE, TARGET_SNAP_RADIUS, favoriteHooks, loadSavedLocal, persistSavedLocal, isExecuteSaved, setExecuteSaved} from "./state.js?v=118";
-import { loadMapList, loadMapData, runQuery as postLineupQuery, fetchTrajectory, fetchLineupOne, fetchSlack, fetchSpawns, fetchProSmokes, fetchMeshDiff, meshDiffExists, fetchLevels, fetchStandSpot, fetchSmokeCoverage, runExecute, findExecuteSpots, fetchTargets, fetchMe, signOut, fetchSavedLineups, putSavedLineups, fetchVotes, castVote} from "./api.js?v=118";
-import { loadRadar, readColors, recolorRadar, draw, scheduleDraw, resize, resetView, initMap2d, screenOf } from "./map2d.js?v=118";
-import { ensure3d, resetEnsure3d, teardown3d, current3d, sync3d, syncProgress3d, syncMeshDiff3d, set3dCallbacks, applyTheme3d, verticalFovFromDesired } from "./view3d.js?v=118";
-import { initAdmin, renderAdmin, syncAdminMode } from "./admin.js?v=118";
-import { resetEnsureTexturedScene } from "./textured-scene.js?v=118";
-import { capturePreview } from "./preview.js?v=118";
+import { state, filtered, esc, lowMemoryDevice, loadFavorites, setFavorite, isFavorite, DEFAULT_EYE_HEIGHT, EYE_HEIGHT_BY_TYPE, TARGET_SNAP_RADIUS, favoriteHooks, loadSavedLocal, persistSavedLocal, isExecuteSaved, setExecuteSaved} from "./state.js?v=119";
+import { loadMapList, loadMapData, runQuery as postLineupQuery, fetchTrajectory, fetchLineupOne, fetchSlack, fetchSpawns, fetchProSmokes, fetchMeshDiff, meshDiffExists, fetchLevels, fetchStandSpot, fetchSmokeCoverage, runExecute, findExecuteSpots, fetchTargets, fetchMe, signOut, fetchSavedLineups, putSavedLineups, fetchVotes, castVote} from "./api.js?v=119";
+import { loadRadar, readColors, recolorRadar, draw, scheduleDraw, resize, resetView, initMap2d, screenOf } from "./map2d.js?v=119";
+import { ensure3d, resetEnsure3d, teardown3d, current3d, sync3d, syncProgress3d, syncMeshDiff3d, set3dCallbacks, applyTheme3d, verticalFovFromDesired } from "./view3d.js?v=119";
+import { initAdmin, renderAdmin, syncAdminMode } from "./admin.js?v=119";
+import { resetEnsureTexturedScene } from "./textured-scene.js?v=119";
+import { capturePreview } from "./preview.js?v=119";
 // Every local import across viewer/js carries the SAME ?v= token, bumped
 // together on any change. The HTML is served no-cache, so a fresh load pulls
 // main.js?v=N, which pulls every module at ?v=N - the whole graph refreshes as
 // one consistent set past Cloudflare's 4h JS cache, with no duplicate module
 // instances (which a partial versioning would cause). Bump the token everywhere.
-import { renderLineups, initPanel, revealSelected, resultStatusText } from "./panel.js?v=118";
+import { renderLineups, initPanel, revealSelected, resultStatusText } from "./panel.js?v=119";
 
 (async () => {
   // Map switching means a failed load is no longer necessarily terminal (the
@@ -337,6 +337,10 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
   // "the chip is not rendering" gets diagnosed in a minute instead of an hour.
   window.smokeState = state;
   window.smokeRenderAdmin = () => { syncAdminMode(); renderLineups(); };
+  // The live 3D view, for the same reason: "Look pointed at a wall" and "the
+  // camera is inside the floor" are answerable in a console line with the
+  // scene in hand, and guesswork without it.
+  window.smoke3d = current3d;
 
   // Hover help: one tooltip for every control in the sidebar, parked just
   // outside its right edge. It used to be written into the toolbar status
@@ -1454,6 +1458,7 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
     if (document.getElementById("a-scan").value === "fine") { p.fineScan = true; }
     const world = document.getElementById("a-world").value;
     if (world) { p.broken = world.split(","); }
+    if (document.getElementById("a-variants").value === "all") { p.allVariants = true; }
     return p;
   }
 
@@ -1533,7 +1538,7 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
     const p = advancedParams();
     let factor = p.fineScan ? 3 : 1;
     if (p.originReach) {
-      factor *= Math.max((p.originReach / 300) ** 2, 0.1);
+      factor *= Math.max((p.originReach / 150) ** 2, 0.1);
     }
     return factor;
   }
@@ -2497,16 +2502,42 @@ import { renderLineups, initPanel, revealSelected, resultStatusText } from "./pa
     if (!t3) {
       return;
     }
-    const back = 260, up = 140;
     // Approach from the map's centre side, so the pin is seen from where a
     // player would usually see it rather than from outside the map.
     const [rx0, ry0, rx1, ry1] = state.mapData.region;
     const cx = (rx0 + rx1) / 2;
     const cy = (ry0 + ry1) / 2;
-    const yaw = Math.atan2(t.pos[1] - cy, t.pos[0] - cx);
-    const feet = [t.pos[0] - back * Math.cos(yaw), t.pos[1] - back * Math.sin(yaw), t.pos[2] + up];
-    const pitchDeg = Math.atan2(up, back) * 180 / Math.PI;
-    t3.flyTo({ feet, type: "Stand", pitchDeg, yawDeg: yaw * 180 / Math.PI });
+    const preferred = Math.atan2(t.pos[1] - cy, t.pos[0] - cx);
+    // A pin indoors, in a doorway or behind a crate has no view from the
+    // direction of the map's middle, and the camera used to end up staring at
+    // whatever stood in the way. Walk outwards from the preferred direction
+    // and take the first spot that can actually see the pin, pulling closer
+    // before giving up on an angle.
+    const aim = ([fx, fy, fz]) => {
+      const dx = t.pos[0] - fx, dy = t.pos[1] - fy;
+      return {
+        feet: [fx, fy, fz],
+        yawDeg: Math.atan2(dy, dx) * 180 / Math.PI,
+        pitchDeg: Math.atan2(t.pos[2] - (fz + DEFAULT_EYE_HEIGHT), Math.hypot(dx, dy)) * 180 / Math.PI,
+      };
+    };
+    const eyeOf = f => [f[0], f[1], f[2] + DEFAULT_EYE_HEIGHT];
+    let shot = null;
+    for (const back of [260, 180, 120]) {
+      const up = back * 0.54;
+      for (const turn of [0, 0.6, -0.6, 1.2, -1.2, 1.8, -1.8, 2.4, -2.4, Math.PI]) {
+        const yaw = preferred + turn;
+        const feet = [t.pos[0] - back * Math.cos(yaw), t.pos[1] - back * Math.sin(yaw), t.pos[2] + up];
+        if (t3.clearLine(eyeOf(feet), t.pos)) {
+          shot = aim(feet);
+          break;
+        }
+      }
+      if (shot) { break; }
+    }
+    // Nothing around it has a view: look straight down from just above, which
+    // only fails under a ceiling, and then nothing would have worked anyway.
+    t3.flyTo({ type: "Stand", ...(shot ?? aim([t.pos[0] + 1, t.pos[1], t.pos[2] + 150])) });
     t3.focusStage();
   }
 

@@ -411,6 +411,11 @@ public static class LineupApi
         {
             return "fineScan must be a boolean";
         }
+        if (query.TryGetProperty("allVariants", out var allEl) &&
+            allEl.ValueKind is not (JsonValueKind.True or JsonValueKind.False))
+        {
+            return "allVariants must be a boolean";
+        }
         if (query.TryGetProperty("types", out var typesEl) &&
             (typesEl.ValueKind != JsonValueKind.Array || typesEl.GetArrayLength() is 0 or > 5 ||
              typesEl.EnumerateArray().Any(e => e.ValueKind != JsonValueKind.String || !Enum.TryParse<ThrowType>(e.GetString(), ignoreCase: true, out _))))
@@ -464,6 +469,7 @@ public static class LineupApi
         var tol = query.TryGetProperty("tolerance", out var tolEl) ? tolEl.GetSingle() : 80f;
         var stab = query.TryGetProperty("minStability", out var stabEl) ? stabEl.GetSingle() : 0.4f;
         var fine = query.TryGetProperty("fineScan", out var fineEl) && fineEl.GetBoolean();
+        var variants = query.TryGetProperty("allVariants", out var varEl) && varEl.GetBoolean();
         var typesKey = query.TryGetProperty("types", out var typesEl)
             ? string.Join(",", typesEl.EnumerateArray().Select(e => e.GetString()!.ToLowerInvariant()).OrderBy(t => t, StringComparer.Ordinal))
             : "all";
@@ -472,7 +478,7 @@ public static class LineupApi
             : "all";
         // Bump when solver or sim behavior changes: cached answers from older code
         // must never be replayed as current results.
-        const int QueryVersion = 38;
+        const int QueryVersion = 39;
         // meshVersion is the content-hashed mesh identity (not just the game
         // build), so re-extracting a map - e.g. dropping the Retake tape - forces
         // a re-solve instead of replaying results computed against the old mesh.
@@ -480,7 +486,7 @@ public static class LineupApi
         // A spawn-scoped sweep answers a different question from a map-wide one
         // with the same target, so it needs its own key.
         var scopeKey = ScopeOf(query) is { Length: > 0 } sc ? sc : "all";
-        var seed = $"v{QueryVersion}|{mesh.MapName}|{meshVersion}|{JsonSerializer.Serialize(constants)}|{tx},{ty},{tz}|{origin}|{reach:F0}|{tol:F0}|{stab:F2}|{(fine ? 1 : 0)}|{typesKey}|{strengthsKey}|{brokenKey}|{scopeKey}|{attrs}";
+        var seed = $"v{QueryVersion}|{mesh.MapName}|{meshVersion}|{JsonSerializer.Serialize(constants)}|{tx},{ty},{tz}|{origin}|{reach:F0}|{tol:F0}|{stab:F2}|{(fine ? 1 : 0)}|{(variants ? 1 : 0)}|{typesKey}|{strengthsKey}|{brokenKey}|{scopeKey}|{attrs}";
         var hash = System.Security.Cryptography.SHA256.HashData(Encoding.UTF8.GetBytes(seed));
         return Convert.ToHexString(hash)[..20].ToLowerInvariant();
     }
@@ -525,7 +531,11 @@ public static class LineupApi
             ? new Vector2(originEl[0].GetSingle(), originEl[1].GetSingle())
             : (Vector2?)null;
         var originReach = hasOrigin
-            ? (query.TryGetProperty("originReach", out var reachEl) ? reachEl.GetSingle() : 300f)
+            // 150u covers the spot someone clicked and the stand positions
+            // within a few steps of it. The old 300u searched four times the
+            // area for lineups that were mostly the same throw from further
+            // away, and it is still one dropdown away.
+            ? (query.TryGetProperty("originReach", out var reachEl) ? reachEl.GetSingle() : 150f)
             : 3100f;
         var tolerance = query.TryGetProperty("tolerance", out var tolEl) ? tolEl.GetSingle() : 80f;
         var minStability = query.TryGetProperty("minStability", out var stabEl) ? stabEl.GetSingle() : 0.4f;
@@ -616,6 +626,12 @@ public static class LineupApi
             l => l,
             l => HumanError.Estimate(l, pins[l], aimRefs[l].Band));
         var ranked = Rank(solve.Lineups, originClick, l => humanError[l], l => pins[l]);
+        // One entry per distinct throw by default; "allVariants" asks for the
+        // near-repeats too, for someone tuning a lineup they already know.
+        var allVariants = query.TryGetProperty("allVariants", out var allEl) && allEl.GetBoolean();
+        var shown = allVariants
+            ? ranked.Select(l => (Lineup: l, Similar: 0)).ToList()
+            : CollapseVariants(ranked);
 
         return JsonSerializer.Serialize(new
         {
@@ -636,60 +652,67 @@ public static class LineupApi
             // Ranking orders the list but must never hide a valid lineup's map
             // dot, so a spot probe returns all it found (a wide reach is a mini
             // map-search) rather than a hard top-12 that dropped the ideal one.
-            lineups = ranked.Take(400).Select(l => new
+            lineups = shown.Take(400).Select(entry =>
             {
-                // Durable identity for favourites, votes and shared sets: the
-                // same physical throw gets the same id whichever solve found it.
-                id = LineupIdentity.Id(l),
-                feet = new[] { l.Feet.X, l.Feet.Y, l.Feet.Z },
-                yaw = l.YawDeg,
-                pitch = l.PitchDeg,
-                type = l.Type.ToString(),
-                how = Describe(l.Type, l.Strength, l.RunYawOffsetDeg), strength = l.Strength, click = ClickName(l.Strength),
-                // Movement-key direction for running jump throws (0 = W,
-                // +90 = A, -90 = D, +-45 = diagonals); part of the throw's
-                // physical identity, so the viewer must echo it back when
-                // fetching this lineup's trajectory.
-                runDeg = l.RunYawOffsetDeg,
-                rest = new[] { l.RestPoint.X, l.RestPoint.Y, l.RestPoint.Z },
-                l.Bounces,
-                flightTime = l.FlightTime,
-                stability = l.Stability,
-                // Rest displacement under a one-tick (0.25u) foot shift; big
-                // values mean the lineup is physically fragile however
-                // precisely it is aimed.
-                scatter = l.RestScatter,
-                pin = pins[l] switch { 2 => "corner", 1 => "wall", _ => (string?)null },
-                wallGap = stances[l].WallGap,
-                // Clear sightline from the throw spot to the landing - the
-                // viewer badges it so the player knows the spot is exposed and
-                // why it ranks below concealed throws.
-                exposed = l.DirectLos,
-                // Breakable panes the smoke breaks through, and where it lands
-                // instead once that glass is already gone. stateDependent:
-                // those two landings differ, so the throw only works as shown
-                // while the pane is intact - the viewer badges it and the
-                // ranking sinks it below every state-independent throw.
-                glass = l.GlassBreaks,
-                restIfBroken = l.RestIfBroken is { } rb ? new[] { rb.X, rb.Y, rb.Z } : null,
-                stateDependent = StateDependent(l),
-                // Expected miss in units when a person throws it: what the
-                // ranking led with, so the viewer can filter by the same number.
-                humanError = humanError[l],
-                aimRef = new
+                var l = entry.Lineup;
+                return new
                 {
-                    tier = aimRefs[l].Tier,
-                    sky = aimRefs[l].SkyFraction,
-                    edgeDeg = float.IsFinite(aimRefs[l].NearestSilhouetteDeg) ? (float?)aimRefs[l].NearestSilhouetteDeg : null,
-                    reticleDeg = float.IsFinite(aimRefs[l].NearestReticleDeg) ? (float?)aimRefs[l].NearestReticleDeg : null,
-                    // How reproducible the aim is (0 best, 6 nothing to aim at)
-                    // and the margin it was judged on, so the viewer can rank,
-                    // filter and describe by the same measure the server ranked
-                    // by rather than re-deriving it from the tier alone.
-                    band = aimRefs[l].Band,
-                    marginDeg = aimRefs[l].MarginDeg,
-                },
-                console = SetposCommand(l.Feet, l.PitchDeg, l.YawDeg),
+                    // How many near-identical throws this one stands for: the same
+                    // kind, the same bounce count, within a stride of these feet.
+                    similar = entry.Similar,
+                    // Durable identity for favourites, votes and shared sets: the
+                    // same physical throw gets the same id whichever solve found it.
+                    id = LineupIdentity.Id(l),
+                    feet = new[] { l.Feet.X, l.Feet.Y, l.Feet.Z },
+                    yaw = l.YawDeg,
+                    pitch = l.PitchDeg,
+                    type = l.Type.ToString(),
+                    how = Describe(l.Type, l.Strength, l.RunYawOffsetDeg), strength = l.Strength, click = ClickName(l.Strength),
+                    // Movement-key direction for running jump throws (0 = W,
+                    // +90 = A, -90 = D, +-45 = diagonals); part of the throw's
+                    // physical identity, so the viewer must echo it back when
+                    // fetching this lineup's trajectory.
+                    runDeg = l.RunYawOffsetDeg,
+                    rest = new[] { l.RestPoint.X, l.RestPoint.Y, l.RestPoint.Z },
+                    l.Bounces,
+                    flightTime = l.FlightTime,
+                    stability = l.Stability,
+                    // Rest displacement under a one-tick (0.25u) foot shift; big
+                    // values mean the lineup is physically fragile however
+                    // precisely it is aimed.
+                    scatter = l.RestScatter,
+                    pin = pins[l] switch { 2 => "corner", 1 => "wall", _ => (string?)null },
+                    wallGap = stances[l].WallGap,
+                    // Clear sightline from the throw spot to the landing - the
+                    // viewer badges it so the player knows the spot is exposed and
+                    // why it ranks below concealed throws.
+                    exposed = l.DirectLos,
+                    // Breakable panes the smoke breaks through, and where it lands
+                    // instead once that glass is already gone. stateDependent:
+                    // those two landings differ, so the throw only works as shown
+                    // while the pane is intact - the viewer badges it and the
+                    // ranking sinks it below every state-independent throw.
+                    glass = l.GlassBreaks,
+                    restIfBroken = l.RestIfBroken is { } rb ? new[] { rb.X, rb.Y, rb.Z } : null,
+                    stateDependent = StateDependent(l),
+                    // Expected miss in units when a person throws it: what the
+                    // ranking led with, so the viewer can filter by the same number.
+                    humanError = humanError[l],
+                    aimRef = new
+                    {
+                        tier = aimRefs[l].Tier,
+                        sky = aimRefs[l].SkyFraction,
+                        edgeDeg = float.IsFinite(aimRefs[l].NearestSilhouetteDeg) ? (float?)aimRefs[l].NearestSilhouetteDeg : null,
+                        reticleDeg = float.IsFinite(aimRefs[l].NearestReticleDeg) ? (float?)aimRefs[l].NearestReticleDeg : null,
+                        // How reproducible the aim is (0 best, 6 nothing to aim at)
+                        // and the margin it was judged on, so the viewer can rank,
+                        // filter and describe by the same measure the server ranked
+                        // by rather than re-deriving it from the tier alone.
+                        band = aimRefs[l].Band,
+                        marginDeg = aimRefs[l].MarginDeg,
+                    },
+                    console = SetposCommand(l.Feet, l.PitchDeg, l.YawDeg),
+                };
             }),
         });
     }
@@ -739,6 +762,51 @@ public static class LineupApi
         l.GlassBreaks > 0 && (l.RestIfBroken is not { } rb || Vector3.Distance(rb, l.RestPoint) > 8f);
 
     /// <summary>The API's order for a whole solve, computed from its colliders.</summary>
+    // How far apart two throws of the same kind have to be before they are
+    // worth listing separately, and how much height tells two floors apart.
+    const float SameSpotRadius = 32f;
+    const float SameSpotRise = 40f;
+
+    /// <summary>
+    /// Collapse throws nobody could tell apart. A map-wide sweep finds the
+    /// same jump throw from every stand spot around one corner, and the list
+    /// came back with eight of them a few units and a few degrees apart,
+    /// crowding out genuinely different answers. Walking the ranked order and
+    /// dropping anything that repeats a kept throw keeps the best of each and
+    /// counts the rest, so the list stays the same length in distinct ideas.
+    /// </summary>
+    static List<(Lineup Lineup, int Similar)> CollapseVariants(IReadOnlyList<Lineup> ranked)
+    {
+        var kept = new List<(Lineup Lineup, int Similar)>();
+        foreach (var l in ranked)
+        {
+            var found = -1;
+            for (var i = 0; i < kept.Count; i++)
+            {
+                var k = kept[i].Lineup;
+                if (k.Type == l.Type
+                    && k.Strength == l.Strength
+                    && k.RunYawOffsetDeg == l.RunYawOffsetDeg
+                    && k.Bounces == l.Bounces
+                    && MathF.Abs(k.Feet.Z - l.Feet.Z) <= SameSpotRise
+                    && Vector2.Distance(new Vector2(k.Feet.X, k.Feet.Y), new Vector2(l.Feet.X, l.Feet.Y)) <= SameSpotRadius)
+                {
+                    found = i;
+                    break;
+                }
+            }
+            if (found >= 0)
+            {
+                kept[found] = (kept[found].Lineup, kept[found].Similar + 1);
+            }
+            else
+            {
+                kept.Add((l, 0));
+            }
+        }
+        return kept;
+    }
+
     public static List<Lineup> Ranked(TargetSolve solve, Vector2? originClick = null)
     {
         var pins = solve.Lineups.ToDictionary(l => l, l => LineupSolver.PositionStance(solve.PlayerCollider, l.Feet).Pin);

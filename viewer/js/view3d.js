@@ -3,11 +3,11 @@
 // wraps init/sync. Raycast picks route through callbacks that main.js
 // registers, so this module never imports the orchestrator.
 
-import { state, filtered, clickClass, lowMemoryDevice, SMOKE_BLOOM_RADIUS, EYE_HEIGHT_BY_TYPE, DEFAULT_EYE_HEIGHT } from "./state.js?v=118";
-import { fetchMesh } from "./api.js?v=118";
-import { createFlyCamera } from "./flycam.js?v=118";
-import { clickIntentHtml, markerTooltip, resolveTap, showTip, hideTip } from "./markers.js?v=118";
-import { loadScript, ensureTexturedScene, currentTexturedScene, disposeSceneContents, disposeTexturedScene } from "./textured-scene.js?v=118";
+import { state, filtered, clickClass, lowMemoryDevice, SMOKE_BLOOM_RADIUS, EYE_HEIGHT_BY_TYPE, DEFAULT_EYE_HEIGHT } from "./state.js?v=119";
+import { fetchMesh } from "./api.js?v=119";
+import { createFlyCamera } from "./flycam.js?v=119";
+import { clickIntentHtml, markerTooltip, resolveTap, showTip, hideTip } from "./markers.js?v=119";
+import { loadScript, ensureTexturedScene, currentTexturedScene, disposeSceneContents, disposeTexturedScene } from "./textured-scene.js?v=119";
 
 const stage3d = state.stage3d;
 // Warning tint for phantom blockers (grenade-clips, physics-clips, glass) - a
@@ -429,6 +429,7 @@ async function init3d() {
   // carries no Z) instead of floating at world zero. Always the collision mesh,
   // never the textured GLB, so it reports the true surface the sim uses.
   const dropRay = new THREE.Raycaster();
+  const losRay = new THREE.Raycaster();
   const straightDown = new THREE.Vector3(0, 0, -1);
   // `fromZ` matters when the point sits under an arch or overpass: dropping
   // from the sky would land the marker on the roof above it.
@@ -776,6 +777,24 @@ async function init3d() {
           transparent: !!m?.transparent,
         };
       });
+    },
+    // Is the straight line between two world points clear of the map? Placing
+    // a camera by direction alone put a wall between it and the pin about as
+    // often as not, and "Look" then showed a wall.
+    clearLine(from, to) {
+      const a = new THREE.Vector3(from[0], from[1], from[2]);
+      const dir = new THREE.Vector3(to[0] - from[0], to[1] - from[1], to[2] - from[2]);
+      const dist = dir.length();
+      if (dist < 1) {
+        return true;
+      }
+      losRay.set(a, dir.normalize());
+      // Stop a little short: the pin sits on a surface, and a ray run all the
+      // way to it hits the very floor it stands on.
+      losRay.far = dist - 4;
+      const blocked = losRay.intersectObject(meshObj, false).length > 0;
+      losRay.far = Infinity;
+      return !blocked;
     },
     flyTo({ feet, type, pitchDeg, yawDeg }) {
       const eyeHeight = EYE_HEIGHT_BY_TYPE[type] ?? DEFAULT_EYE_HEIGHT;

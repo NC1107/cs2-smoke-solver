@@ -4,8 +4,8 @@
 //
 // A separate module because the rest of the viewer never edits map data, and
 // the one card that does should not be mixed into the code that reads it.
-import { state } from "./state.js?v=118";
-import { putTargets } from "./api.js?v=118";
+import { state } from "./state.js?v=119";
+import { putTargets } from "./api.js?v=119";
 
 let callbacks = {
   onSetTarget: () => {},
@@ -69,16 +69,6 @@ export function initAdmin(cb) {
       case "look":
         callbacks.onSetTarget([...t.pos]);
         callbacks.onLook(t);
-        break;
-      case "here":
-        if (!state.target || state.target.length < 3) {
-          callbacks.status("set a target with a height first, then move the pin to it");
-          return;
-        }
-        t.pos = [...state.target].map(v => Math.round(v * 10) / 10);
-        markDirty();
-        renderAdmin();
-        callbacks.onChanged();
         break;
       case "drop":
         state.targets.splice(i, 1);
@@ -145,11 +135,10 @@ export function renderAdmin() {
     }
     li.innerHTML =
       `<div class="line"><input type="text" value="${escapeAttr(t.name)}" maxlength="40" aria-label="Target name" placeholder="name">` +
-      `<label class="named" title="Confirmed: a person has checked the name and the position. Unticked, it is a guess from the nearest callout and shows a ? on the map"><input type="checkbox" ${t.named ? "checked" : ""} aria-label="Confirmed"> ${t.named ? "\u{1F512} confirmed" : "confirm"}</label></div>` +
+      `<label class="named" title="Confirmed: a person has checked the name and the position. Unticked, it is a guess from the nearest callout and shows a ? on the map"><input type="checkbox" ${t.named ? "checked" : ""} aria-label="Confirmed"> ${t.named ? "confirmed" : "confirm"}</label></div>` +
       `<div class="line"><span class="pos" title="${t.landings ? `${t.landings} pro landings, spread ${Math.round(t.spread)}u` : "added by hand"}">${t.pos[0].toFixed(0)}, ${t.pos[1].toFixed(0)}, ${t.pos[2].toFixed(0)}</span>` +
       `<span class="acts">` +
-      `<button type="button" class="btn" data-act="look" title="Make this the target and look at it in 3D">Look</button>` +
-      `<button type="button" class="btn" data-act="here" title="Move this pin to the current target position">Here</button>` +
+      `<button type="button" class="btn" data-act="look" title="Make this the target and fly the camera somewhere it can actually be seen from">Look</button>` +
       `<button type="button" class="btn danger" data-act="drop" title="Delete this pin" aria-label="Delete">×</button>` +
       `</span></div>`;
     ol.appendChild(li);
