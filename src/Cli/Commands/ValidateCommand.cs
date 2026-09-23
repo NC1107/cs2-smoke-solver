@@ -730,6 +730,12 @@ public static class ValidateCommand
         var rigDir = Environment.GetEnvironmentVariable("CS2_RIG_DIR") ?? Path.Combine(home, "cs2-rig");
         var gameDir = Environment.GetEnvironmentVariable("CS2_GAME_DIR")
             ?? Path.Combine(home, ".local", "share", "Steam", "steamapps", "common", "Counter-Strike Global Offensive");
+        return MapArchiveMatch(mapName, rigDir, gameDir);
+    }
+
+    /// <summary>The comparison itself, for the given rig and client install roots.</summary>
+    public static bool? MapArchiveMatch(string mapName, string rigDir, string gameDir)
+    {
         var server = new FileInfo(Path.Combine(rigDir, "server", "game", "csgo", "maps", mapName + ".vpk"));
         var client = new FileInfo(Path.Combine(gameDir, "game", "csgo", "maps", mapName + ".vpk"));
         if (!server.Exists || !client.Exists)

@@ -1,0 +1,172 @@
+{
+  "version": 1,
+  "dependencies": {
+    "net10.0": {
+      "ValveResourceFormat": {
+        "type": "Direct",
+        "requested": "[19.2.6339, )",
+        "resolved": "19.2.6339",
+        "contentHash": "svkY/cEa9ZTvyHYEnPrmfZHIDq3+b12lnd2+Czg4jUKz6RrJcvgYMw8WWnp/biIUllOjeK0NtZ9S+z2/9AbfcA==",
+        "dependencies": {
+          "K4os.Compression.LZ4": "1.3.8",
+          "KeyValues2": "0.8.0",
+          "SharpGLTF.Toolkit": "1.0.6",
+          "SkiaSharp": "3.119.2",
+          "SkiaSharp.NativeAssets.Linux.NoDependencies": "3.119.2",
+          "System.IO.Hashing": "10.0.5",
+          "TinyBCSharp": "0.1.2",
+          "TinyEXR.NET": "0.3.11",
+          "ValveKeyValue": "0.70.0.499",
+          "ValvePak": "4.0.0.142",
+          "Vortice.SpirvCross": "1.5.4",
+          "ZstdSharp.Port": "0.8.7"
+        }
+      },
+      "Blake3": {
+        "type": "Transitive",
+        "resolved": "2.0.0",
+        "contentHash": "v447kojeuNYSY5dvtVGG2bv1+M3vOWJXcrYWwXho/2uUpuwK6qPeu5WSMlqLm4VRJu96kysVO11La0zN3dLAuQ=="
+      },
+      "K4os.Compression.LZ4": {
+        "type": "Transitive",
+        "resolved": "1.3.8",
+        "contentHash": "LhwlPa7c1zs1OV2XadMtAWdImjLIsqFJPoRcIWAadSRn0Ri1DepK65UbWLPmt4riLqx2d40xjXRk0ogpqNtK7g=="
+      },
+      "KeyValues2": {
+        "type": "Transitive",
+        "resolved": "0.8.0",
+        "contentHash": "B6QSRGR32KJibr4XiVTUW2taJmVMNwhhREFtZ8WUg/bEv8hwOlLDAcUpPgZVewTplR2T1Tl0J5o4ZkwPt7aOiA=="
+      },
+      "SharpGLTF.Core": {
+        "type": "Transitive",
+        "resolved": "1.0.6",
+        "contentHash": "m3qIvUnpvRRfQ0fp0TFfpPk+vsHkCIOf/uIVJ19fe9dwa29KCO/PeHVXKAph8nsFxFLXitTIIqCa5W8JGLMhBg=="
+      },
+      "SharpGLTF.Runtime": {
+        "type": "Transitive",
+        "resolved": "1.0.6",
+        "contentHash": "MVb0p0gzwnjHB03b0kMhf9bVUd6gSvs/jBpTkL6rMa0RtzSGARbCvZkpGbHXjxgSTncprEuzV4nAaaAucifc3Q==",
+        "dependencies": {
+          "SharpGLTF.Core": "1.0.6"
+        }
+      },
+      "SharpGLTF.Toolkit": {
+        "type": "Transitive",
+        "resolved": "1.0.6",
+        "contentHash": "wb9Ebb4uwXevL4WiLlry29RWIYlxa+NiAa0BB8iSR7VbmgSa5Ij/QaPNlKi1jjA4oL8aEygg5V76zY1SJfIS+Q==",
+        "dependencies": {
+          "SharpGLTF.Runtime": "1.0.6"
+        }
+      },
+      "SkiaSharp": {
+        "type": "Transitive",
+        "resolved": "3.119.2",
+        "contentHash": "nmy2dOFWPvQKMglfpjz8+/xQQcSrL9jzul3cUyzCJVSwrmSAw+6B1sEgU7jt6NZBptwGq2k/V0kjyu2GizMFtg==",
+        "dependencies": {
+          "SkiaSharp.NativeAssets.Win32": "3.119.2",
+          "SkiaSharp.NativeAssets.macOS": "3.119.2"
+        }
+      },
+      "SkiaSharp.NativeAssets.Linux.NoDependencies": {
+        "type": "Transitive",
+        "resolved": "3.119.2",
+        "contentHash": "1rmveKZ8Cz7k4QJQdtKV6RFXYIEqYBiX450Bm0Bk41EE50MMPUyF81cRnASsuV0qCwdZuzjZTaFvoqS0Q2zVfA=="
+      },
+      "SkiaSharp.NativeAssets.macOS": {
+        "type": "Transitive",
+        "resolved": "3.119.2",
+        "contentHash": "I2jMGQ/26KOnc6iAoR+Mxh9vSJJ2vioJyj9aJ9OL5yEZyXothXJxf4vBMqnSaiXMqiiU1scG7KqtT0CLkmMmWA=="
+      },
+      "SkiaSharp.NativeAssets.Win32": {
+        "type": "Transitive",
+        "resolved": "3.119.2",
+        "contentHash": "uYe+da6+GXVgPKkCopzvIZ83DmC8SXXKeUAPrNcztJNsg0SjPQAxfKMOPZqmVjbzznrq/QUIjLUlJSZV/e0IPA=="
+      },
+      "System.IO.Hashing": {
+        "type": "Transitive",
+        "resolved": "10.0.5",
+        "contentHash": "8IBJWcCT9+e4Bmevm4T7+fQEiAh133KGiz4oiVTgJckd3Q76OFdR1falgn9lpz7+C4HJvogCDJeAa2QmvbeVtg=="
+      },
+      "TinyBCSharp": {
+        "type": "Transitive",
+        "resolved": "0.1.2",
+        "contentHash": "XNqUm7oBpYlxQyUNjpNHk+pEBSlmGsl+wkK2mJU+WNTchwke7kfzdnUQCk0H4ANnIjggz6CKIJz5i/wEFAWJRQ=="
+      },
+      "TinyEXR.NET": {
+        "type": "Transitive",
+        "resolved": "0.3.11",
+        "contentHash": "6SNv4Mstu/MdX6pIzOuzGQZd6ubZyPZx5mGCudZxUcZ5XAcEbyLkJ/QKcW/4S2jlVcUuwkWcS8brs5pd2ULhZg=="
+      },
+      "ValveKeyValue": {
+        "type": "Transitive",
+        "resolved": "0.70.0.499",
+        "contentHash": "4s1Sj71jxgxAbqs1wzkN2CuikKPsUEZE3/ZV6wsbMWnkzwO0elIbnQH4wMUXnRmAYG5GaYcdZ80sUcD5BWkGyw=="
+      },
+      "ValvePak": {
+        "type": "Transitive",
+        "resolved": "4.0.0.142",
+        "contentHash": "4RSU3NIqAODgQ8kuufOFxZ81sPYoxdmxZmexMY1MhKLxmvH9KI1n9fLMfcf5HejHXFU8QuGDQJW2z6e4dFz3tQ==",
+        "dependencies": {
+          "Blake3": "2.0.0",
+          "System.IO.Hashing": "9.0.11"
+        }
+      },
+      "Vortice.SPIRV": {
+        "type": "Transitive",
+        "resolved": "1.0.5",
+        "contentHash": "+/d13hilxamYgHFrYr59hDf7Mh71JPNtgGaUjxpFuvGMJNG2+GqNZRkcOE9qO/1F6qG0FMrXdQkybW6xr5quWg=="
+      },
+      "Vortice.SpirvCross": {
+        "type": "Transitive",
+        "resolved": "1.5.4",
+        "contentHash": "Ql/EBstNj6qdYipKk8KE5l/CVe/JMJJ0Y2RFW+SXYy3MP8isQaHpSn4qgogOw0bh2Ht5gwqRPX/eutBKougSQg==",
+        "dependencies": {
+          "Vortice.SPIRV": "1.0.5"
+        }
+      },
+      "ZstdSharp.Port": {
+        "type": "Transitive",
+        "resolved": "0.8.7",
+        "contentHash": "+4VpxvzEKaHpfTjsLRMhQHx6brqGBkIA+fjUM3wUW8ZoWpPFAeKrO2Nf4uZDeBjjzNDNxSRvLQH4b3S9Ku4JJQ=="
+      },
+      "smokesolver.sim": {
+        "type": "Project"
+      }
+    },
+    "net10.0/linux-x64": {
+      "Blake3": {
+        "type": "Transitive",
+        "resolved": "2.0.0",
+        "contentHash": "v447kojeuNYSY5dvtVGG2bv1+M3vOWJXcrYWwXho/2uUpuwK6qPeu5WSMlqLm4VRJu96kysVO11La0zN3dLAuQ=="
+      },
+      "SkiaSharp.NativeAssets.Linux.NoDependencies": {
+        "type": "Transitive",
+        "resolved": "3.119.2",
+        "contentHash": "1rmveKZ8Cz7k4QJQdtKV6RFXYIEqYBiX450Bm0Bk41EE50MMPUyF81cRnASsuV0qCwdZuzjZTaFvoqS0Q2zVfA=="
+      },
+      "SkiaSharp.NativeAssets.macOS": {
+        "type": "Transitive",
+        "resolved": "3.119.2",
+        "contentHash": "I2jMGQ/26KOnc6iAoR+Mxh9vSJJ2vioJyj9aJ9OL5yEZyXothXJxf4vBMqnSaiXMqiiU1scG7KqtT0CLkmMmWA=="
+      },
+      "SkiaSharp.NativeAssets.Win32": {
+        "type": "Transitive",
+        "resolved": "3.119.2",
+        "contentHash": "uYe+da6+GXVgPKkCopzvIZ83DmC8SXXKeUAPrNcztJNsg0SjPQAxfKMOPZqmVjbzznrq/QUIjLUlJSZV/e0IPA=="
+      },
+      "TinyEXR.NET": {
+        "type": "Transitive",
+        "resolved": "0.3.11",
+        "contentHash": "6SNv4Mstu/MdX6pIzOuzGQZd6ubZyPZx5mGCudZxUcZ5XAcEbyLkJ/QKcW/4S2jlVcUuwkWcS8brs5pd2ULhZg=="
+      },
+      "Vortice.SpirvCross": {
+        "type": "Transitive",
+        "resolved": "1.5.4",
+        "contentHash": "Ql/EBstNj6qdYipKk8KE5l/CVe/JMJJ0Y2RFW+SXYy3MP8isQaHpSn4qgogOw0bh2Ht5gwqRPX/eutBKougSQg==",
+        "dependencies": {
+          "Vortice.SPIRV": "1.0.5"
+        }
+      }
+    }
+  }
+}

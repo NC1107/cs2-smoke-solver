@@ -949,11 +949,17 @@ public static partial class LineupSolver
         // sweep happened to reach first, so two runs of the same solve
         // returned the same lineups in a different order. Order on the throw
         // itself, which no thread schedule can change.
-        return Ordinal(a).CompareTo(Ordinal(b)) < 0;
-
-        static (int, float, float, float, float, float, float, float) Ordinal(Lineup l) =>
-            ((int)l.Type, l.Feet.X, l.Feet.Y, l.Feet.Z, l.YawDeg, l.PitchDeg, l.Strength, l.RunYawOffsetDeg);
+        return ThrowOrder(a).CompareTo(ThrowOrder(b)) < 0;
     }
+
+    /// <summary>
+    /// The last-resort order between two lineups that tie on everything that
+    /// matters: the throw itself, which no thread schedule can change. The
+    /// sweep's bucket comparator and the API's ranking both end on it, so a
+    /// solve lists the same lineups in the same order on every run.
+    /// </summary>
+    public static (int, float, float, float, float, float, float, float) ThrowOrder(Lineup l) =>
+        ((int)l.Type, l.Feet.X, l.Feet.Y, l.Feet.Z, l.YawDeg, l.PitchDeg, l.Strength, l.RunYawOffsetDeg);
 
     static float Normalize(float yaw)
     {

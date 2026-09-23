@@ -47,8 +47,15 @@ jobs:
       - name: Viewer logic check
         run: node --experimental-vm-modules rig/check-viewer-logic.mjs
 
+      # The warm script's retries are what keep a re-warm alive through a rate
+      # limit and a container swap; both ended runs part-way before.
+      - name: Warm script check
+        run: python3 rig/test_warm_cache.py
+
       - name: Restore
-        run: dotnet restore SmokeSolver.sln
+        # Locked: any package that resolves differently from the committed
+        # packages.lock.json files fails the build instead of shipping.
+        run: dotnet restore SmokeSolver.sln --locked-mode
 
       - name: Build
         run: dotnet build SmokeSolver.sln -c Release --no-restore
@@ -123,6 +130,20 @@ jobs:
           curl -fsS http://127.0.0.1:8137/api/maps | python3 -c "import json,sys; assert isinstance(json.load(sys.stdin), list)" \
             || { docker logs smokesolver-ci; exit 1; }
           docker rm -f smokesolver-ci
+
+      # The base images are pinned by digest, which keeps builds reproducible
+      # but also means nothing picks up their security fixes unless someone
+      # bumps the digest. Stop the release on a critical or high issue that
+      # has a fix available; unfixable ones would only block every push.
+      - name: Scan the image
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: image
+          image-ref: smokesolver-ci:${{ github.sha }}
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          exit-code: '1'
+          format: table
 
       - uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
         with:

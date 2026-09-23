@@ -368,10 +368,10 @@ public static class LineupApi
             return "target is outside the map bounds";
         }
         if (query.TryGetProperty("origin", out var originEl) &&
-            (originEl.ValueKind != JsonValueKind.Array || originEl.GetArrayLength() < 2 ||
+            (originEl.ValueKind != JsonValueKind.Array || originEl.GetArrayLength() is < 2 or > 3 ||
              originEl.EnumerateArray().Any(e => e.ValueKind != JsonValueKind.Number || !float.IsFinite(e.GetSingle()))))
         {
-            return "origin must be [x,y] with finite numbers";
+            return "origin must be [x,y] or [x,y,z] with finite numbers";
         }
         // An unknown scope would otherwise fall through and quietly search the
         // whole map instead of saying it did not understand the question.
@@ -744,12 +744,11 @@ public static class LineupApi
         return (originClick is { } click
                 ? bySky.ThenBy(l => (int)(Vector2.Distance(new Vector2(l.Feet.X, l.Feet.Y), click) / 32f)).ThenByDescending(pin).ThenBy(l => (int)l.Type)
                 : bySky.ThenByDescending(pin).ThenBy(l => (int)l.Type))
-            .ThenBy(Ordinal)
+            .ThenBy(LineupSolver.ThrowOrder)
             .ToList();
     }
 
-    static (float, float, float, float, float, float, float) Ordinal(Lineup l) =>
-        (l.Feet.X, l.Feet.Y, l.Feet.Z, l.YawDeg, l.PitchDeg, l.Strength, l.RunYawOffsetDeg);
+
 
     /// <summary>
     /// A lineup whose landing depends on glass being intact: it breaks a pane

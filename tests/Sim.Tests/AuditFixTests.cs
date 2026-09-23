@@ -252,3 +252,62 @@ public class ShutdownDrainTests
         }
     }
 }
+
+public class MapArchiveMatchTests : IDisposable
+{
+    // The check that decides whether a build-number mismatch between the rig
+    // server and the client is harmless. Wrong either way, a stale map grades
+    // every throw against the wrong geometry, or a campaign warns for nothing.
+    readonly string rig = Path.Combine(Path.GetTempPath(), "smokesolver-rig-" + Guid.NewGuid().ToString("N"));
+    readonly string game = Path.Combine(Path.GetTempPath(), "smokesolver-game-" + Guid.NewGuid().ToString("N"));
+
+    void Write(string root, string sub, byte[] bytes)
+    {
+        var dir = Path.Combine(root, sub, "game", "csgo", "maps");
+        Directory.CreateDirectory(dir);
+        File.WriteAllBytes(Path.Combine(dir, "de_test.vpk"), bytes);
+    }
+
+    void Server(byte[] bytes) => Write(rig, "server", bytes);
+    void Client(byte[] bytes) => Write(game, "", bytes);
+
+    public void Dispose()
+    {
+        foreach (var d in new[] { rig, game })
+        {
+            try { Directory.Delete(d, recursive: true); } catch (IOException) { }
+        }
+        GC.SuppressFinalize(this);
+    }
+
+    [Fact]
+    public void IdenticalArchivesMatch()
+    {
+        Server([1, 2, 3, 4]);
+        Client([1, 2, 3, 4]);
+        Assert.True(ValidateCommand.MapArchiveMatch("de_test", rig, game));
+    }
+
+    [Fact]
+    public void SameSizeDifferentBytesDoNotMatch()
+    {
+        Server([1, 2, 3, 4]);
+        Client([1, 2, 3, 5]);
+        Assert.False(ValidateCommand.MapArchiveMatch("de_test", rig, game));
+    }
+
+    [Fact]
+    public void DifferentSizesDoNotMatch()
+    {
+        Server([1, 2, 3, 4]);
+        Client([1, 2, 3]);
+        Assert.False(ValidateCommand.MapArchiveMatch("de_test", rig, game));
+    }
+
+    [Fact]
+    public void AMissingArchiveCannotBeCompared()
+    {
+        Server([1, 2, 3, 4]);
+        Assert.Null(ValidateCommand.MapArchiveMatch("de_test", rig, game));
+    }
+}

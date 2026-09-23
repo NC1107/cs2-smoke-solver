@@ -1,0 +1,26 @@
+name: Prune old images
+
+# Every push to master publishes :latest plus a :<sha> tag, and nothing ever
+# removed them. Keep the newest versions - enough to roll back a few weeks by
+# setting SMOKESOLVER_IMAGE to a sha tag - and delete the rest. :latest is
+# always among the newest, so it is never touched.
+on:
+  schedule:
+    - cron: '17 4 * * 1'
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  prune:
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write
+    steps:
+      - uses: actions/delete-package-versions@e5bc658cc4c965c472efe991f8beea3981499c55 # v5.0.0
+        with:
+          package-name: cs2-smoke-solver
+          package-type: container
+          # Each push can store an image and an attestation as separate
+          # versions, so this is on the order of thirty pushes.
+          min-versions-to-keep: 60

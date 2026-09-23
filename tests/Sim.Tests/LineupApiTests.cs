@@ -55,8 +55,13 @@ public class LineupApiTests
     [InlineData("""{"target":[100,100],"origin":42}""")]
     [InlineData("""{"target":[100,100],"origin":[1]}""")]
     [InlineData("""{"target":[100,100],"origin":[1,1e39]}""")]
+    [InlineData("""{"target":[100,100],"origin":[1,2,3,4]}""")]
     public void MalformedOriginsAreRejected(string body) =>
-        Assert.Equal("origin must be [x,y] with finite numbers", Validate(body));
+        Assert.Equal("origin must be [x,y] or [x,y,z] with finite numbers", Validate(body));
+
+    [Fact]
+    public void AnOriginWithAHeightPasses() =>
+        Assert.Null(Validate("""{"target":[100,100],"origin":[200,200,0]}"""));
 
     // The reach/tolerance/stability windows: the value at each end of the range
     // passes, one step past it fails, and a non-numeric value fails.

@@ -1,0 +1,13 @@
+<Project>
+  <!-- Pin every transitive package to the version and content hash last
+       restored here. Direct references were already exact, but whatever they
+       pulled in resolved fresh on every CI run, so two builds of one commit
+       could ship different dependencies. CI restores with locked mode, which
+       fails on any drift from the committed packages.lock.json files. -->
+  <PropertyGroup>
+    <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
+    <!-- The image restores for linux-x64 (Dockerfile), so the lock files carry
+         that runtime's packages too and the image build can restore locked. -->
+    <RuntimeIdentifiers>linux-x64</RuntimeIdentifiers>
+  </PropertyGroup>
+</Project>

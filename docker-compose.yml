@@ -28,6 +28,22 @@ services:
     # reason (WATCHTOWER_TIMEOUT on the watchtower container), which must be
     # at least this long too.
     stop_grace_period: 100s
+    # Still root, because the process writes into ./data and on the prod host
+    # that folder belongs to the host user. But root without its powers: every
+    # capability dropped except the one that lets it write into that folder, no
+    # privilege escalation, and nothing writable outside ./data and /tmp.
+    # Checked on a copy of cs_italy with a user-owned data folder: maps load,
+    # solves run and cache, votes.db and session.secret are created, selfcheck
+    # passes.
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    cap_add:
+      - DAC_OVERRIDE
+    security_opt:
+      - no-new-privileges:true
     # Asks whether solves would return anything, not merely whether the port is
     # open. This server's signature failure is answering every request promptly
     # with zero lineups - an empty attribute filter, an unmounted data volume,

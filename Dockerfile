@@ -8,11 +8,14 @@ WORKDIR /src
 # Project files first: this restore layer only exists to download the NuGet
 # packages once, so a source-only change reuses it and the publish below
 # re-restores from the warm local cache without touching the network.
-COPY src/Cli/SmokeSolver.Cli.csproj src/Cli/
-COPY src/Sim/SmokeSolver.Sim.csproj src/Sim/
-COPY src/Solver/SmokeSolver.Solver.csproj src/Solver/
-COPY src/Extraction/SmokeSolver.Extraction.csproj src/Extraction/
-RUN dotnet restore src/Cli/SmokeSolver.Cli.csproj -r linux-x64
+# The lock files and the props that switch them on come with them, and the
+# restore is locked: the image ships exactly the dependencies CI tested.
+COPY Directory.Build.props ./
+COPY src/Cli/SmokeSolver.Cli.csproj src/Cli/packages.lock.json src/Cli/
+COPY src/Sim/SmokeSolver.Sim.csproj src/Sim/packages.lock.json src/Sim/
+COPY src/Solver/SmokeSolver.Solver.csproj src/Solver/packages.lock.json src/Solver/
+COPY src/Extraction/SmokeSolver.Extraction.csproj src/Extraction/packages.lock.json src/Extraction/
+RUN dotnet restore src/Cli/SmokeSolver.Cli.csproj -r linux-x64 --locked-mode
 COPY src/ src/
 RUN dotnet publish src/Cli/SmokeSolver.Cli.csproj \
     -c Release -r linux-x64 --self-contained false -o /out
@@ -23,13 +26,14 @@ COPY --from=build /out/ ./
 COPY viewer/ ./viewer/
 EXPOSE 8137
 
-# NOT switched to USER $APP_UID yet, deliberately. The process writes the solve
-# cache into the bind-mounted ./data, and on the current prod host data/cache is
-# owned by root:root because this container created it while running as root.
-# Adding USER here without first running
+# Runs as root, by decision (2026-09-23): the process writes into the
+# bind-mounted ./data, whose files on the prod host belong partly to root and
+# partly to the host user. docker-compose.yml takes root's powers away instead:
+# every capability dropped but DAC_OVERRIDE, no-new-privileges, and a read-only
+# root filesystem. To move to a non-root user later, run
 #     sudo chown -R 1654:1654 ~/docker-server/npc_projects/cs2-smoke-solver/data
-# on the host makes every cache write fail on the next `compose up`. Do the
-# chown and the USER line together, in that order.
+# on the host first, then add USER $APP_UID here; the other way round, every
+# cache write fails on the next `compose up`.
 
 # Checks that solves would return something, which a liveness ping cannot: an
 # empty attribute filter, an unmounted data volume, or missing nav data all
